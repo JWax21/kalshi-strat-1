@@ -1,33 +1,8 @@
 // Kalshi API Configuration
+// Set these environment variables in Vercel or .env.local
+
 export const KALSHI_CONFIG = {
-  apiKey: '23319f67-ac31-407f-86ce-1791a0533864',
-  privateKey: `-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEAu6S9h25/I3MZy8KWl8e5H31RXFazK/psVuwMVPiRbVls2kHC
-wyK8nNLr1t5nx5DELgWMyVuWPo6rl90BPeWdsjWZ64Xwk5rg+WcZtU4m53BrTZSk
-jrpAe8SfGPu2PnDkYBns7MBFbwcfp0mn2Zlbi3IVIjozX+xgTs6n7NHhEDmCDDfg
-x3eNgJUnJ9CBbJRX936gF/q/p5gqwCEIcCD/RJ3fBxv/N/wdcJpHh/Dc+Y9hClPU
-m38lzO1aBWYfvlvW9KGMLcr8MkOJg6uFP1lhnhXD8we6BgVqIBavfCqnXUI+NkAp
-l2Jnbaq3FXqgIpyGbBsG+LXNOfGnGAUoW/k47wIDAQABAoIBABrDsY70OVPmnSrS
-9g+Z2si9jhHULK6crmsANKAYFlzZBlg5TLJFraPWx/Hi0OhbuJ0ciItzXKz5RPYe
-fV4FTDwjk3FPLlSiIO3MrBOQHVIiAa7UAVwkVSyc4S6QlLA3rQjHbzkJEb5M71G5
-WqTZ0CobMHLXMgXAHa/lSnl9KZOFHwuKmekvfnk9Wpl+zLUEpKOKlswEguXQabsK
-Pn4UV4DgeU/o/0CcNLwpbllWugy6T0wqs5Uy9pgGy69QjP09j+OfAdqou+0D2GHh
-LoKbE+oDweEm1+HGxKikhWURf/u6qmHcxPrQBSUDFaTcgT/4ba9y1kIrJhWGMwGK
-9YXSepkCgYEA6rxquCYwD3QcmSQHI+XHd6Gm4jxVMjV8ASADBqEFxQQONAgdyvTy
-QnxMbNxrUYyzwYAaOf2+e/DaM/GNfwb/oJx8YfWvkzBQrXQTZBZCTwkX/GODzMJz
-agw6a/yjgvErNBOndBZ4o9HHkifhoDY5oGDH/jouvJ7+ooQfLezx72kCgYEAzKQ8
-1e4XLdejjPbtUnxhI9PjypXDRx5fkB1H+tXAg315EJLyV2+wH+lQLoOZkkljQaEc
-UkwJNvrqHAvxhcKrUoiAqrgOhdHspn4EfECTZ5OZXMj0u8YsuoKoymULPxlco1vz
-0ByFQjDaE0B9tzIm4xJX/EBissyASIZjjO6espcCgYEAv8irhMMmlymtx+0orEqr
-WvHHMKZMkVYjd6PY9QyQczRqClbrSIwyduGpa3P3dsx3fUwVoXXQsODK1o+vpK5q
-IqZX9Y1PIvnhoKXqxeZtzLdIUpxX7e6db3KINPxX977lJoo8UVueu3HFFYPiEwza
-rk8Ed5C/6Loan1tFQjeKP6kCgYBlR4eATUSVgJrGIlNUNpCQ/cZINhSedw7OsV81
-amLL8OZg6Ikd8v3U3VC8pI710nJYQddVd6I73rTMyrBvBehqgXpEg7FUU4/u2oF3
-yTHq2ibVv/M3l539dLr66EVHplKt2s1xGxxspObZDlrptt1+Fk8LXgY6/XEj87cD
-Qfmy4wKBgQCGdl4ltNsfSTFfJOeyKkw2BY+g9ao15NAERfEdIOAtoMDdCVefioOi
-rhG4WmsxpyI4Fo8486xqK3xGNj1ZhD9Zm65Ponk4Z7PRgD3HfdFW+1YHnJMyMtKJ
-S5S4W9nnvZ6trDSX6L8gJJqRm18mY4PQMrBgIZ6SPc4wqWdvIDj57g==
------END RSA PRIVATE KEY-----`,
+  apiKey: process.env.KALSHI_API_KEY || '',
+  privateKey: (process.env.KALSHI_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   baseUrl: 'https://api.elections.kalshi.com/trade-api/v2',
 };
-
