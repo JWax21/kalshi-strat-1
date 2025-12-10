@@ -289,7 +289,7 @@ export default function Dashboard() {
         {marketsData && (
           <div className="py-6 border-b border-slate-800">
             {/* Total Count Card */}
-            <div className="bg-slate-900 rounded-xl p-6 mb-4 text-center">
+            <div className="bg-slate-900 rounded-xl p-6 mb-4">
               <span className="text-5xl font-bold text-white">{filteredMarkets.length}</span>
               <p className="text-slate-400 mt-1">High-Odds Markets</p>
             </div>
