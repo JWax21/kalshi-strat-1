@@ -11,11 +11,6 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Kalshi Favorites Fund",
   description: "High-odds sports betting market scanner. Find prediction markets with 85-99% favorite odds.",
-  openGraph: {
-    title: "Kalshi Favorites Fund",
-    description: "High-odds sports betting market scanner",
-    images: ["/jl.png"],
-  },
   icons: {
     icon: "/jl.png",
     apple: "/jl.png",
