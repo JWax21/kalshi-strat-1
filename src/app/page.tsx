@@ -53,6 +53,7 @@ export default function Dashboard() {
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
+  const [loadingSeconds, setLoadingSeconds] = useState(0);
   const [minOdds] = useState(0.85); // Default 85%, controlled by display slider
   const sportsOnlyMarkets = true; // Always sports only
   const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
@@ -130,6 +131,17 @@ export default function Dashboard() {
     }, 1000);
     return () => clearInterval(timer);
   }, [lastUpdated]);
+
+  // Track loading time in seconds
+  useEffect(() => {
+    if (marketsLoading) {
+      setLoadingSeconds(0);
+      const timer = setInterval(() => {
+        setLoadingSeconds(prev => prev + 1);
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [marketsLoading]);
 
   const formatPct = (v: number) => (v * 100).toFixed(1) + '%';
   const formatVol = (v: number) => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v.toString();
@@ -266,7 +278,7 @@ export default function Dashboard() {
             <div className="text-xs text-slate-500 mt-3">
               <p>
                 Last updated: {lastUpdated.toLocaleTimeString()} • Next refresh in {Math.floor(nextRefresh / 60)}:{(nextRefresh % 60).toString().padStart(2, '0')}
-                {marketsLoading && <span className="text-emerald-400 ml-2">⟳ Fetching...</span>}
+                {marketsLoading && <span className="text-emerald-400 ml-2">⟳ Fetching... {loadingSeconds}s</span>}
               </p>
               {marketsData && <p className="mt-1">Total markets fetched: {marketsData.total_markets.toLocaleString()}</p>}
             </div>
@@ -388,7 +400,7 @@ export default function Dashboard() {
 
         <div className="py-8">
               {marketsLoading && !marketsData ? (
-                <div className="flex flex-col items-center py-20 text-slate-400"><div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" /><p className="mt-4">Loading markets...</p></div>
+                <div className="flex flex-col items-center py-20 text-slate-400"><div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" /><p className="mt-4">Loading markets... <span className="font-mono text-emerald-400">{loadingSeconds}s</span></p></div>
               ) : marketsError ? (
                 <div className="text-center py-20"><p className="text-red-400 text-xl">Error: {marketsError}</p><button onClick={fetchMarkets} className="mt-4 bg-emerald-500 text-slate-950 px-6 py-3 rounded-lg">Try Again</button></div>
               ) : filteredMarkets.length === 0 ? (
