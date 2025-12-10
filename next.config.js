@@ -1,8 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  output: 'standalone',
-  outputFileTracingRoot: process.cwd(),
-};
+const nextConfig = {};
 
 module.exports = nextConfig;
-
