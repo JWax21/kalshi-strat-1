@@ -53,7 +53,7 @@ export default function Dashboard() {
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
-  const [loadingSeconds, setLoadingSeconds] = useState(0);
+  const [loadingSeconds, setLoadingSeconds] = useState(0.0);
   const [minOdds] = useState(0.85); // Default 85%, controlled by display slider
   const sportsOnlyMarkets = true; // Always sports only
   const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
@@ -132,13 +132,13 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, [lastUpdated]);
 
-  // Track loading time in seconds
+  // Track loading time in seconds (with decimal)
   useEffect(() => {
     if (marketsLoading) {
       setLoadingSeconds(0);
       const timer = setInterval(() => {
-        setLoadingSeconds(prev => prev + 1);
-      }, 1000);
+        setLoadingSeconds(prev => prev + 0.1);
+      }, 100);
       return () => clearInterval(timer);
     }
   }, [marketsLoading]);
@@ -278,7 +278,7 @@ export default function Dashboard() {
             <div className="text-xs text-slate-500 mt-3">
               <p>
                 Last updated: {lastUpdated.toLocaleTimeString()} • Next refresh in {Math.floor(nextRefresh / 60)}:{(nextRefresh % 60).toString().padStart(2, '0')}
-                {marketsLoading && <span className="text-emerald-400 ml-2">⟳ Fetching... {loadingSeconds}s</span>}
+                {marketsLoading && <span className="text-emerald-400 ml-2">⟳ Fetching... {loadingSeconds.toFixed(1)}s</span>}
               </p>
               {marketsData && <p className="mt-1">Total markets fetched: {marketsData.total_markets.toLocaleString()}</p>}
             </div>
@@ -288,6 +288,12 @@ export default function Dashboard() {
 
         {marketsData && (
           <div className="py-6 border-b border-slate-800">
+            {/* Total Count Card */}
+            <div className="bg-slate-900 rounded-xl p-6 mb-4 text-center">
+              <span className="text-5xl font-bold text-white">{filteredMarkets.length}</span>
+              <p className="text-slate-400 mt-1">High-Odds Markets</p>
+            </div>
+
             {/* Odds Range Slider with Tick Marks */}
             <div className="bg-slate-900 rounded-xl p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
@@ -400,7 +406,7 @@ export default function Dashboard() {
 
         <div className="py-8">
               {marketsLoading && !marketsData ? (
-                <div className="flex flex-col items-center py-20 text-slate-400"><div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" /><p className="mt-4">Loading markets... <span className="font-mono text-emerald-400">{loadingSeconds}s</span></p></div>
+                <div className="flex flex-col items-center py-20 text-slate-400"><div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" /><p className="mt-4">Loading markets... <span className="font-mono text-emerald-400">{loadingSeconds.toFixed(1)}s</span></p></div>
               ) : marketsError ? (
                 <div className="text-center py-20"><p className="text-red-400 text-xl">Error: {marketsError}</p><button onClick={fetchMarkets} className="mt-4 bg-emerald-500 text-slate-950 px-6 py-3 rounded-lg">Try Again</button></div>
               ) : filteredMarkets.length === 0 ? (
