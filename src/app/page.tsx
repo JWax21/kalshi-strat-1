@@ -542,7 +542,7 @@ export default function Dashboard() {
         )}
 
         {/* Series Toggle Bar - Below divider */}
-        {marketsData && (
+        {activeTab === 'markets' && marketsData && (
           <div className="py-4">
             <div className="bg-slate-900 rounded-xl p-4">
               <div className="text-sm text-slate-400 mb-3">Filter by League</div>
@@ -565,7 +565,7 @@ export default function Dashboard() {
           </div>
         )}
 
-
+        {activeTab === 'markets' && (
         <div className="py-8">
               {marketsLoading && !marketsData ? (
                 <div className="flex flex-col items-center py-20 text-slate-400"><div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" /><p className="mt-4">Loading markets... <span className="font-mono text-emerald-400">{loadingSeconds.toFixed(1)}s</span></p></div>
