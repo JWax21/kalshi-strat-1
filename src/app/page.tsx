@@ -46,10 +46,34 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'markets' | 'events';
+type Tab = 'markets' | 'portfolio';
+type PortfolioSubTab = 'positions' | 'history';
+
+interface SelectedMarket {
+  ticker: string;
+  title: string;
+  favorite_side: 'YES' | 'NO';
+  favorite_odds: number;
+  count: number;
+}
+
+interface Position {
+  ticker: string;
+  market_title: string;
+  position: number;
+  market_exposure: number;
+  realized_pnl: number;
+  total_traded: number;
+}
+
+interface PortfolioData {
+  positions: { market_positions: Position[] };
+  balance: { balance: number; payout: number };
+}
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('markets');
+  const [portfolioSubTab, setPortfolioSubTab] = useState<PortfolioSubTab>('positions');
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
@@ -64,6 +88,16 @@ export default function Dashboard() {
   const [displayOddsMin, setDisplayOddsMin] = useState(85);
   const [displayOddsMax, setDisplayOddsMax] = useState(99);
   const [selectedSeries, setSelectedSeries] = useState<string>('All');
+  
+  // Batch order state
+  const [selectedMarkets, setSelectedMarkets] = useState<Map<string, SelectedMarket>>(new Map());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [orderCount, setOrderCount] = useState(1); // Default contracts per order
+  
+  // Portfolio state
+  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
 
   const fetchMarkets = useCallback(async () => {
     setMarketsLoading(true);
@@ -108,6 +142,117 @@ export default function Dashboard() {
   const handleRefresh = () => {
     fetchMarkets();
   };
+
+  // Toggle market selection for batch order
+  const toggleMarketSelection = (market: Market) => {
+    const newSelected = new Map(selectedMarkets);
+    if (newSelected.has(market.ticker)) {
+      newSelected.delete(market.ticker);
+    } else {
+      newSelected.set(market.ticker, {
+        ticker: market.ticker,
+        title: market.title,
+        favorite_side: market.favorite_side,
+        favorite_odds: market.favorite_odds,
+        count: orderCount,
+      });
+    }
+    setSelectedMarkets(newSelected);
+    if (newSelected.size > 0) setSidebarOpen(true);
+  };
+
+  // Select all visible markets
+  const selectAllMarkets = () => {
+    const newSelected = new Map(selectedMarkets);
+    filteredMarkets.forEach(m => {
+      if (!newSelected.has(m.ticker)) {
+        newSelected.set(m.ticker, {
+          ticker: m.ticker,
+          title: m.title,
+          favorite_side: m.favorite_side,
+          favorite_odds: m.favorite_odds,
+          count: orderCount,
+        });
+      }
+    });
+    setSelectedMarkets(newSelected);
+    setSidebarOpen(true);
+  };
+
+  // Clear all selections
+  const clearSelections = () => {
+    setSelectedMarkets(new Map());
+  };
+
+  // Submit batch order
+  const submitBatchOrder = async () => {
+    if (selectedMarkets.size === 0) return;
+    
+    setOrderSubmitting(true);
+    const results: { ticker: string; success: boolean; error?: string }[] = [];
+    
+    for (const [ticker, market] of selectedMarkets) {
+      try {
+        const res = await fetch('/api/orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ticker,
+            action: 'buy',
+            side: market.favorite_side.toLowerCase(),
+            count: market.count,
+            type: 'market',
+          }),
+        });
+        const data = await res.json();
+        results.push({ ticker, success: data.success, error: data.error });
+      } catch (err) {
+        results.push({ ticker, success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+      }
+    }
+    
+    setOrderSubmitting(false);
+    const successCount = results.filter(r => r.success).length;
+    alert(`Orders submitted: ${successCount}/${results.length} successful`);
+    if (successCount > 0) {
+      clearSelections();
+      fetchPortfolio();
+    }
+  };
+
+  // Fetch portfolio data
+  const fetchPortfolio = async () => {
+    setPortfolioLoading(true);
+    try {
+      const res = await fetch('/api/orders');
+      const data = await res.json();
+      if (data.success) {
+        setPortfolioData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching portfolio:', err);
+    } finally {
+      setPortfolioLoading(false);
+    }
+  };
+
+  // Handle Enter key for submitting orders
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && selectedMarkets.size > 0 && !orderSubmitting) {
+        submitBatchOrder();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedMarkets, orderSubmitting]);
+
+  // Fetch portfolio when tab changes
+  useEffect(() => {
+    if (activeTab === 'portfolio') {
+      fetchPortfolio();
+    }
+  }, [activeTab]);
 
   // Auto-refresh markets every 5 minutes
   useEffect(() => {
@@ -285,8 +430,25 @@ export default function Dashboard() {
           )}
         </header>
 
+        {/* Main Tabs */}
+        <div className="flex items-center justify-between mt-6">
+          <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
+            <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Markets</button>
+            <button onClick={() => setActiveTab('portfolio')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'portfolio' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Portfolio</button>
+          </div>
+          
+          {activeTab === 'markets' && filteredMarkets.length > 0 && (
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-slate-400">{selectedMarkets.size} selected</span>
+              <button onClick={selectAllMarkets} className="px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700">Select All</button>
+              {selectedMarkets.size > 0 && (
+                <button onClick={clearSelections} className="px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700">Clear</button>
+              )}
+            </div>
+          )}
+        </div>
 
-        {marketsData && (
+        {activeTab === 'markets' && marketsData && (
           <div className="py-6 border-b border-slate-800">
             {/* Total Count Card */}
             <div className="bg-slate-900 rounded-xl p-6 mb-4">
@@ -414,10 +576,22 @@ export default function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredMarkets.map((m) => (
-                    <article key={m.ticker} className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-emerald-500/50">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded">{getSeriesTag(m.event_ticker)}</span>
-                        <h3 className="text-sm font-semibold text-white leading-snug">{m.title}</h3>
+                    <article key={m.ticker} className={`bg-slate-900 border rounded-xl p-5 transition-colors ${selectedMarkets.has(m.ticker) ? 'border-emerald-500 bg-emerald-500/5' : 'border-slate-800 hover:border-emerald-500/50'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded">{getSeriesTag(m.event_ticker)}</span>
+                          <h3 className="text-sm font-semibold text-white leading-snug">{m.title}</h3>
+                        </div>
+                        <button
+                          onClick={() => toggleMarketSelection(m)}
+                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                            selectedMarkets.has(m.ticker)
+                              ? 'bg-emerald-500 text-slate-950'
+                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                          }`}
+                        >
+                          {selectedMarkets.has(m.ticker) ? '✓' : '+'}
+                        </button>
                       </div>
                       {m.subtitle && <p className="text-xs text-slate-500 mb-2">{m.subtitle}</p>}
                       <div className="mb-4"><span className="text-xs text-slate-500 uppercase">Favorite</span><div className="font-semibold text-emerald-400">{getFavoriteTeam(m)} @ {formatPct(m.favorite_odds)}</div></div>
@@ -432,11 +606,153 @@ export default function Dashboard() {
                 </div>
               )}
         </div>
+        )}
+
+        {/* Portfolio Tab */}
+        {activeTab === 'portfolio' && (
+          <div className="py-8">
+            {/* Portfolio Sub-tabs */}
+            <div className="flex gap-1 bg-slate-900 p-1 rounded-lg w-fit mb-6">
+              <button onClick={() => setPortfolioSubTab('positions')} className={`px-4 py-2 rounded-md text-sm font-medium ${portfolioSubTab === 'positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>Current Positions</button>
+              <button onClick={() => setPortfolioSubTab('history')} className={`px-4 py-2 rounded-md text-sm font-medium ${portfolioSubTab === 'history' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>History</button>
+            </div>
+
+            {/* Summary Metrics */}
+            {portfolioData && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Balance</div>
+                  <div className="text-2xl font-bold text-white">${((portfolioData.balance?.balance || 0) / 100).toFixed(2)}</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Payout</div>
+                  <div className="text-2xl font-bold text-emerald-400">${((portfolioData.balance?.payout || 0) / 100).toFixed(2)}</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Positions</div>
+                  <div className="text-2xl font-bold text-white">{portfolioData.positions?.market_positions?.length || 0}</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Total Exposure</div>
+                  <div className="text-2xl font-bold text-amber-400">
+                    ${((portfolioData.positions?.market_positions || []).reduce((sum, p) => sum + Math.abs(p.market_exposure || 0), 0) / 100).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {portfolioLoading ? (
+              <div className="flex flex-col items-center py-20 text-slate-400">
+                <div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" />
+                <p className="mt-4">Loading portfolio...</p>
+              </div>
+            ) : portfolioSubTab === 'positions' ? (
+              <div className="bg-slate-900 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-800">
+                    <tr>
+                      <th className="text-left p-4 text-slate-400 font-medium">Market</th>
+                      <th className="text-right p-4 text-slate-400 font-medium">Position</th>
+                      <th className="text-right p-4 text-slate-400 font-medium">Exposure</th>
+                      <th className="text-right p-4 text-slate-400 font-medium">P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(portfolioData?.positions?.market_positions || []).length === 0 ? (
+                      <tr><td colSpan={4} className="p-8 text-center text-slate-500">No open positions</td></tr>
+                    ) : (
+                      (portfolioData?.positions?.market_positions || []).map((p, i) => (
+                        <tr key={i} className="border-t border-slate-800">
+                          <td className="p-4 text-white">{p.ticker}</td>
+                          <td className="p-4 text-right text-white">{p.position}</td>
+                          <td className="p-4 text-right text-amber-400">${((p.market_exposure || 0) / 100).toFixed(2)}</td>
+                          <td className={`p-4 text-right ${(p.realized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            ${((p.realized_pnl || 0) / 100).toFixed(2)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="bg-slate-900 rounded-xl p-8 text-center text-slate-500">
+                <p>Order history coming soon</p>
+              </div>
+            )}
+
+            <button onClick={fetchPortfolio} className="mt-4 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700">
+              Refresh Portfolio
+            </button>
+          </div>
+        )}
 
         <footer className="py-8 border-t border-slate-800 text-center text-slate-500 text-sm">
           Data from <a href="https://kalshi.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Kalshi</a> • Click Refresh to update
         </footer>
       </Container>
+
+      {/* Order Sidebar */}
+      {sidebarOpen && (
+        <div className="fixed right-0 top-0 h-full w-80 bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col">
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-white">Batch Order</h2>
+            <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white text-xl">×</button>
+          </div>
+          
+          <div className="p-4 border-b border-slate-800">
+            <label className="text-sm text-slate-400">Contracts per order</label>
+            <input
+              type="number"
+              min="1"
+              value={orderCount}
+              onChange={(e) => setOrderCount(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-full mt-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
+            />
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4">
+            <p className="text-xs text-slate-500 mb-3">{selectedMarkets.size} markets selected</p>
+            <div className="space-y-2">
+              {Array.from(selectedMarkets.values()).map((m) => (
+                <div key={m.ticker} className="bg-slate-800 rounded-lg p-3 flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white truncate">{m.title}</p>
+                    <p className="text-xs text-emerald-400">{m.favorite_side} @ {(m.favorite_odds * 100).toFixed(0)}%</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newSelected = new Map(selectedMarkets);
+                      newSelected.delete(m.ticker);
+                      setSelectedMarkets(newSelected);
+                    }}
+                    className="ml-2 text-slate-400 hover:text-red-400"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="p-4 border-t border-slate-800 space-y-2">
+            <p className="text-xs text-slate-500 text-center">Press Enter to submit</p>
+            <button
+              onClick={submitBatchOrder}
+              disabled={orderSubmitting || selectedMarkets.size === 0}
+              className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {orderSubmitting ? 'Submitting...' : `Place ${selectedMarkets.size} Orders`}
+            </button>
+            <button
+              onClick={clearSelections}
+              className="w-full py-2 bg-slate-800 text-slate-400 rounded-lg hover:bg-slate-700 hover:text-white"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
