@@ -174,3 +174,102 @@ export function getMarketOdds(market: KalshiMarket): { yes: number; no: number }
   return { yes: yesPrice, no: 1 - yesPrice };
 }
 
+// Order interfaces
+export interface KalshiOrder {
+  ticker: string;
+  action: 'buy' | 'sell';
+  side: 'yes' | 'no';
+  count: number;
+  type: 'limit' | 'market';
+  yes_price?: number; // Price in cents (1-99) for limit orders
+  client_order_id: string;
+}
+
+export interface KalshiOrderResponse {
+  order: {
+    order_id: string;
+    client_order_id: string;
+    status: string;
+    ticker: string;
+    action: string;
+    side: string;
+    type: string;
+    yes_price: number;
+    no_price: number;
+    count: number;
+    created_time: string;
+  };
+}
+
+// POST request helper for authenticated endpoints
+async function postKalshi(endpoint: string, body: object): Promise<any> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const method = 'POST';
+  const fullPath = `/trade-api/v2${endpoint}`;
+  
+  const signature = generateSignature(timestamp, method, fullPath);
+  
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestamp.toString(),
+    },
+    body: JSON.stringify(body),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kalshi API error: ${response.status} - ${errorText}`);
+  }
+  
+  return response.json();
+}
+
+// Place an order
+export async function placeOrder(order: KalshiOrder): Promise<KalshiOrderResponse> {
+  const response = await postKalshi('/portfolio/orders', order);
+  return response;
+}
+
+// Get current positions
+export async function getPositions(): Promise<any> {
+  const endpoint = '/portfolio/positions';
+  return fetchKalshi(endpoint);
+}
+
+// Get account balance
+export async function getBalance(): Promise<any> {
+  const endpoint = '/portfolio/balance';
+  return fetchKalshi(endpoint);
+}
+
+// Cancel an order
+export async function cancelOrder(orderId: string): Promise<any> {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const method = 'DELETE';
+  const endpoint = `/portfolio/orders/${orderId}`;
+  const fullPath = `/trade-api/v2${endpoint}`;
+  
+  const signature = generateSignature(timestamp, method, fullPath);
+  
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestamp.toString(),
+    },
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Kalshi API error: ${response.status} - ${errorText}`);
+  }
+  
+  return response.json();
+}
+
