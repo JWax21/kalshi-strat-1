@@ -192,19 +192,22 @@ export default function Dashboard() {
     const results: { ticker: string; success: boolean; error?: string }[] = [];
     
     for (const [ticker, market] of selectedMarkets) {
+      const payload = {
+        ticker,
+        action: 'buy',
+        side: market.favorite_side.toLowerCase(),
+        count: market.count,
+        type: 'market',
+      };
+      console.log('Order payload:', payload);
       try {
         const res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ticker,
-            action: 'buy',
-            side: market.favorite_side.toLowerCase(),
-            count: market.count,
-            type: 'market',
-          }),
+          body: JSON.stringify(payload),
         });
         const data = await res.json();
+        console.log('Order response:', { status: res.status, data });
         results.push({ ticker, success: data.success, error: data.error });
       } catch (err) {
         results.push({ ticker, success: false, error: err instanceof Error ? err.message : 'Unknown error' });
@@ -361,23 +364,6 @@ export default function Dashboard() {
     (marketsData?.markets || []).map(m => getSeriesTag(m.event_ticker))
   )).sort()];
 
-  // Debug: Log first 10 markets data
-  if (marketsData?.markets && marketsData.markets.length > 0) {
-    console.log('=== First 10 Markets Data ===');
-    marketsData.markets.slice(0, 10).forEach((m, i) => {
-      console.log(`Market ${i + 1}:`, {
-        ticker: m.ticker,
-        event_ticker: m.event_ticker,
-        title: m.title,
-        subtitle: m.subtitle,
-        yes_sub_title: m.yes_sub_title,
-        no_sub_title: m.no_sub_title,
-        favorite_side: m.favorite_side,
-        favorite_odds: m.favorite_odds,
-        open_interest: m.open_interest,
-      });
-    });
-  }
 
   // Client-side filtered markets based on display odds slider and series filter
   const filteredMarkets = marketsData?.markets.filter(m => {

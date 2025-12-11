@@ -209,6 +209,11 @@ async function postKalshi(endpoint: string, body: object): Promise<any> {
   
   const signature = generateSignature(timestamp, method, fullPath);
   
+  console.log('=== postKalshi Debug ===');
+  console.log('Endpoint:', endpoint);
+  console.log('Full URL:', `${KALSHI_CONFIG.baseUrl}${endpoint}`);
+  console.log('Request body:', JSON.stringify(body, null, 2));
+  
   const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
     method: 'POST',
     headers: {
@@ -220,12 +225,17 @@ async function postKalshi(endpoint: string, body: object): Promise<any> {
     body: JSON.stringify(body),
   });
   
+  console.log('Response status:', response.status);
+  
   if (!response.ok) {
     const errorText = await response.text();
+    console.log('Error response:', errorText);
     throw new Error(`Kalshi API error: ${response.status} - ${errorText}`);
   }
   
-  return response.json();
+  const result = await response.json();
+  console.log('Success response:', JSON.stringify(result, null, 2));
+  return result;
 }
 
 // Place an order
