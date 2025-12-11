@@ -49,12 +49,25 @@ interface EventsResponse {
 type Tab = 'markets' | 'portfolio';
 type PortfolioSubTab = 'positions' | 'history';
 
+interface OrderbookLevel {
+  price: number;
+  count: number;
+  dollars: string;
+}
+
+interface Orderbook {
+  yes: OrderbookLevel[];
+  no: OrderbookLevel[];
+}
+
 interface SelectedMarket {
   ticker: string;
   title: string;
   favorite_side: 'YES' | 'NO';
   favorite_odds: number;
   count: number;
+  orderbook?: Orderbook;
+  orderbookLoading?: boolean;
 }
 
 interface Position {
@@ -143,6 +156,34 @@ export default function Dashboard() {
     fetchMarkets();
   };
 
+  // Fetch orderbook for a market
+  const fetchOrderbook = async (ticker: string) => {
+    try {
+      const res = await fetch(`/api/orderbook/${ticker}`);
+      const data = await res.json();
+      if (data.success) {
+        setSelectedMarkets(prev => {
+          const newMap = new Map(prev);
+          const market = newMap.get(ticker);
+          if (market) {
+            newMap.set(ticker, { ...market, orderbook: data.orderbook, orderbookLoading: false });
+          }
+          return newMap;
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching orderbook:', err);
+      setSelectedMarkets(prev => {
+        const newMap = new Map(prev);
+        const market = newMap.get(ticker);
+        if (market) {
+          newMap.set(ticker, { ...market, orderbookLoading: false });
+        }
+        return newMap;
+      });
+    }
+  };
+
   // Toggle market selection for batch order
   const toggleMarketSelection = (market: Market) => {
     const newSelected = new Map(selectedMarkets);
@@ -155,7 +196,10 @@ export default function Dashboard() {
         favorite_side: market.favorite_side,
         favorite_odds: market.favorite_odds,
         count: orderCount,
+        orderbookLoading: true,
       });
+      // Fetch orderbook after adding
+      fetchOrderbook(market.ticker);
     }
     setSelectedMarkets(newSelected);
     if (newSelected.size > 0) setSidebarOpen(true);
@@ -164,6 +208,7 @@ export default function Dashboard() {
   // Select all visible markets
   const selectAllMarkets = () => {
     const newSelected = new Map(selectedMarkets);
+    const newTickers: string[] = [];
     filteredMarkets.forEach(m => {
       if (!newSelected.has(m.ticker)) {
         newSelected.set(m.ticker, {
@@ -172,11 +217,17 @@ export default function Dashboard() {
           favorite_side: m.favorite_side,
           favorite_odds: m.favorite_odds,
           count: orderCount,
+          orderbookLoading: true,
         });
+        newTickers.push(m.ticker);
       }
     });
     setSelectedMarkets(newSelected);
     setSidebarOpen(true);
+    // Fetch orderbooks for newly added markets (with slight delays to avoid rate limits)
+    newTickers.forEach((ticker, i) => {
+      setTimeout(() => fetchOrderbook(ticker), i * 200);
+    });
   };
 
   // Clear all selections
@@ -711,25 +762,108 @@ export default function Dashboard() {
           
           <div className="flex-1 overflow-y-auto p-4">
             <p className="text-xs text-slate-500 mb-3">{selectedMarkets.size} markets selected</p>
-            <div className="space-y-2">
-              {Array.from(selectedMarkets.values()).map((m) => (
-                <div key={m.ticker} className="bg-slate-800 rounded-lg p-3 flex items-center justify-between">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-white truncate">{m.title}</p>
-                    <p className="text-xs text-emerald-400">{m.favorite_side} @ {(m.favorite_odds * 100).toFixed(0)}%</p>
+            <div className="space-y-3">
+              {Array.from(selectedMarkets.values()).map((m) => {
+                // Calculate cumulative fills at each price level for the favorite side
+                const levels = m.favorite_side === 'YES' ? m.orderbook?.yes : m.orderbook?.no;
+                let cumulativeCount = 0;
+                const cumulativeLevels = (levels || []).map(level => {
+                  cumulativeCount += level.count;
+                  return { ...level, cumulative: cumulativeCount };
+                });
+
+                return (
+                  <div key={m.ticker} className="bg-slate-800 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white truncate">{m.title}</p>
+                        <p className="text-xs text-emerald-400">{m.favorite_side} @ {(m.favorite_odds * 100).toFixed(0)}%</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          const newSelected = new Map(selectedMarkets);
+                          newSelected.delete(m.ticker);
+                          setSelectedMarkets(newSelected);
+                        }}
+                        className="ml-2 text-slate-400 hover:text-red-400"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    
+                    {/* Orderbook depth visualization */}
+                    {m.orderbookLoading ? (
+                      <div className="text-xs text-slate-500 py-2">Loading orderbook...</div>
+                    ) : m.orderbook ? (
+                      <div className="mt-2 border-t border-slate-700 pt-2">
+                        <div className="text-[10px] text-slate-500 uppercase mb-1">
+                          {m.favorite_side} Depth (Price → Qty / Cumulative)
+                        </div>
+                        <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                          {cumulativeLevels.length > 0 ? (
+                            cumulativeLevels.slice(0, 10).map((level, i) => {
+                              const isAtOrBelowTarget = level.price <= Math.round(m.favorite_odds * 100);
+                              return (
+                                <div 
+                                  key={i} 
+                                  className={`flex justify-between text-xs font-mono ${
+                                    isAtOrBelowTarget ? 'text-emerald-400' : 'text-slate-400'
+                                  }`}
+                                >
+                                  <span>{level.price}¢</span>
+                                  <span>
+                                    {level.count.toLocaleString()} / 
+                                    <span className={`${isAtOrBelowTarget ? 'text-emerald-300 font-bold' : ''}`}>
+                                      {level.cumulative.toLocaleString()}
+                                    </span>
+                                  </span>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-xs text-slate-500">No bids available</div>
+                          )}
+                        </div>
+                        {cumulativeLevels.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-700">
+                            <div className="text-[10px] text-slate-500 uppercase mb-1">Fill Summary</div>
+                            <div className="grid grid-cols-3 gap-1 text-xs">
+                              {[100, 250, 500].map(qty => {
+                                // Find the worst price needed to fill this quantity
+                                let remaining = qty;
+                                let worstPrice = 0;
+                                let canFill = false;
+                                for (const level of cumulativeLevels) {
+                                  if (level.cumulative >= qty) {
+                                    worstPrice = level.price;
+                                    canFill = true;
+                                    break;
+                                  }
+                                }
+                                if (!canFill && cumulativeLevels.length > 0) {
+                                  worstPrice = cumulativeLevels[cumulativeLevels.length - 1].price;
+                                }
+                                const totalAvailable = cumulativeLevels.length > 0 
+                                  ? cumulativeLevels[cumulativeLevels.length - 1].cumulative 
+                                  : 0;
+                                
+                                return (
+                                  <div key={qty} className="bg-slate-900 rounded p-1.5 text-center">
+                                    <div className="text-slate-400">{qty}</div>
+                                    <div className={canFill ? 'text-emerald-400' : 'text-amber-400'}>
+                                      {canFill ? `${worstPrice}¢` : `${Math.min(qty, totalAvailable)}@${worstPrice}¢`}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                  <button
-                    onClick={() => {
-                      const newSelected = new Map(selectedMarkets);
-                      newSelected.delete(m.ticker);
-                      setSelectedMarkets(newSelected);
-                    }}
-                    className="ml-2 text-slate-400 hover:text-red-400"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           

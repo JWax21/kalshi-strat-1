@@ -266,6 +266,46 @@ export async function getBalance(): Promise<any> {
   return fetchKalshi(endpoint);
 }
 
+// Orderbook interfaces
+export interface OrderbookLevel {
+  price: number;      // Price in cents (1-99)
+  count: number;      // Number of contracts available
+  dollars: string;    // Price as dollar string (e.g., "0.9500")
+}
+
+export interface Orderbook {
+  yes: OrderbookLevel[];  // Yes bids, sorted by price descending (best first)
+  no: OrderbookLevel[];   // No bids, sorted by price descending (best first)
+}
+
+// Get orderbook for a market
+export async function getOrderbook(ticker: string, depth: number = 0): Promise<Orderbook> {
+  const endpoint = `/markets/${ticker}/orderbook${depth > 0 ? `?depth=${depth}` : ''}`;
+  const data = await fetchKalshi(endpoint);
+  
+  const orderbook = data.orderbook || {};
+  
+  // Parse yes levels: [[price, count], ...] in cents
+  const yesLevels: OrderbookLevel[] = (orderbook.yes || []).map((level: number[]) => ({
+    price: level[0],
+    count: level[1],
+    dollars: (level[0] / 100).toFixed(4),
+  }));
+  
+  // Parse no levels: [[price, count], ...] in cents
+  const noLevels: OrderbookLevel[] = (orderbook.no || []).map((level: number[]) => ({
+    price: level[0],
+    count: level[1],
+    dollars: (level[0] / 100).toFixed(4),
+  }));
+  
+  // Sort by price descending (best price first)
+  yesLevels.sort((a, b) => b.price - a.price);
+  noLevels.sort((a, b) => b.price - a.price);
+  
+  return { yes: yesLevels, no: noLevels };
+}
+
 // Cancel an order
 export async function cancelOrder(orderId: string): Promise<any> {
   const timestampMs = Date.now().toString();
