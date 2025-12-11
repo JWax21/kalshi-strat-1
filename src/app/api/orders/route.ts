@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    const { ticker, action, side, count, type, yes_price } = body;
+    const { ticker, action, side, count, type, yes_price, no_price } = body;
     
     // Validate required fields
     if (!ticker || !action || !side || !count || !type) {
@@ -75,8 +75,9 @@ export async function POST(request: Request) {
       );
     }
     
-    // For limit orders, validate price
-    if (type === 'limit' && (yes_price < 1 || yes_price > 99)) {
+    // For limit orders, validate price (must have exactly one of yes_price or no_price)
+    const price = yes_price || no_price;
+    if (type === 'limit' && (!price || price < 1 || price > 99)) {
       return NextResponse.json(
         { success: false, error: 'Price must be between 1 and 99 cents' },
         { status: 400 }
@@ -92,8 +93,12 @@ export async function POST(request: Request) {
       client_order_id: uuidv4(),
     };
     
-    if (type === 'limit' && yes_price) {
+    // Add the appropriate price based on side
+    if (yes_price) {
       order.yes_price = parseInt(yes_price);
+    }
+    if (no_price) {
+      order.no_price = parseInt(no_price);
     }
     
     console.log('Placing order:', order);

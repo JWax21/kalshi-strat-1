@@ -192,13 +192,25 @@ export default function Dashboard() {
     const results: { ticker: string; success: boolean; error?: string }[] = [];
     
     for (const [ticker, market] of selectedMarkets) {
-      const payload = {
+      // Price in cents (1-99), based on favorite odds
+      const priceInCents = Math.round(market.favorite_odds * 100);
+      const side = market.favorite_side.toLowerCase();
+      
+      const payload: Record<string, any> = {
         ticker,
         action: 'buy',
-        side: market.favorite_side.toLowerCase(),
+        side,
         count: market.count,
-        type: 'market',
+        type: 'limit', // Kalshi requires limit orders with price
       };
+      
+      // Set price based on which side we're buying
+      if (side === 'yes') {
+        payload.yes_price = priceInCents;
+      } else {
+        payload.no_price = priceInCents;
+      }
+      
       console.log('Order payload:', payload);
       try {
         const res = await fetch('/api/orders', {

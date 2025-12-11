@@ -189,7 +189,8 @@ export interface KalshiOrder {
   side: 'yes' | 'no';
   count: number;
   type: 'limit' | 'market';
-  yes_price?: number; // Price in cents (1-99) for limit orders
+  yes_price?: number; // Price in cents (1-99) for limit orders on YES side
+  no_price?: number;  // Price in cents (1-99) for limit orders on NO side
   client_order_id: string;
 }
 
