@@ -42,21 +42,29 @@ export interface KalshiEvent {
   mutually_exclusive: boolean;
 }
 
-function generateSignature(timestamp: number, method: string, path: string): string {
-  const message = `${timestamp}${method}${path}`;
-  const sign = crypto.createSign('RSA-SHA256');
-  sign.update(message);
-  sign.end();
-  return sign.sign(KALSHI_CONFIG.privateKey, 'base64');
+function generateSignature(timestampMs: string, method: string, path: string): string {
+  // Strip query parameters from path before signing
+  const pathWithoutQuery = path.split('?')[0];
+  const message = `${timestampMs}${method}${pathWithoutQuery}`;
+  
+  // Use RSA-PSS with SHA256 as per Kalshi docs
+  const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+  const signature = crypto.sign('sha256', Buffer.from(message), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  });
+  
+  return signature.toString('base64');
 }
 
 async function fetchKalshi(endpoint: string, retries: number = 3): Promise<any> {
   for (let attempt = 0; attempt < retries; attempt++) {
-    const timestamp = Math.floor(Date.now() / 1000);
+    const timestampMs = Date.now().toString();
     const method = 'GET';
     const fullPath = `/trade-api/v2${endpoint}`;
     
-    const signature = generateSignature(timestamp, method, fullPath);
+    const signature = generateSignature(timestampMs, method, fullPath);
     
     const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
       method: 'GET',
@@ -64,7 +72,7 @@ async function fetchKalshi(endpoint: string, retries: number = 3): Promise<any> 
         'Content-Type': 'application/json',
         'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
         'KALSHI-ACCESS-SIGNATURE': signature,
-        'KALSHI-ACCESS-TIMESTAMP': timestamp.toString(),
+        'KALSHI-ACCESS-TIMESTAMP': timestampMs,
       },
     });
     
@@ -203,15 +211,16 @@ export interface KalshiOrderResponse {
 
 // POST request helper for authenticated endpoints
 async function postKalshi(endpoint: string, body: object): Promise<any> {
-  const timestamp = Math.floor(Date.now() / 1000);
+  const timestampMs = Date.now().toString();
   const method = 'POST';
   const fullPath = `/trade-api/v2${endpoint}`;
   
-  const signature = generateSignature(timestamp, method, fullPath);
+  const signature = generateSignature(timestampMs, method, fullPath);
   
   console.log('=== postKalshi Debug ===');
   console.log('Endpoint:', endpoint);
   console.log('Full URL:', `${KALSHI_CONFIG.baseUrl}${endpoint}`);
+  console.log('Timestamp (ms):', timestampMs);
   console.log('Request body:', JSON.stringify(body, null, 2));
   
   const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
@@ -220,7 +229,7 @@ async function postKalshi(endpoint: string, body: object): Promise<any> {
       'Content-Type': 'application/json',
       'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
       'KALSHI-ACCESS-SIGNATURE': signature,
-      'KALSHI-ACCESS-TIMESTAMP': timestamp.toString(),
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
     },
     body: JSON.stringify(body),
   });
@@ -258,12 +267,12 @@ export async function getBalance(): Promise<any> {
 
 // Cancel an order
 export async function cancelOrder(orderId: string): Promise<any> {
-  const timestamp = Math.floor(Date.now() / 1000);
+  const timestampMs = Date.now().toString();
   const method = 'DELETE';
   const endpoint = `/portfolio/orders/${orderId}`;
   const fullPath = `/trade-api/v2${endpoint}`;
   
-  const signature = generateSignature(timestamp, method, fullPath);
+  const signature = generateSignature(timestampMs, method, fullPath);
   
   const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
     method: 'DELETE',
@@ -271,7 +280,7 @@ export async function cancelOrder(orderId: string): Promise<any> {
       'Content-Type': 'application/json',
       'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
       'KALSHI-ACCESS-SIGNATURE': signature,
-      'KALSHI-ACCESS-TIMESTAMP': timestamp.toString(),
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
     },
   });
   
