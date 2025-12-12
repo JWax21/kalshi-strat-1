@@ -1,0 +1,13 @@
+{
+  "crons": [
+    {
+      "path": "/api/simulation/snapshot",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/simulation/settle",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}
+

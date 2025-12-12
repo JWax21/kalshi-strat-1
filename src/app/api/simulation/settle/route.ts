@@ -59,8 +59,8 @@ async function getMarketResult(ticker: string): Promise<{ settled: boolean; resu
   }
 }
 
-// POST - Check and settle pending orders
-export async function POST() {
+// Shared settle logic
+async function handleSettle() {
   try {
     // Get all pending orders
     const { data: pendingOrders, error: fetchError } = await supabase
@@ -155,5 +155,21 @@ export async function POST() {
       { status: 500 }
     );
   }
+}
+
+// GET - Called by Vercel Cron
+export async function GET(request: Request) {
+  // Verify cron secret in production
+  const authHeader = request.headers.get('Authorization');
+  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  return handleSettle();
+}
+
+// POST - Manual trigger from UI
+export async function POST() {
+  return handleSettle();
 }
 

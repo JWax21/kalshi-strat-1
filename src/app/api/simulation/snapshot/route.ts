@@ -5,15 +5,18 @@ import { getMarkets, filterHighOddsMarkets, getMarketOdds } from '@/lib/kalshi';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// POST - Take a new daily snapshot
-export async function POST(request: Request) {
-  try {
-    const body = await request.json().catch(() => ({}));
-    const unitsPerOrder = body.units || 10;
-    const minOdds = body.minOdds || 0.85;
-    const maxOdds = body.maxOdds || 0.995;
-    const minOpenInterest = body.minOpenInterest || 5000; // Only markets with 5K+ open interest
+interface SnapshotParams {
+  units: number;
+  minOdds: number;
+  maxOdds: number;
+  minOpenInterest: number;
+}
 
+// Shared snapshot logic
+async function handleSnapshot(params: SnapshotParams) {
+  const { units, minOdds, maxOdds, minOpenInterest } = params;
+
+  try {
     // Get today's date in YYYY-MM-DD format
     const today = new Date().toISOString().split('T')[0];
 
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
     // Calculate totals
     const totalCost = enrichedMarkets.reduce((sum, m) => {
       const priceCents = Math.round(m.favorite_odds * 100);
-      return sum + (priceCents * unitsPerOrder);
+      return sum + (priceCents * units);
     }, 0);
 
     // Create the snapshot
@@ -97,8 +100,8 @@ export async function POST(request: Request) {
     // Create simulation orders for each market
     const orders = enrichedMarkets.map(market => {
       const priceCents = Math.round(market.favorite_odds * 100);
-      const costCents = priceCents * unitsPerOrder;
-      const potentialProfitCents = (100 - priceCents) * unitsPerOrder;
+      const costCents = priceCents * units;
+      const potentialProfitCents = (100 - priceCents) * units;
 
       return {
         snapshot_id: snapshot.id,
@@ -107,7 +110,7 @@ export async function POST(request: Request) {
         title: market.title,
         side: market.favorite_side,
         price_cents: priceCents,
-        units: unitsPerOrder,
+        units: units,
         cost_cents: costCents,
         potential_profit_cents: potentialProfitCents,
         status: 'pending',
@@ -141,3 +144,26 @@ export async function POST(request: Request) {
   }
 }
 
+// GET - Called by Vercel Cron
+export async function GET(request: Request) {
+  // Verify cron secret in production (Vercel sends this header)
+  const authHeader = request.headers.get('Authorization');
+  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  // Use default parameters for cron
+  return handleSnapshot({ units: 10, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 5000 });
+}
+
+// POST - Manual snapshot trigger from UI
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  
+  return handleSnapshot({
+    units: body.units || 10,
+    minOdds: body.minOdds || 0.85,
+    maxOdds: body.maxOdds || 0.995,
+    minOpenInterest: body.minOpenInterest || 5000,
+  });
+}
