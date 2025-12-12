@@ -12,6 +12,7 @@ export async function POST(request: Request) {
     const unitsPerOrder = body.units || 10;
     const minOdds = body.minOdds || 0.85;
     const maxOdds = body.maxOdds || 0.995;
+    const minOpenInterest = body.minOpenInterest || 5000; // Only markets with 5K+ open interest
 
     // Get today's date in YYYY-MM-DD format
     const today = new Date().toISOString().split('T')[0];
@@ -51,8 +52,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // Filter to high-odds favorites
-    const highOddsMarkets = filterHighOddsMarkets(allMarkets, minOdds, maxOdds);
+    // Filter to high-odds favorites with sufficient open interest
+    const highOddsMarkets = filterHighOddsMarkets(allMarkets, minOdds, maxOdds)
+      .filter(market => market.open_interest >= minOpenInterest);
+    
+    console.log(`Filtered to ${highOddsMarkets.length} markets with OI >= ${minOpenInterest}`);
     
     // Enrich with favorite info
     const enrichedMarkets = highOddsMarkets.map((market) => {
@@ -67,7 +71,7 @@ export async function POST(request: Request) {
     if (enrichedMarkets.length === 0) {
       return NextResponse.json({
         success: false,
-        error: 'No high-odds markets found to snapshot',
+        error: `No high-odds markets found with open interest >= ${minOpenInterest}`,
       }, { status: 400 });
     }
 

@@ -396,7 +396,7 @@ export default function Dashboard() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Snapshot created: ${data.snapshot.total_markets} markets, $${data.snapshot.total_cost_dollars} simulated cost`);
+        alert(`Snapshot created: ${data.snapshot.total_markets} markets (OI ≥ 5K), $${data.snapshot.total_cost_dollars} simulated cost`);
         fetchSimulation();
       } else {
         alert(`Error: ${data.error}`);
@@ -869,7 +869,7 @@ export default function Dashboard() {
                     Creating...
                   </>
                 ) : (
-                  <>📸 Take Daily Snapshot</>
+                  <>📸 Take 10am Snapshot</>
                 )}
               </button>
               <button
@@ -935,7 +935,8 @@ export default function Dashboard() {
             ) : simulationSnapshots.length === 0 ? (
               <div className="text-center py-20 text-slate-400">
                 <p className="text-xl mb-4">No snapshots yet</p>
-                <p className="text-sm">Click "Take Daily Snapshot" to start tracking simulated orders</p>
+                <p className="text-sm">Click "Take 10am Snapshot" to start tracking simulated orders</p>
+                <p className="text-xs mt-2 text-slate-500">Only markets with 5K+ open interest are included</p>
               </div>
             ) : (
               <div className="space-y-4">
