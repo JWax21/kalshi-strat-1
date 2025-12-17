@@ -1066,11 +1066,26 @@ export default function Dashboard() {
             <div className="space-y-3">
               {Array.from(selectedMarkets.values()).map((m) => {
                 // Calculate cumulative fills at each price level for the favorite side
-                const levels = m.favorite_side === 'YES' ? m.orderbook?.yes : m.orderbook?.no;
-                let cumulativeCount = 0;
-                const cumulativeLevels = (levels || []).map(level => {
-                  cumulativeCount += level.count;
-                  return { ...level, cumulative: cumulativeCount };
+                // BUY side: bids on the favorite side (people wanting to buy)
+                const buyLevels = m.favorite_side === 'YES' ? m.orderbook?.yes : m.orderbook?.no;
+                let buyCumulativeCount = 0;
+                const cumulativeBuyLevels = (buyLevels || []).map(level => {
+                  buyCumulativeCount += level.count;
+                  return { ...level, cumulative: buyCumulativeCount };
+                });
+
+                // SELL side: bids on the opposite side (converted to sell orders)
+                // NO bid at price P = YES sell at (100-P), and vice versa
+                const sellLevelsRaw = m.favorite_side === 'YES' ? m.orderbook?.no : m.orderbook?.yes;
+                const sellLevels = (sellLevelsRaw || []).map(level => ({
+                  ...level,
+                  price: 100 - level.price, // Convert to equivalent sell price
+                })).sort((a, b) => a.price - b.price); // Sort ascending (lowest ask first)
+                
+                let sellCumulativeCount = 0;
+                const cumulativeSellLevels = sellLevels.map(level => {
+                  sellCumulativeCount += level.count;
+                  return { ...level, cumulative: sellCumulativeCount };
                 });
 
                 return (
@@ -1097,55 +1112,99 @@ export default function Dashboard() {
                       <div className="text-xs text-slate-500 py-2">Loading orderbook...</div>
                     ) : m.orderbook ? (
                       <div className="mt-2 border-t border-slate-700 pt-2">
-                        <div className="text-[10px] text-slate-500 uppercase mb-1">
-                          {m.favorite_side} Depth (Price → Qty / Cumulative)
+                        {/* Two-column layout: Sell (asks) on left, Buy (bids) on right */}
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* SELL SIDE (Asks) - people selling to you */}
+                          <div>
+                            <div className="text-[10px] text-red-400 uppercase mb-1 text-center">
+                              Sells (Asks)
+                            </div>
+                            <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                              {cumulativeSellLevels.length > 0 ? (
+                                cumulativeSellLevels.slice(0, 8).map((level, i) => (
+                                  <div 
+                                    key={i} 
+                                    className="flex justify-between text-xs font-mono text-red-400"
+                                  >
+                                    <span>{level.price}¢</span>
+                                    <span>{level.count.toLocaleString()}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-xs text-slate-500 text-center">No asks</div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* BUY SIDE (Bids) - people buying from you */}
+                          <div>
+                            <div className="text-[10px] text-emerald-400 uppercase mb-1 text-center">
+                              Buys (Bids)
+                            </div>
+                            <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                              {cumulativeBuyLevels.length > 0 ? (
+                                cumulativeBuyLevels.slice(0, 8).map((level, i) => (
+                                  <div 
+                                    key={i} 
+                                    className="flex justify-between text-xs font-mono text-emerald-400"
+                                  >
+                                    <span>{level.price}¢</span>
+                                    <span>{level.count.toLocaleString()}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-xs text-slate-500 text-center">No bids</div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                          {cumulativeLevels.length > 0 ? (
-                            cumulativeLevels.slice(0, 10).map((level, i) => {
-                              const isAtOrBelowTarget = level.price <= Math.round(m.favorite_odds * 100);
-                              return (
-                                <div 
-                                  key={i} 
-                                  className={`flex justify-between text-xs font-mono ${
-                                    isAtOrBelowTarget ? 'text-emerald-400' : 'text-slate-400'
-                                  }`}
-                                >
-                                  <span>{level.price}¢</span>
-                                  <span>
-                                    {level.count.toLocaleString()} / 
-                                    <span className={`${isAtOrBelowTarget ? 'text-emerald-300 font-bold' : ''}`}>
-                                      {level.cumulative.toLocaleString()}
-                                    </span>
-                                  </span>
-                                </div>
-                              );
-                            })
-                          ) : (
-                            <div className="text-xs text-slate-500">No bids available</div>
-                          )}
+
+                        {/* Best prices summary */}
+                        <div className="mt-2 pt-2 border-t border-slate-700">
+                          <div className="flex justify-between text-xs">
+                            <div>
+                              <span className="text-slate-500">Best Ask: </span>
+                              <span className="text-red-400 font-mono">
+                                {cumulativeSellLevels.length > 0 ? `${cumulativeSellLevels[0].price}¢` : '-'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Best Bid: </span>
+                              <span className="text-emerald-400 font-mono">
+                                {cumulativeBuyLevels.length > 0 ? `${cumulativeBuyLevels[0].price}¢` : '-'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-center text-xs mt-1">
+                            <span className="text-slate-500">Spread: </span>
+                            <span className="text-amber-400 font-mono">
+                              {cumulativeSellLevels.length > 0 && cumulativeBuyLevels.length > 0
+                                ? `${cumulativeSellLevels[0].price - cumulativeBuyLevels[0].price}¢`
+                                : '-'}
+                            </span>
+                          </div>
                         </div>
-                        {cumulativeLevels.length > 0 && (
+
+                        {/* Fill Summary for buying */}
+                        {cumulativeSellLevels.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-slate-700">
-                            <div className="text-[10px] text-slate-500 uppercase mb-1">Fill Summary</div>
+                            <div className="text-[10px] text-slate-500 uppercase mb-1">Buy Fill (from asks)</div>
                             <div className="grid grid-cols-3 gap-1 text-xs">
                               {[100, 250, 500].map(qty => {
-                                // Find the worst price needed to fill this quantity
-                                let remaining = qty;
                                 let worstPrice = 0;
                                 let canFill = false;
-                                for (const level of cumulativeLevels) {
+                                for (const level of cumulativeSellLevels) {
                                   if (level.cumulative >= qty) {
                                     worstPrice = level.price;
                                     canFill = true;
                                     break;
                                   }
                                 }
-                                if (!canFill && cumulativeLevels.length > 0) {
-                                  worstPrice = cumulativeLevels[cumulativeLevels.length - 1].price;
+                                if (!canFill && cumulativeSellLevels.length > 0) {
+                                  worstPrice = cumulativeSellLevels[cumulativeSellLevels.length - 1].price;
                                 }
-                                const totalAvailable = cumulativeLevels.length > 0 
-                                  ? cumulativeLevels[cumulativeLevels.length - 1].cumulative 
+                                const totalAvailable = cumulativeSellLevels.length > 0 
+                                  ? cumulativeSellLevels[cumulativeSellLevels.length - 1].cumulative 
                                   : 0;
                                 
                                 return (
