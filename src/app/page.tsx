@@ -1227,6 +1227,60 @@ export default function Dashboard() {
             </div>
           </div>
           
+          {/* Deployment Summary */}
+          {selectedMarkets.size > 0 && (
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Deployment Summary (at best ask)</div>
+              <div className="space-y-1 max-h-32 overflow-y-auto mb-3">
+                {Array.from(selectedMarkets.values()).map((m) => {
+                  // Get sell side (asks) for the favorite
+                  const sellLevelsRaw = m.favorite_side === 'YES' ? m.orderbook?.no : m.orderbook?.yes;
+                  const bestAskRaw = sellLevelsRaw?.[0];
+                  const bestAskPrice = bestAskRaw ? 100 - bestAskRaw.price : null;
+                  const availableAtBest = bestAskRaw?.count || 0;
+                  const maxCostCents = bestAskPrice ? bestAskPrice * availableAtBest : 0;
+                  
+                  return (
+                    <div key={m.ticker} className="flex justify-between text-xs">
+                      <span className="text-slate-400 truncate max-w-[140px]">{m.title.split(' ').slice(0, 3).join(' ')}...</span>
+                      <span className="text-white font-mono">
+                        {availableAtBest.toLocaleString()} @ {bestAskPrice || '-'}¢ = ${(maxCostCents / 100).toFixed(0)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              
+              {/* Totals */}
+              {(() => {
+                let totalAvailable = 0;
+                let totalMaxCost = 0;
+                
+                Array.from(selectedMarkets.values()).forEach((m) => {
+                  const sellLevelsRaw = m.favorite_side === 'YES' ? m.orderbook?.no : m.orderbook?.yes;
+                  const bestAskRaw = sellLevelsRaw?.[0];
+                  const bestAskPrice = bestAskRaw ? 100 - bestAskRaw.price : 0;
+                  const availableAtBest = bestAskRaw?.count || 0;
+                  totalAvailable += availableAtBest;
+                  totalMaxCost += bestAskPrice * availableAtBest;
+                });
+                
+                return (
+                  <div className="border-t border-slate-700 pt-2">
+                    <div className="flex justify-between text-sm font-bold">
+                      <span className="text-slate-300">Total at Best Ask</span>
+                      <span className="text-emerald-400 font-mono">{totalAvailable.toLocaleString()} units</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-bold mt-1">
+                      <span className="text-slate-300">Max Deployable</span>
+                      <span className="text-amber-400 font-mono">${(totalMaxCost / 100).toLocaleString()}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="p-4 border-t border-slate-800 space-y-2">
             <p className="text-xs text-slate-500 text-center">Press Enter to submit</p>
             <button
