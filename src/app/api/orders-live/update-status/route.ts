@@ -117,9 +117,15 @@ async function checkOrderFilled(ticker: string, orderId: string): Promise<{
 }
 
 // Check settlements to see if payout was received (from /portfolio/settlements)
-async function checkSettlementReceived(ticker: string): Promise<{
+// Response: { ticker, event_ticker, market_result, yes_count, yes_total_cost, no_count, no_total_cost, revenue, settled_time, fee_cost, value }
+async function checkSettlementReceived(ticker: string, side: string): Promise<{
   settled: boolean;
+  market_result: 'yes' | 'no' | null;
   revenue: number;
+  count: number;
+  total_cost: number;
+  fee_cost: number;
+  settled_time: string | null;
 }> {
   try {
     const data = await kalshiFetch(`/portfolio/settlements?ticker=${ticker}&limit=10`);
@@ -129,16 +135,41 @@ async function checkSettlementReceived(ticker: string): Promise<{
     const settlement = settlements.find((s: any) => s.ticker === ticker);
     
     if (settlement) {
+      // Get the count and cost for the side we bet on
+      const count = side.toLowerCase() === 'yes' ? (settlement.yes_count || 0) : (settlement.no_count || 0);
+      const totalCost = side.toLowerCase() === 'yes' ? (settlement.yes_total_cost || 0) : (settlement.no_total_cost || 0);
+      
       return { 
         settled: true, 
-        revenue: settlement.revenue || 0 // Revenue in cents
+        market_result: settlement.market_result || null,
+        revenue: settlement.revenue || 0, // Revenue in cents (payout for winning)
+        count: count,
+        total_cost: totalCost,
+        fee_cost: parseFloat(settlement.fee_cost || '0') * 100, // Convert to cents
+        settled_time: settlement.settled_time || null,
       };
     }
     
-    return { settled: false, revenue: 0 };
+    return { 
+      settled: false, 
+      market_result: null,
+      revenue: 0,
+      count: 0,
+      total_cost: 0,
+      fee_cost: 0,
+      settled_time: null,
+    };
   } catch (error) {
     console.error(`Error checking settlement for ${ticker}:`, error);
-    return { settled: false, revenue: 0 };
+    return { 
+      settled: false, 
+      market_result: null,
+      revenue: 0,
+      count: 0,
+      total_cost: 0,
+      fee_cost: 0,
+      settled_time: null,
+    };
   }
 }
 
@@ -224,18 +255,42 @@ async function updateOrderStatuses() {
       
       // Check if won orders have received their settlement via /portfolio/settlements
       if (order.result_status === 'won' && order.settlement_status === 'pending') {
-        const settlementResult = await checkSettlementReceived(order.ticker);
+        const settlementResult = await checkSettlementReceived(order.ticker, order.side);
+        
+        if (settlementResult.settled) {
+          // Verify we actually won (market_result matches our side)
+          const weWon = order.side.toLowerCase() === settlementResult.market_result;
+          
+          await supabase
+            .from('orders')
+            .update({
+              settlement_status: 'success',
+              settlement_status_at: settlementResult.settled_time || new Date().toISOString(),
+              // Store actual revenue received
+              actual_payout_cents: settlementResult.revenue,
+            })
+            .eq('id', order.id);
+          
+          console.log(`Settlement received for ${order.ticker}: revenue=$${(settlementResult.revenue / 100).toFixed(2)}, count=${settlementResult.count}, weWon=${weWon}`);
+        }
+        
+        await new Promise(r => setTimeout(r, 100));
+      }
+      
+      // Also check if LOST orders appear in settlements (to confirm closure)
+      if (order.result_status === 'lost' && order.settlement_status !== 'closed') {
+        const settlementResult = await checkSettlementReceived(order.ticker, order.side);
         
         if (settlementResult.settled) {
           await supabase
             .from('orders')
             .update({
-              settlement_status: 'success',
-              settlement_status_at: new Date().toISOString(),
+              settlement_status: 'closed',
+              settlement_status_at: settlementResult.settled_time || new Date().toISOString(),
             })
             .eq('id', order.id);
           
-          console.log(`Settlement received for ${order.ticker}: $${(settlementResult.revenue / 100).toFixed(2)}`);
+          console.log(`Loss confirmed for ${order.ticker} via settlements API`);
         }
         
         await new Promise(r => setTimeout(r, 100));
