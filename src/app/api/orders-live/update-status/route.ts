@@ -108,6 +108,47 @@ async function getMarketResult(ticker: string): Promise<{
   }
 }
 
+// Helper to check if settlement has been received
+async function checkSettlementReceived(ticker: string): Promise<boolean> {
+  try {
+    const timestampMs = Date.now().toString();
+    const method = 'GET';
+    const endpoint = `/portfolio/settlements?ticker=${ticker}&limit=10`;
+    const fullPath = `/trade-api/v2/portfolio/settlements`;
+
+    const message = `${timestampMs}${method}${fullPath}`;
+    const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+    const signature = crypto.sign('sha256', Buffer.from(message), {
+      key: privateKey,
+      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    }).toString('base64');
+
+    const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+        'KALSHI-ACCESS-SIGNATURE': signature,
+        'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+      },
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const data = await response.json();
+    const settlements = data.settlements || [];
+    
+    // Check if there's a settlement for this ticker
+    return settlements.some((s: any) => s.ticker === ticker);
+  } catch (error) {
+    console.error(`Error checking settlement for ${ticker}:`, error);
+    return false;
+  }
+}
+
 async function updateOrderStatuses() {
   // Get all orders that are not in final state
   // Final states: settlement_status = 'closed' or 'success'
@@ -174,13 +215,14 @@ async function updateOrderStatuses() {
       }
       
       // Then check if confirmed orders have market results
-      if (order.placement_status === 'confirmed' || order.placement_status === 'placed') {
+      if (order.placement_status === 'confirmed' && order.result_status === 'undecided') {
         const { settled, result } = await getMarketResult(order.ticker);
 
         if (settled && result) {
           const won = order.side.toLowerCase() === result;
           const resultStatus = won ? 'won' : 'lost';
-          const settlementStatus = won ? 'success' : 'closed';
+          // If lost, close immediately. If won, keep pending until funds received.
+          const settlementStatus = won ? 'pending' : 'closed';
 
           await supabase
             .from('orders')
@@ -188,7 +230,7 @@ async function updateOrderStatuses() {
               result_status: resultStatus,
               result_status_at: new Date().toISOString(),
               settlement_status: settlementStatus,
-              settlement_status_at: new Date().toISOString(),
+              settlement_status_at: won ? null : new Date().toISOString(),
             })
             .eq('id', order.id);
 
@@ -196,7 +238,24 @@ async function updateOrderStatuses() {
           if (won) wonCount++;
           else lostCount++;
 
-          console.log(`Updated ${order.ticker}: ${resultStatus}`);
+          console.log(`Updated ${order.ticker}: ${resultStatus}, settlement: ${settlementStatus}`);
+        }
+      }
+      
+      // Check if won orders have received their settlement
+      if (order.result_status === 'won' && order.settlement_status === 'pending') {
+        const settlementReceived = await checkSettlementReceived(order.ticker);
+        
+        if (settlementReceived) {
+          await supabase
+            .from('orders')
+            .update({
+              settlement_status: 'success',
+              settlement_status_at: new Date().toISOString(),
+            })
+            .eq('id', order.id);
+          
+          console.log(`Settlement received for ${order.ticker}`);
         }
       }
 
