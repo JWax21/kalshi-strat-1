@@ -78,6 +78,26 @@ async function getAllKalshiOrders(): Promise<any[]> {
   return allOrders;
 }
 
+// Get all settlements from Kalshi
+async function getAllSettlements(): Promise<any[]> {
+  const allSettlements: any[] = [];
+  let cursor: string | undefined;
+  
+  do {
+    const endpoint = cursor 
+      ? `/portfolio/settlements?limit=100&cursor=${cursor}`
+      : `/portfolio/settlements?limit=100`;
+    
+    const data = await kalshiFetch(endpoint);
+    allSettlements.push(...(data.settlements || []));
+    cursor = data.cursor;
+    
+    await new Promise(r => setTimeout(r, 100));
+  } while (cursor);
+  
+  return allSettlements;
+}
+
 async function reconcileOrders() {
   // Get all fills from Kalshi (these are actual executed trades)
   console.log('Fetching all fills from Kalshi...');
@@ -88,6 +108,11 @@ async function reconcileOrders() {
   console.log('Fetching all orders from Kalshi...');
   const kalshiOrders = await getAllKalshiOrders();
   console.log(`Found ${kalshiOrders.length} orders in Kalshi`);
+  
+  // Get all settlements from Kalshi (for fees and payout data)
+  console.log('Fetching all settlements from Kalshi...');
+  const kalshiSettlements = await getAllSettlements();
+  console.log(`Found ${kalshiSettlements.length} settlements in Kalshi`);
   
   // Create lookup by order_id
   const fillsByOrderId = new Map<string, any[]>();
@@ -102,6 +127,12 @@ async function reconcileOrders() {
   const kalshiOrderById = new Map<string, any>();
   for (const order of kalshiOrders) {
     kalshiOrderById.set(order.order_id, order);
+  }
+  
+  // Create lookup by ticker for settlements
+  const settlementByTicker = new Map<string, any>();
+  for (const settlement of kalshiSettlements) {
+    settlementByTicker.set(settlement.ticker, settlement);
   }
   
   // Get all database orders
@@ -121,6 +152,8 @@ async function reconcileOrders() {
     cancelled: 0,
     not_found: 0,
     updated: 0,
+    settlements_updated: 0,
+    fees_updated: 0,
     errors: [] as string[],
   };
   
@@ -259,6 +292,67 @@ async function reconcileOrders() {
     orderDetails.push(detail);
   }
   
+  // ===== RECONCILE SETTLEMENTS (fees, payout, result status) =====
+  console.log('Reconciling settlements...');
+  
+  // Get all confirmed orders to check against settlements
+  const { data: confirmedDbOrders } = await supabase
+    .from('orders')
+    .select('*')
+    .eq('placement_status', 'confirmed');
+  
+  for (const dbOrder of confirmedDbOrders || []) {
+    const settlement = settlementByTicker.get(dbOrder.ticker);
+    
+    if (settlement) {
+      // Settlement exists for this ticker
+      const marketResult = settlement.market_result; // 'yes' or 'no'
+      const won = dbOrder.side.toLowerCase() === marketResult;
+      const feeCents = Math.round(parseFloat(settlement.fee_cost || '0') * 100);
+      const revenue = settlement.revenue || 0;
+      
+      const updates: any = {};
+      let needsUpdate = false;
+      
+      // Update result status if not set
+      if (dbOrder.result_status === 'undecided') {
+        updates.result_status = won ? 'won' : 'lost';
+        updates.result_status_at = settlement.settled_time || new Date().toISOString();
+        needsUpdate = true;
+      }
+      
+      // Update settlement status
+      if (won && dbOrder.settlement_status !== 'success') {
+        updates.settlement_status = 'success';
+        updates.settlement_status_at = settlement.settled_time || new Date().toISOString();
+        updates.actual_payout_cents = revenue;
+        needsUpdate = true;
+        results.settlements_updated++;
+      } else if (!won && dbOrder.settlement_status !== 'closed') {
+        updates.settlement_status = 'closed';
+        updates.settlement_status_at = settlement.settled_time || new Date().toISOString();
+        needsUpdate = true;
+        results.settlements_updated++;
+      }
+      
+      // Update fees if not set or different
+      if (feeCents > 0 && dbOrder.fee_cents !== feeCents) {
+        updates.fee_cents = feeCents;
+        needsUpdate = true;
+        results.fees_updated++;
+      }
+      
+      if (needsUpdate) {
+        await supabase
+          .from('orders')
+          .update(updates)
+          .eq('id', dbOrder.id);
+        
+        console.log(`Updated settlement for ${dbOrder.ticker}: won=${won}, fee=${feeCents}¢`);
+      }
+    }
+  }
+  
   // Also get orders without kalshi_order_id (never sent to Kalshi)
   const { data: pendingOrders } = await supabase
     .from('orders')
@@ -274,6 +368,7 @@ async function reconcileOrders() {
       never_sent_to_kalshi: neverSent,
       total_kalshi_fills: kalshiFills.length,
       total_kalshi_orders: kalshiOrders.length,
+      total_kalshi_settlements: kalshiSettlements.length,
     },
     orders: orderDetails,
   };
