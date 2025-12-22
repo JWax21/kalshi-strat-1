@@ -93,10 +93,11 @@ export async function GET(request: Request) {
     const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
     const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
     
-    // Settlement status breakdown (only from orders with results)
-    const pendingSettlement = allOrders.filter(o => o.settlement_status === 'pending');
-    const closedOrders = allOrders.filter(o => o.settlement_status === 'closed');
-    const successOrders = allOrders.filter(o => o.settlement_status === 'success');
+    // Settlement status breakdown (only from orders with result = won or lost)
+    const decidedOrdersForSettlement = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+    const pendingSettlement = decidedOrdersForSettlement.filter(o => o.settlement_status === 'pending');
+    const closedOrders = decidedOrdersForSettlement.filter(o => o.settlement_status === 'closed');
+    const successOrders = decidedOrdersForSettlement.filter(o => o.settlement_status === 'success');
     
     const decidedOrders = [...wonOrders, ...lostOrders];
 
