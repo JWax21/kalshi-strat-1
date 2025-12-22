@@ -59,11 +59,8 @@ async function prepareOrders(params: PrepareParams) {
   // Filter by odds
   let filteredMarkets = filterHighOddsMarkets(allMarkets, minOdds, maxOdds);
 
-  // Filter by open interest (exclude $100-$1000 range, require minimum)
+  // Filter by open interest (require minimum OI)
   filteredMarkets = filteredMarkets.filter(m => {
-    // Exclude OI between 100-1000 (low liquidity zone)
-    if (m.open_interest >= 100 && m.open_interest <= 1000) return false;
-    // Require minimum OI
     return m.open_interest >= minOpenInterest;
   });
 
@@ -162,8 +159,8 @@ export async function GET(request: Request) {
       unitSizeCents: 100, // $1 default
       minOdds: 0.85,
       maxOdds: 0.995,
-      minOpenInterest: 5000,
-      maxOpenInterest: 100, // Used to exclude 100-1000 range
+      minOpenInterest: 1000, // Include all markets with 1K+ OI
+      maxOpenInterest: 100,
     });
 
     return NextResponse.json(result);
@@ -185,7 +182,7 @@ export async function POST(request: Request) {
       unitSizeCents: body.unitSizeCents || 100,
       minOdds: body.minOdds || 0.85,
       maxOdds: body.maxOdds || 0.995,
-      minOpenInterest: body.minOpenInterest || 5000,
+      minOpenInterest: body.minOpenInterest || 1000, // Default to 1K+ OI
       maxOpenInterest: body.maxOpenInterest || 100,
     });
 

@@ -507,7 +507,7 @@ export default function Dashboard() {
       const res = await fetch('/api/orders-live/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 5000 }),
+        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 1000 }),
       });
       const data = await res.json();
       if (data.success) {
