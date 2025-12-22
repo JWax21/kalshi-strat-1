@@ -1287,137 +1287,83 @@ export default function Dashboard() {
                   {/* Status Breakdowns */}
                   <div className="space-y-4">
                     {/* Placement Status */}
-                    <div>
-                      <div className="text-sm font-medium text-slate-400 mb-2">Placement Status</div>
-                      <div className="bg-slate-800 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <tbody>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Pending</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-slate-700 text-slate-300 rounded text-xs font-medium">
-                                  {liveOrdersStats.placement_breakdown.pending}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Placed (Resting)</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.placement_breakdown.placed}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Confirmed (Filled)</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.placement_breakdown.confirmed}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="bg-slate-700/50">
-                              <td className="px-3 py-2 text-white font-medium">Total</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-slate-600 text-white rounded text-xs font-bold">
-                                  {(liveOrdersStats.placement_breakdown.pending || 0) + 
-                                   (liveOrdersStats.placement_breakdown.placed || 0) + 
-                                   (liveOrdersStats.placement_breakdown.confirmed || 0)}
-                                </span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                    <div className="bg-slate-800/50 rounded-lg p-4">
+                      <div className="text-sm font-medium text-white mb-3">Placement Status</div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Pending</span>
+                          <span className="text-white">{liveOrdersStats.placement_breakdown.pending}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Placed (Resting)</span>
+                          <span className="text-white">{liveOrdersStats.placement_breakdown.placed}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Confirmed (Filled)</span>
+                          <span className="text-white">{liveOrdersStats.placement_breakdown.confirmed}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-slate-700">
+                          <span className="text-white font-medium">Total</span>
+                          <span className="text-white font-medium">
+                            {(liveOrdersStats.placement_breakdown.pending || 0) + 
+                             (liveOrdersStats.placement_breakdown.placed || 0) + 
+                             (liveOrdersStats.placement_breakdown.confirmed || 0)}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
                     {/* Result Status */}
-                    <div>
-                      <div className="text-sm font-medium text-slate-400 mb-2">Result Status</div>
-                      <div className="bg-slate-800 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <tbody>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Undecided</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-slate-700 text-slate-300 rounded text-xs font-medium">
-                                  {liveOrdersStats.result_breakdown.undecided}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Won</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.result_breakdown.won}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Lost</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.result_breakdown.lost}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="bg-slate-700/50">
-                              <td className="px-3 py-2 text-white font-medium">Total (Confirmed)</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-slate-600 text-white rounded text-xs font-bold">
-                                  {(liveOrdersStats.result_breakdown.undecided || 0) + 
-                                   (liveOrdersStats.result_breakdown.won || 0) + 
-                                   (liveOrdersStats.result_breakdown.lost || 0)}
-                                </span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                    <div className="bg-slate-800/50 rounded-lg p-4">
+                      <div className="text-sm font-medium text-white mb-3">Result Status</div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Undecided</span>
+                          <span className="text-white">{liveOrdersStats.result_breakdown.undecided}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Won</span>
+                          <span className="text-emerald-400">{liveOrdersStats.result_breakdown.won}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Lost</span>
+                          <span className="text-red-400">{liveOrdersStats.result_breakdown.lost}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-slate-700">
+                          <span className="text-white font-medium">Total</span>
+                          <span className="text-white font-medium">
+                            {(liveOrdersStats.result_breakdown.undecided || 0) + 
+                             (liveOrdersStats.result_breakdown.won || 0) + 
+                             (liveOrdersStats.result_breakdown.lost || 0)}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
                     {/* Settlement Status */}
-                    <div>
-                      <div className="text-sm font-medium text-slate-400 mb-2">Settlement Status</div>
-                      <div className="bg-slate-800 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <tbody>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Pending</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.settlement_breakdown.pending}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Closed (Lost)</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.settlement_breakdown.closed}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Success (Paid)</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
-                                  {liveOrdersStats.settlement_breakdown.success}
-                                </span>
-                              </td>
-                            </tr>
-                            <tr className="bg-slate-700/50">
-                              <td className="px-3 py-2 text-white font-medium">Total</td>
-                              <td className="px-3 py-2 text-right">
-                                <span className="px-2 py-0.5 bg-slate-600 text-white rounded text-xs font-bold">
-                                  {(liveOrdersStats.settlement_breakdown.pending || 0) + 
-                                   (liveOrdersStats.settlement_breakdown.closed || 0) + 
-                                   (liveOrdersStats.settlement_breakdown.success || 0)}
-                                </span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
+                    <div className="bg-slate-800/50 rounded-lg p-4">
+                      <div className="text-sm font-medium text-white mb-3">Settlement Status</div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Pending</span>
+                          <span className="text-yellow-400">{liveOrdersStats.settlement_breakdown.pending}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Closed (Lost)</span>
+                          <span className="text-red-400">{liveOrdersStats.settlement_breakdown.closed}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Success (Paid)</span>
+                          <span className="text-emerald-400">{liveOrdersStats.settlement_breakdown.success}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-slate-700">
+                          <span className="text-white font-medium">Total</span>
+                          <span className="text-white font-medium">
+                            {(liveOrdersStats.settlement_breakdown.pending || 0) + 
+                             (liveOrdersStats.settlement_breakdown.closed || 0) + 
+                             (liveOrdersStats.settlement_breakdown.success || 0)}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
