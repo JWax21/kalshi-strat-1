@@ -180,14 +180,51 @@ interface PortfolioData {
 }
 
 export default function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('markets');
-  
-  // Auth state
+  // Auth state (must be first)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUsername, setAuthUsername] = useState('');
   const [authPin, setAuthPin] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+
+  // All other state hooks (must come before any conditional returns)
+  const [activeTab, setActiveTab] = useState<Tab>('markets');
+  const [portfolioSubTab, setPortfolioSubTab] = useState<PortfolioSubTab>('positions');
+  const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
+  const [marketsLoading, setMarketsLoading] = useState(false);
+  const [marketsError, setMarketsError] = useState<string | null>(null);
+  const [loadingSeconds, setLoadingSeconds] = useState(0.0);
+  const [minOdds] = useState(0.85);
+  const sportsOnlyMarkets = true;
+  const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+  const [sportsOnly, setSportsOnly] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [displayOddsMin, setDisplayOddsMin] = useState(85);
+  const [displayOddsMax, setDisplayOddsMax] = useState(99);
+  const [selectedSeries, setSelectedSeries] = useState<string>('All');
+  const [selectedMarkets, setSelectedMarkets] = useState<Map<string, SelectedMarket>>(new Map());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [orderCount, setOrderCount] = useState(1);
+  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
+  const [portfolioLoading, setPortfolioLoading] = useState(false);
+  const [simulationSnapshots, setSimulationSnapshots] = useState<SimulationSnapshotData[]>([]);
+  const [simulationStats, setSimulationStats] = useState<SimulationStats | null>(null);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [snapshotCreating, setSnapshotCreating] = useState(false);
+  const [settlingOrders, setSettlingOrders] = useState(false);
+  const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
+  const [orderBatches, setOrderBatches] = useState<OrderBatch[]>([]);
+  const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
+  const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
+  const [preparingOrders, setPreparingOrders] = useState(false);
+  const [executingOrders, setExecutingOrders] = useState(false);
+  const [updatingStatuses, setUpdatingStatuses] = useState(false);
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [nextRefresh, setNextRefresh] = useState<number>(5 * 60);
 
   // Check for existing auth on mount
   useEffect(() => {
@@ -228,104 +265,6 @@ export default function Dashboard() {
     setAuthUsername('');
     setAuthPin('');
   };
-
-  // Show login screen if not authenticated
-  if (!isAuthenticated) {
-    return (
-      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="bg-slate-900 rounded-2xl p-8 w-full max-w-md border border-slate-800 shadow-2xl">
-          <div className="text-center mb-8">
-            <img src="/jl.png" alt="Logo" className="w-16 h-16 rounded-lg mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-white">Kalshi Favorites Fund</h1>
-            <p className="text-slate-400 mt-2">Enter credentials to continue</p>
-          </div>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">Username</label>
-              <input
-                type="text"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-                placeholder="Enter username"
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">PIN</label>
-              <input
-                type="password"
-                value={authPin}
-                onChange={(e) => setAuthPin(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-                placeholder="Enter PIN"
-              />
-            </div>
-            
-            {authError && (
-              <div className="text-red-400 text-sm text-center py-2 bg-red-500/10 rounded-lg">
-                {authError}
-              </div>
-            )}
-            
-            <button
-              onClick={handleLogin}
-              disabled={authLoading}
-              className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 transition-colors disabled:opacity-50"
-            >
-              {authLoading ? 'Verifying...' : 'Login'}
-            </button>
-          </div>
-        </div>
-      </main>
-    );
-  }
-  const [portfolioSubTab, setPortfolioSubTab] = useState<PortfolioSubTab>('positions');
-  const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
-  const [marketsLoading, setMarketsLoading] = useState(false);
-  const [marketsError, setMarketsError] = useState<string | null>(null);
-  const [loadingSeconds, setLoadingSeconds] = useState(0.0);
-  const [minOdds] = useState(0.85); // Default 85%, controlled by display slider
-  const sportsOnlyMarkets = true; // Always sports only
-  const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
-  const [eventsLoading, setEventsLoading] = useState(false);
-  const [eventsError, setEventsError] = useState<string | null>(null);
-  const [sportsOnly, setSportsOnly] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [displayOddsMin, setDisplayOddsMin] = useState(85);
-  const [displayOddsMax, setDisplayOddsMax] = useState(99);
-  const [selectedSeries, setSelectedSeries] = useState<string>('All');
-  
-  // Batch order state
-  const [selectedMarkets, setSelectedMarkets] = useState<Map<string, SelectedMarket>>(new Map());
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [orderSubmitting, setOrderSubmitting] = useState(false);
-  const [orderCount, setOrderCount] = useState(1); // Default contracts per order
-  
-  // Portfolio state
-  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
-  const [portfolioLoading, setPortfolioLoading] = useState(false);
-
-  // Simulation state
-  const [simulationSnapshots, setSimulationSnapshots] = useState<SimulationSnapshotData[]>([]);
-  const [simulationStats, setSimulationStats] = useState<SimulationStats | null>(null);
-  const [simulationLoading, setSimulationLoading] = useState(false);
-  const [snapshotCreating, setSnapshotCreating] = useState(false);
-  const [settlingOrders, setSettlingOrders] = useState(false);
-  const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
-
-  // Live Orders state
-  const [orderBatches, setOrderBatches] = useState<OrderBatch[]>([]);
-  const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
-  const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
-  const [preparingOrders, setPreparingOrders] = useState(false);
-  const [executingOrders, setExecutingOrders] = useState(false);
-  const [updatingStatuses, setUpdatingStatuses] = useState(false);
-  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
-  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const fetchMarkets = useCallback(async () => {
     setMarketsLoading(true);
@@ -709,7 +648,6 @@ export default function Dashboard() {
   }, [fetchMarkets]);
 
   // Calculate next refresh time
-  const [nextRefresh, setNextRefresh] = useState<number>(5 * 60);
   useEffect(() => {
     const timer = setInterval(() => {
       setNextRefresh(prev => prev <= 1 ? 5 * 60 : prev - 1);
@@ -818,6 +756,61 @@ export default function Dashboard() {
     '100K - 1M': filteredMarkets.filter(m => m.open_interest >= 100000 && m.open_interest < 1000000).length,
     '1M+': filteredMarkets.filter(m => m.open_interest >= 1000000).length,
   };
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="bg-slate-900 rounded-2xl p-8 w-full max-w-md border border-slate-800 shadow-2xl">
+          <div className="text-center mb-8">
+            <img src="/jl.png" alt="Logo" className="w-16 h-16 rounded-lg mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-white">Kalshi Favorites Fund</h1>
+            <p className="text-slate-400 mt-2">Enter credentials to continue</p>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Username</label>
+              <input
+                type="text"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                placeholder="Enter username"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">PIN</label>
+              <input
+                type="password"
+                value={authPin}
+                onChange={(e) => setAuthPin(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                placeholder="Enter PIN"
+              />
+            </div>
+            
+            {authError && (
+              <div className="text-red-400 text-sm text-center py-2 bg-red-500/10 rounded-lg">
+                {authError}
+              </div>
+            )}
+            
+            <button
+              onClick={handleLogin}
+              disabled={authLoading}
+              className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 transition-colors disabled:opacity-50"
+            >
+              {authLoading ? 'Verifying...' : 'Login'}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-950">
