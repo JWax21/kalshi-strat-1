@@ -6,56 +6,6 @@ import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Helper to check order fill status
-async function getOrderStatus(orderId: string): Promise<{
-  status: string;
-  filledCount: number;
-  yesPrice: number | null;
-  noPrice: number | null;
-}> {
-  try {
-    const timestampMs = Date.now().toString();
-    const method = 'GET';
-    const endpoint = `/portfolio/orders/${orderId}`;
-    const fullPath = `/trade-api/v2${endpoint}`;
-
-    const message = `${timestampMs}${method}${fullPath}`;
-    const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
-    const signature = crypto.sign('sha256', Buffer.from(message), {
-      key: privateKey,
-      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-      saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
-    }).toString('base64');
-
-    const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
-        'KALSHI-ACCESS-SIGNATURE': signature,
-        'KALSHI-ACCESS-TIMESTAMP': timestampMs,
-      },
-    });
-
-    if (!response.ok) {
-      return { status: 'error', filledCount: 0, yesPrice: null, noPrice: null };
-    }
-
-    const data = await response.json();
-    const order = data.order;
-
-    return {
-      status: order.status,
-      filledCount: order.filled_count || 0,
-      yesPrice: order.yes_price,
-      noPrice: order.no_price,
-    };
-  } catch (error) {
-    console.error(`Error checking order ${orderId}:`, error);
-    return { status: 'error', filledCount: 0, yesPrice: null, noPrice: null };
-  }
-}
-
 // Helper to check market result
 async function getMarketResult(ticker: string): Promise<{ 
   settled: boolean; 
@@ -108,44 +58,87 @@ async function getMarketResult(ticker: string): Promise<{
   }
 }
 
-// Helper to check if settlement has been received
-async function checkSettlementReceived(ticker: string): Promise<boolean> {
+// Helper to make authenticated Kalshi API calls
+async function kalshiFetch(endpoint: string): Promise<any> {
+  const timestampMs = Date.now().toString();
+  const method = 'GET';
+  const pathWithoutQuery = endpoint.split('?')[0];
+  const fullPath = `/trade-api/v2${pathWithoutQuery}`;
+
+  const message = `${timestampMs}${method}${fullPath}`;
+  const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+  const signature = crypto.sign('sha256', Buffer.from(message), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  }).toString('base64');
+
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kalshi API error: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// Check fills to see if order was executed (from /portfolio/fills)
+async function checkOrderFilled(ticker: string, orderId: string): Promise<{
+  filled: boolean;
+  fillPrice: number | null;
+  fillCount: number;
+}> {
   try {
-    const timestampMs = Date.now().toString();
-    const method = 'GET';
-    const endpoint = `/portfolio/settlements?ticker=${ticker}&limit=10`;
-    const fullPath = `/trade-api/v2/portfolio/settlements`;
-
-    const message = `${timestampMs}${method}${fullPath}`;
-    const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
-    const signature = crypto.sign('sha256', Buffer.from(message), {
-      key: privateKey,
-      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-      saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
-    }).toString('base64');
-
-    const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
-        'KALSHI-ACCESS-SIGNATURE': signature,
-        'KALSHI-ACCESS-TIMESTAMP': timestampMs,
-      },
-    });
-
-    if (!response.ok) {
-      return false;
+    const data = await kalshiFetch(`/portfolio/fills?ticker=${ticker}&limit=50`);
+    const fills = data.fills || [];
+    
+    // Find fills for this order
+    const orderFills = fills.filter((f: any) => f.order_id === orderId);
+    
+    if (orderFills.length > 0) {
+      const totalCount = orderFills.reduce((sum: number, f: any) => sum + (f.count || 0), 0);
+      const avgPrice = orderFills[0]?.price || null;
+      return { filled: true, fillPrice: avgPrice, fillCount: totalCount };
     }
+    
+    return { filled: false, fillPrice: null, fillCount: 0 };
+  } catch (error) {
+    console.error(`Error checking fills for ${ticker}:`, error);
+    return { filled: false, fillPrice: null, fillCount: 0 };
+  }
+}
 
-    const data = await response.json();
+// Check settlements to see if payout was received (from /portfolio/settlements)
+async function checkSettlementReceived(ticker: string): Promise<{
+  settled: boolean;
+  revenue: number;
+}> {
+  try {
+    const data = await kalshiFetch(`/portfolio/settlements?ticker=${ticker}&limit=10`);
     const settlements = data.settlements || [];
     
-    // Check if there's a settlement for this ticker
-    return settlements.some((s: any) => s.ticker === ticker);
+    // Find settlement for this ticker
+    const settlement = settlements.find((s: any) => s.ticker === ticker);
+    
+    if (settlement) {
+      return { 
+        settled: true, 
+        revenue: settlement.revenue || 0 // Revenue in cents
+      };
+    }
+    
+    return { settled: false, revenue: 0 };
   } catch (error) {
     console.error(`Error checking settlement for ${ticker}:`, error);
-    return false;
+    return { settled: false, revenue: 0 };
   }
 }
 
@@ -178,37 +171,24 @@ async function updateOrderStatuses() {
 
   for (const order of orders) {
     try {
-      // First, check if "placed" orders have been filled
+      // First, check if "placed" orders have been filled using /portfolio/fills
       if (order.placement_status === 'placed' && order.kalshi_order_id) {
-        const orderStatus = await getOrderStatus(order.kalshi_order_id);
+        const fillResult = await checkOrderFilled(order.ticker, order.kalshi_order_id);
         
-        if (orderStatus.status === 'executed' || orderStatus.filledCount > 0) {
+        if (fillResult.filled) {
           // Order has been filled!
-          const executedPriceCents = order.side === 'YES' 
-            ? orderStatus.yesPrice 
-            : orderStatus.noPrice;
-          
           await supabase
             .from('orders')
             .update({
               placement_status: 'confirmed',
               placement_status_at: new Date().toISOString(),
-              executed_price_cents: executedPriceCents,
-              executed_cost_cents: executedPriceCents ? executedPriceCents * 1 : null,
+              executed_price_cents: fillResult.fillPrice,
+              executed_cost_cents: fillResult.fillPrice ? fillResult.fillPrice * fillResult.fillCount : null,
             })
             .eq('id', order.id);
           
           filledCount++;
-          console.log(`Order ${order.ticker} filled at ${executedPriceCents}¢`);
-        } else if (orderStatus.status === 'cancelled') {
-          // Order was cancelled
-          await supabase
-            .from('orders')
-            .update({
-              settlement_status: 'closed',
-              settlement_status_at: new Date().toISOString(),
-            })
-            .eq('id', order.id);
+          console.log(`Order ${order.ticker} filled: ${fillResult.fillCount} @ ${fillResult.fillPrice}¢`);
         }
         
         await new Promise(r => setTimeout(r, 100));
@@ -242,11 +222,11 @@ async function updateOrderStatuses() {
         }
       }
       
-      // Check if won orders have received their settlement
+      // Check if won orders have received their settlement via /portfolio/settlements
       if (order.result_status === 'won' && order.settlement_status === 'pending') {
-        const settlementReceived = await checkSettlementReceived(order.ticker);
+        const settlementResult = await checkSettlementReceived(order.ticker);
         
-        if (settlementReceived) {
+        if (settlementResult.settled) {
           await supabase
             .from('orders')
             .update({
@@ -255,8 +235,10 @@ async function updateOrderStatuses() {
             })
             .eq('id', order.id);
           
-          console.log(`Settlement received for ${order.ticker}`);
+          console.log(`Settlement received for ${order.ticker}: $${(settlementResult.revenue / 100).toFixed(2)}`);
         }
+        
+        await new Promise(r => setTimeout(r, 100));
       }
 
       // Small delay to avoid rate limits
