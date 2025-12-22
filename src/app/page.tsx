@@ -1288,208 +1288,141 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Detailed Summary Table */}
+            {/* Consolidated Order Summary */}
             {liveOrdersStats && liveOrdersStats.placement_breakdown && (
               <div className="bg-slate-900 rounded-xl p-6 mb-6">
                 <h3 className="text-lg font-bold text-white mb-4">📊 Order Summary</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Status Breakdowns */}
-                  <div className="space-y-4">
-                    {/* Placement Status */}
-                    <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Placement Status</div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Pending</span>
-                          <span className="text-white">{liveOrdersStats.placement_breakdown.pending}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Placed (Resting)</span>
-                          <span className="text-white">{liveOrdersStats.placement_breakdown.placed}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Confirmed (Filled)</span>
-                          <span className="text-white">{liveOrdersStats.placement_breakdown.confirmed}</span>
-                        </div>
-                        <div className="flex justify-between pt-2 border-t border-slate-700">
-                          <span className="text-white font-medium">Total</span>
-                          <span className="text-white font-medium">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  
+                  {/* Placement Status */}
+                  <div className="bg-slate-800/50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-white mb-3">💳 Placement</div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-slate-500 text-xs uppercase">
+                          <th className="text-left pb-2">Status</th>
+                          <th className="text-right pb-2">Orders</th>
+                          <th className="text-right pb-2">Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm">
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Pending</td>
+                          <td className="py-1.5 text-right text-white">{liveOrdersStats.placement_breakdown.pending}</td>
+                          <td className="py-1.5 text-right font-mono text-slate-500">-</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Placed</td>
+                          <td className="py-1.5 text-right text-yellow-400">{liveOrdersStats.placement_breakdown.placed}</td>
+                          <td className="py-1.5 text-right font-mono text-slate-500">-</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Confirmed</td>
+                          <td className="py-1.5 text-right text-emerald-400">{liveOrdersStats.placement_breakdown.confirmed}</td>
+                          <td className="py-1.5 text-right font-mono text-white">${((liveOrdersStats.placement_financials?.actual_cost_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr className="border-t border-slate-700">
+                          <td className="py-2 text-white font-medium">Total</td>
+                          <td className="py-2 text-right text-white font-medium">
                             {(liveOrdersStats.placement_breakdown.pending || 0) + 
                              (liveOrdersStats.placement_breakdown.placed || 0) + 
                              (liveOrdersStats.placement_breakdown.confirmed || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                          </td>
+                          <td className="py-2 text-right font-mono text-white font-medium">${((liveOrdersStats.placement_financials?.actual_cost_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
-                    {/* Result Status */}
-                    <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Result Status</div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Undecided</span>
-                          <span className="text-white">{liveOrdersStats.result_breakdown.undecided}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Won</span>
-                          <span className="text-emerald-400">{liveOrdersStats.result_breakdown.won}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Lost</span>
-                          <span className="text-red-400">{liveOrdersStats.result_breakdown.lost}</span>
-                        </div>
-                        <div className="flex justify-between pt-2 border-t border-slate-700">
-                          <span className="text-white font-medium">Total</span>
-                          <span className="text-white font-medium">
+                  {/* Result Status */}
+                  <div className="bg-slate-800/50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-white mb-3">🎯 Results</div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-slate-500 text-xs uppercase">
+                          <th className="text-left pb-2">Status</th>
+                          <th className="text-right pb-2">Orders</th>
+                          <th className="text-right pb-2">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm">
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Undecided</td>
+                          <td className="py-1.5 text-right text-yellow-400">{liveOrdersStats.result_breakdown.undecided}</td>
+                          <td className="py-1.5 text-right font-mono text-yellow-400">${((liveOrdersStats.result_financials?.undecided_exposure_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Won</td>
+                          <td className="py-1.5 text-right text-emerald-400">{liveOrdersStats.result_breakdown.won}</td>
+                          <td className="py-1.5 text-right font-mono text-emerald-400">${((liveOrdersStats.result_financials?.estimated_won_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Lost</td>
+                          <td className="py-1.5 text-right text-red-400">{liveOrdersStats.result_breakdown.lost}</td>
+                          <td className="py-1.5 text-right font-mono text-red-400">-${((liveOrdersStats.result_financials?.estimated_lost_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr className="border-t border-slate-700">
+                          <td className="py-2 text-white font-medium">Est. P&L</td>
+                          <td className="py-2 text-right text-white font-medium">
                             {(liveOrdersStats.result_breakdown.undecided || 0) + 
                              (liveOrdersStats.result_breakdown.won || 0) + 
                              (liveOrdersStats.result_breakdown.lost || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                          </td>
+                          <td className={`py-2 text-right font-mono font-medium ${(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.result_financials?.estimated_pnl_cents || 0) / 100).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
 
-                    {/* Settlement Status */}
-                    <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Settlement Status</div>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Pending</span>
-                          <span className="text-yellow-400">{liveOrdersStats.settlement_breakdown.pending}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Closed (Lost)</span>
-                          <span className="text-red-400">{liveOrdersStats.settlement_breakdown.closed}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Success (Paid)</span>
-                          <span className="text-emerald-400">{liveOrdersStats.settlement_breakdown.success}</span>
-                        </div>
-                        <div className="flex justify-between pt-2 border-t border-slate-700">
-                          <span className="text-white font-medium">Total</span>
-                          <span className="text-white font-medium">
+                  {/* Settlement Status */}
+                  <div className="bg-slate-800/50 rounded-lg p-4">
+                    <div className="text-sm font-medium text-white mb-3">💰 Settlement</div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-slate-500 text-xs uppercase">
+                          <th className="text-left pb-2">Status</th>
+                          <th className="text-right pb-2">Orders</th>
+                          <th className="text-right pb-2">Cash</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-sm">
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Pending</td>
+                          <td className="py-1.5 text-right text-yellow-400">{liveOrdersStats.settlement_breakdown.pending}</td>
+                          <td className="py-1.5 text-right font-mono text-yellow-400">${((liveOrdersStats.settlement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Success</td>
+                          <td className="py-1.5 text-right text-emerald-400">{liveOrdersStats.settlement_breakdown.success}</td>
+                          <td className="py-1.5 text-right font-mono text-emerald-400">+${((liveOrdersStats.settlement_financials?.actual_payout_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Closed</td>
+                          <td className="py-1.5 text-right text-red-400">{liveOrdersStats.settlement_breakdown.closed}</td>
+                          <td className="py-1.5 text-right font-mono text-red-400">-${((liveOrdersStats.settlement_financials?.actual_lost_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-1.5 text-slate-400">Fees</td>
+                          <td className="py-1.5 text-right text-slate-500">-</td>
+                          <td className="py-1.5 text-right font-mono text-orange-400">-${((liveOrdersStats.settlement_financials?.fees_paid_cents || 0) / 100).toFixed(2)}</td>
+                        </tr>
+                        <tr className="border-t border-slate-700">
+                          <td className="py-2 text-white font-medium">Net Profit</td>
+                          <td className="py-2 text-right text-white font-medium">
                             {(liveOrdersStats.settlement_breakdown.pending || 0) + 
                              (liveOrdersStats.settlement_breakdown.closed || 0) + 
                              (liveOrdersStats.settlement_breakdown.success || 0)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
+                          </td>
+                          <td className={`py-2 text-right font-mono font-medium ${(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.settlement_financials?.net_profit_cents || 0) / 100).toFixed(2)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
 
-                  {/* Financial Summary - by Stage */}
-                  <div className="space-y-4">
-                    {/* Placement Financials */}
-                    <div>
-                      <div className="text-sm font-medium text-slate-400 mb-2">💳 Placement (Order Execution)</div>
-                      <div className="bg-slate-800 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <tbody>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Estimated Cost</td>
-                              <td className="px-3 py-2 text-right font-mono text-slate-300">
-                                ${((liveOrdersStats.placement_financials?.estimated_cost_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700 bg-slate-700/30">
-                              <td className="px-3 py-2 text-white font-medium">Actual Cost</td>
-                              <td className="px-3 py-2 text-right font-mono text-white font-medium">
-                                ${((liveOrdersStats.placement_financials?.actual_cost_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr>
-                              <td className="px-3 py-2 text-slate-400">Projected Payout (if all win)</td>
-                              <td className="px-3 py-2 text-right font-mono text-slate-300">
-                                ${((liveOrdersStats.placement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Result Financials */}
-                    <div>
-                      <div className="text-sm font-medium text-slate-400 mb-2">🎯 Result (Game Outcomes)</div>
-                      <div className="bg-slate-800 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <tbody>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Undecided (at risk)</td>
-                              <td className="px-3 py-2 text-right font-mono text-yellow-400">
-                                ${((liveOrdersStats.result_financials?.undecided_exposure_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700 bg-emerald-900/20">
-                              <td className="px-3 py-2 text-emerald-400">Estimated Won</td>
-                              <td className="px-3 py-2 text-right font-mono text-emerald-400">
-                                ${((liveOrdersStats.result_financials?.estimated_won_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700 bg-red-900/20">
-                              <td className="px-3 py-2 text-red-400">Estimated Lost</td>
-                              <td className="px-3 py-2 text-right font-mono text-red-400">
-                                -${((liveOrdersStats.result_financials?.estimated_lost_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className={`${(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
-                              <td className="px-3 py-2 text-white font-medium">Estimated P&L</td>
-                              <td className={`px-3 py-2 text-right font-mono font-medium ${(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.result_financials?.estimated_pnl_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Settlement Financials */}
-                    <div>
-                      <div className="text-sm font-medium text-slate-400 mb-2">💰 Settlement (Cash Movement)</div>
-                      <div className="bg-slate-800 rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <tbody>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-yellow-400">Projected Payout (pending)</td>
-                              <td className="px-3 py-2 text-right font-mono text-yellow-400">
-                                ${((liveOrdersStats.settlement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700 bg-emerald-900/20">
-                              <td className="px-3 py-2 text-emerald-400">Payout Received</td>
-                              <td className="px-3 py-2 text-right font-mono text-emerald-400">
-                                +${((liveOrdersStats.settlement_financials?.actual_payout_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700">
-                              <td className="px-3 py-2 text-slate-400">Cost of Won Trades</td>
-                              <td className="px-3 py-2 text-right font-mono text-slate-300">
-                                -${((liveOrdersStats.settlement_financials?.won_cost_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700 bg-orange-900/20">
-                              <td className="px-3 py-2 text-orange-400">Fees Paid</td>
-                              <td className="px-3 py-2 text-right font-mono text-orange-400">
-                                -${((liveOrdersStats.settlement_financials?.fees_paid_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className="border-b border-slate-700 bg-red-900/20">
-                              <td className="px-3 py-2 text-red-400">Lost Trades</td>
-                              <td className="px-3 py-2 text-right font-mono text-red-400">
-                                -${((liveOrdersStats.settlement_financials?.actual_lost_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                            <tr className={`${(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
-                              <td className="px-3 py-3 text-white font-bold text-base">Net Profit</td>
-                              <td className={`px-3 py-3 text-right font-mono font-bold text-base ${(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.settlement_financials?.net_profit_cents || 0) / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
                 </div>
               </div>
             )}
