@@ -54,34 +54,48 @@ export async function GET(request: Request) {
     const placedOrders = allOrders.filter(o => o.placement_status === 'placed');
     const confirmedOrders = allOrders.filter(o => o.placement_status === 'confirmed');
     
-    // Result status breakdown
-    const undecidedOrders = allOrders.filter(o => o.result_status === 'undecided');
-    const wonOrders = allOrders.filter(o => o.result_status === 'won');
-    const lostOrders = allOrders.filter(o => o.result_status === 'lost');
+    // Result status breakdown (only from confirmed orders)
+    const undecidedOrders = confirmedOrders.filter(o => o.result_status === 'undecided');
+    const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
+    const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
     
-    // Settlement status breakdown
+    // Settlement status breakdown (only from orders with results)
     const pendingSettlement = allOrders.filter(o => o.settlement_status === 'pending');
     const closedOrders = allOrders.filter(o => o.settlement_status === 'closed');
     const successOrders = allOrders.filter(o => o.settlement_status === 'success');
     
-    const settledOrders = [...wonOrders, ...lostOrders];
+    const decidedOrders = [...wonOrders, ...lostOrders];
 
-    // Cost calculations
-    // Estimated cost = price_cents (what we expected to pay)
-    const totalEstimatedCost = confirmedOrders.reduce((sum, o) => sum + (o.cost_cents || 0), 0);
-    // Actual cost = executed_cost_cents (what we actually paid)
-    const totalActualCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-    // Potential payout for confirmed orders
-    const totalPotentialPayout = confirmedOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
-    // Actual payout received (from won orders that are settled)
-    const totalActualPayout = wonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
-    // Total lost
-    const totalLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-    // Net P&L (actual payout - actual cost of lost orders)
-    const netPnl = totalActualPayout - totalLost;
+    // ===== PLACEMENT-BASED FINANCIALS =====
+    // Estimated cost = limit price * units for placed + confirmed orders
+    const placementEstimatedCost = [...placedOrders, ...confirmedOrders].reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+    // Actual cost = what we actually paid (only confirmed orders with executed_cost_cents)
+    const placementActualCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || 0), 0);
+    // Total projected payout = if all confirmed orders win
+    const placementProjectedPayout = confirmedOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
 
-    const winRate = settledOrders.length > 0
-      ? (wonOrders.length / settledOrders.length * 100).toFixed(1)
+    // ===== RESULT-BASED FINANCIALS =====
+    // Estimated won = payout from orders marked "won" (may not be settled yet)
+    const resultEstimatedWon = wonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    // Estimated lost = cost of orders marked "lost"
+    const resultEstimatedLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Estimated P&L based on results
+    const resultEstimatedPnl = resultEstimatedWon - resultEstimatedLost;
+
+    // ===== SETTLEMENT-BASED FINANCIALS (ACTUALS) =====
+    // Projected payout = from won orders still pending settlement
+    const settlementProjectedPayout = wonOrders
+      .filter(o => o.settlement_status === 'pending')
+      .reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    // Actual payout = from orders with settlement_status = 'success' (cash received)
+    const settlementActualPayout = successOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+    // Actual lost = from orders with settlement_status = 'closed'
+    const settlementActualLost = closedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Net P&L = actual cash received - actual cash lost
+    const settlementNetPnl = settlementActualPayout - settlementActualLost;
+
+    const winRate = decidedOrders.length > 0
+      ? (wonOrders.length / decidedOrders.length * 100).toFixed(1)
       : '0.0';
 
     // Enrich batches with their orders
@@ -101,11 +115,12 @@ export async function GET(request: Request) {
         lost_orders: lostOrders.length,
         pending_orders: undecidedOrders.length,
         win_rate: winRate,
-        total_cost_cents: totalActualCost,
-        total_payout_cents: totalActualPayout,
-        net_pnl_cents: netPnl,
-        roi_percent: totalActualCost > 0 ? ((netPnl / totalActualCost) * 100).toFixed(2) : '0.00',
-        // Detailed breakdowns
+        // Legacy fields for backward compatibility
+        total_cost_cents: placementActualCost,
+        total_payout_cents: settlementActualPayout,
+        net_pnl_cents: settlementNetPnl,
+        roi_percent: placementActualCost > 0 ? ((settlementNetPnl / placementActualCost) * 100).toFixed(2) : '0.00',
+        // Status breakdowns
         placement_breakdown: {
           pending: pendingPlacement.length,
           placed: placedOrders.length,
@@ -121,13 +136,22 @@ export async function GET(request: Request) {
           closed: closedOrders.length,
           success: successOrders.length,
         },
-        cost_breakdown: {
-          estimated_cost_cents: totalEstimatedCost,
-          actual_cost_cents: totalActualCost,
-          potential_payout_cents: totalPotentialPayout,
-          actual_payout_cents: totalActualPayout,
-          total_lost_cents: totalLost,
-          net_pnl_cents: netPnl,
+        // Financials by stage
+        placement_financials: {
+          estimated_cost_cents: placementEstimatedCost,
+          actual_cost_cents: placementActualCost,
+          projected_payout_cents: placementProjectedPayout,
+        },
+        result_financials: {
+          estimated_won_cents: resultEstimatedWon,
+          estimated_lost_cents: resultEstimatedLost,
+          estimated_pnl_cents: resultEstimatedPnl,
+        },
+        settlement_financials: {
+          projected_payout_cents: settlementProjectedPayout,
+          actual_payout_cents: settlementActualPayout,
+          actual_lost_cents: settlementActualLost,
+          net_pnl_cents: settlementNetPnl,
         },
       },
     });

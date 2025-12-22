@@ -110,12 +110,20 @@ interface LiveOrdersStats {
     closed: number;
     success: number;
   };
-  cost_breakdown: {
+  placement_financials: {
     estimated_cost_cents: number;
     actual_cost_cents: number;
-    potential_payout_cents: number;
+    projected_payout_cents: number;
+  };
+  result_financials: {
+    estimated_won_cents: number;
+    estimated_lost_cents: number;
+    estimated_pnl_cents: number;
+  };
+  settlement_financials: {
+    projected_payout_cents: number;
     actual_payout_cents: number;
-    total_lost_cents: number;
+    actual_lost_cents: number;
     net_pnl_cents: number;
   };
 }
@@ -1370,50 +1378,99 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Financial Summary */}
-                  <div>
-                    <div className="text-sm font-medium text-slate-400 mb-2">Financial Summary</div>
-                    <div className="bg-slate-800 rounded-lg overflow-hidden">
-                      <table className="w-full text-sm">
-                        <tbody>
-                          <tr className="border-b border-slate-700">
-                            <td className="px-3 py-2.5 text-slate-400">Estimated Cost</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-slate-300">
-                              ${(liveOrdersStats.cost_breakdown.estimated_cost_cents / 100).toFixed(2)}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-slate-700 bg-slate-700/30">
-                            <td className="px-3 py-2.5 text-white font-medium">Actual Cost</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-white font-medium">
-                              ${(liveOrdersStats.cost_breakdown.actual_cost_cents / 100).toFixed(2)}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-slate-700">
-                            <td className="px-3 py-2.5 text-slate-400">Potential Payout</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-slate-300">
-                              ${(liveOrdersStats.cost_breakdown.potential_payout_cents / 100).toFixed(2)}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-slate-700 bg-emerald-900/20">
-                            <td className="px-3 py-2.5 text-emerald-400 font-medium">Actual Payout (Won)</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-emerald-400 font-medium">
-                              ${(liveOrdersStats.cost_breakdown.actual_payout_cents / 100).toFixed(2)}
-                            </td>
-                          </tr>
-                          <tr className="border-b border-slate-700 bg-red-900/20">
-                            <td className="px-3 py-2.5 text-red-400 font-medium">Total Lost</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-red-400 font-medium">
-                              -${(liveOrdersStats.cost_breakdown.total_lost_cents / 100).toFixed(2)}
-                            </td>
-                          </tr>
-                          <tr className={`${liveOrdersStats.cost_breakdown.net_pnl_cents >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
-                            <td className="px-3 py-3 text-white font-bold text-base">Net P&L</td>
-                            <td className={`px-3 py-3 text-right font-mono font-bold text-base ${liveOrdersStats.cost_breakdown.net_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {liveOrdersStats.cost_breakdown.net_pnl_cents >= 0 ? '+' : ''}${(liveOrdersStats.cost_breakdown.net_pnl_cents / 100).toFixed(2)}
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+                  {/* Financial Summary - by Stage */}
+                  <div className="space-y-4">
+                    {/* Placement Financials */}
+                    <div>
+                      <div className="text-sm font-medium text-slate-400 mb-2">💳 Placement (Order Execution)</div>
+                      <div className="bg-slate-800 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Estimated Cost</td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-300">
+                                ${((liveOrdersStats.placement_financials?.estimated_cost_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700 bg-slate-700/30">
+                              <td className="px-3 py-2 text-white font-medium">Actual Cost</td>
+                              <td className="px-3 py-2 text-right font-mono text-white font-medium">
+                                ${((liveOrdersStats.placement_financials?.actual_cost_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 text-slate-400">Projected Payout (if all win)</td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-300">
+                                ${((liveOrdersStats.placement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Result Financials */}
+                    <div>
+                      <div className="text-sm font-medium text-slate-400 mb-2">🎯 Result (Game Outcomes)</div>
+                      <div className="bg-slate-800 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-700 bg-emerald-900/20">
+                              <td className="px-3 py-2 text-emerald-400">Estimated Won</td>
+                              <td className="px-3 py-2 text-right font-mono text-emerald-400">
+                                ${((liveOrdersStats.result_financials?.estimated_won_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700 bg-red-900/20">
+                              <td className="px-3 py-2 text-red-400">Estimated Lost</td>
+                              <td className="px-3 py-2 text-right font-mono text-red-400">
+                                -${((liveOrdersStats.result_financials?.estimated_lost_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className={`${(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
+                              <td className="px-3 py-2 text-white font-medium">Estimated P&L</td>
+                              <td className={`px-3 py-2 text-right font-mono font-medium ${(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {(liveOrdersStats.result_financials?.estimated_pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.result_financials?.estimated_pnl_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Settlement Financials */}
+                    <div>
+                      <div className="text-sm font-medium text-slate-400 mb-2">💰 Settlement (Cash Movement)</div>
+                      <div className="bg-slate-800 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-yellow-400">Projected Payout (pending)</td>
+                              <td className="px-3 py-2 text-right font-mono text-yellow-400">
+                                ${((liveOrdersStats.settlement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700 bg-emerald-900/20">
+                              <td className="px-3 py-2 text-emerald-400 font-medium">Actual Payout (received)</td>
+                              <td className="px-3 py-2 text-right font-mono text-emerald-400 font-medium">
+                                ${((liveOrdersStats.settlement_financials?.actual_payout_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700 bg-red-900/20">
+                              <td className="px-3 py-2 text-red-400 font-medium">Actual Lost (closed)</td>
+                              <td className="px-3 py-2 text-right font-mono text-red-400 font-medium">
+                                -${((liveOrdersStats.settlement_financials?.actual_lost_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className={`${(liveOrdersStats.settlement_financials?.net_pnl_cents || 0) >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
+                              <td className="px-3 py-3 text-white font-bold text-base">Net P&L (actual)</td>
+                              <td className={`px-3 py-3 text-right font-mono font-bold text-base ${(liveOrdersStats.settlement_financials?.net_pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {(liveOrdersStats.settlement_financials?.net_pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.settlement_financials?.net_pnl_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </div>
