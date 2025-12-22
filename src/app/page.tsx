@@ -1291,12 +1291,12 @@ export default function Dashboard() {
             {/* Consolidated Order Summary */}
             {liveOrdersStats && liveOrdersStats.placement_breakdown && (
               <div className="bg-slate-900 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-bold text-white mb-4">📊 Order Summary</h3>
+                <h3 className="text-lg font-bold text-white mb-4">Order Summary</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   
                   {/* Placement Status */}
                   <div className="bg-slate-800/50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-white mb-3">💳 Placement</div>
+                    <div className="text-sm font-medium text-white mb-3">Placement</div>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-slate-500 text-xs uppercase">
@@ -1313,12 +1313,12 @@ export default function Dashboard() {
                         </tr>
                         <tr>
                           <td className="py-1.5 text-slate-400">Placed</td>
-                          <td className="py-1.5 text-right text-yellow-400">{liveOrdersStats.placement_breakdown.placed}</td>
+                          <td className="py-1.5 text-right text-white">{liveOrdersStats.placement_breakdown.placed}</td>
                           <td className="py-1.5 text-right font-mono text-slate-500">-</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 text-slate-400">Confirmed</td>
-                          <td className="py-1.5 text-right text-emerald-400">{liveOrdersStats.placement_breakdown.confirmed}</td>
+                          <td className="py-1.5 text-right text-white">{liveOrdersStats.placement_breakdown.confirmed}</td>
                           <td className="py-1.5 text-right font-mono text-white">${((liveOrdersStats.placement_financials?.actual_cost_cents || 0) / 100).toFixed(2)}</td>
                         </tr>
                         <tr className="border-t border-slate-700">
@@ -1336,7 +1336,7 @@ export default function Dashboard() {
 
                   {/* Result Status */}
                   <div className="bg-slate-800/50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-white mb-3">🎯 Results</div>
+                    <div className="text-sm font-medium text-white mb-3">Results</div>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-slate-500 text-xs uppercase">
@@ -1348,8 +1348,8 @@ export default function Dashboard() {
                       <tbody className="text-sm">
                         <tr>
                           <td className="py-1.5 text-slate-400">Undecided</td>
-                          <td className="py-1.5 text-right text-yellow-400">{liveOrdersStats.result_breakdown.undecided}</td>
-                          <td className="py-1.5 text-right font-mono text-yellow-400">${((liveOrdersStats.result_financials?.undecided_exposure_cents || 0) / 100).toFixed(2)}</td>
+                          <td className="py-1.5 text-right text-white">{liveOrdersStats.result_breakdown.undecided}</td>
+                          <td className="py-1.5 text-right font-mono text-white">${((liveOrdersStats.result_financials?.undecided_exposure_cents || 0) / 100).toFixed(2)}</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 text-slate-400">Won</td>
@@ -1378,7 +1378,7 @@ export default function Dashboard() {
 
                   {/* Settlement Status */}
                   <div className="bg-slate-800/50 rounded-lg p-4">
-                    <div className="text-sm font-medium text-white mb-3">💰 Settlement</div>
+                    <div className="text-sm font-medium text-white mb-3">Settlement</div>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-slate-500 text-xs uppercase">
@@ -1390,8 +1390,8 @@ export default function Dashboard() {
                       <tbody className="text-sm">
                         <tr>
                           <td className="py-1.5 text-slate-400">Pending</td>
-                          <td className="py-1.5 text-right text-yellow-400">{liveOrdersStats.settlement_breakdown.pending}</td>
-                          <td className="py-1.5 text-right font-mono text-yellow-400">${((liveOrdersStats.settlement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}</td>
+                          <td className="py-1.5 text-right text-white">{liveOrdersStats.settlement_breakdown.pending}</td>
+                          <td className="py-1.5 text-right font-mono text-white">${((liveOrdersStats.settlement_financials?.projected_payout_cents || 0) / 100).toFixed(2)}</td>
                         </tr>
                         <tr>
                           <td className="py-1.5 text-slate-400">Success</td>
@@ -1403,12 +1403,12 @@ export default function Dashboard() {
                           <td className="py-1.5 text-right text-red-400">{liveOrdersStats.settlement_breakdown.closed}</td>
                           <td className="py-1.5 text-right font-mono text-red-400">-${((liveOrdersStats.settlement_financials?.actual_lost_cents || 0) / 100).toFixed(2)}</td>
                         </tr>
-                        <tr>
+                        <tr className="border-t border-slate-700">
                           <td className="py-1.5 text-slate-400">Fees</td>
                           <td className="py-1.5 text-right text-slate-500">-</td>
-                          <td className="py-1.5 text-right font-mono text-orange-400">-${((liveOrdersStats.settlement_financials?.fees_paid_cents || 0) / 100).toFixed(2)}</td>
+                          <td className="py-1.5 text-right font-mono text-red-400">-${((liveOrdersStats.settlement_financials?.fees_paid_cents || 0) / 100).toFixed(2)}</td>
                         </tr>
-                        <tr className="border-t border-slate-700">
+                        <tr>
                           <td className="py-2 text-white font-medium">Net Profit</td>
                           <td className="py-2 text-right text-white font-medium">
                             {(liveOrdersStats.settlement_breakdown.pending || 0) + 
