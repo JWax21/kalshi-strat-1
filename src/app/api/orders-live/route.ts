@@ -110,6 +110,8 @@ export async function GET(request: Request) {
     const placementProjectedPayout = confirmedOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
 
     // ===== RESULT-BASED FINANCIALS =====
+    // Undecided exposure = cost of orders still waiting for results (cash at risk)
+    const resultUndecidedExposure = undecidedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
     // Estimated won = payout from orders marked "won" (may not be settled yet)
     const resultEstimatedWon = wonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
     // Estimated lost = cost of orders marked "lost"
@@ -213,6 +215,7 @@ export async function GET(request: Request) {
           projected_payout_cents: placementProjectedPayout,
         },
         result_financials: {
+          undecided_exposure_cents: resultUndecidedExposure,
           estimated_won_cents: resultEstimatedWon,
           estimated_lost_cents: resultEstimatedLost,
           estimated_pnl_cents: resultEstimatedPnl,

@@ -129,6 +129,7 @@ interface LiveOrdersStats {
     projected_payout_cents: number;
   };
   result_financials: {
+    undecided_exposure_cents: number;
     estimated_won_cents: number;
     estimated_lost_cents: number;
     estimated_pnl_cents: number;
@@ -1405,6 +1406,12 @@ export default function Dashboard() {
                       <div className="bg-slate-800 rounded-lg overflow-hidden">
                         <table className="w-full text-sm">
                           <tbody>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Undecided (at risk)</td>
+                              <td className="px-3 py-2 text-right font-mono text-yellow-400">
+                                ${((liveOrdersStats.result_financials?.undecided_exposure_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
                             <tr className="border-b border-slate-700 bg-emerald-900/20">
                               <td className="px-3 py-2 text-emerald-400">Estimated Won</td>
                               <td className="px-3 py-2 text-right font-mono text-emerald-400">
