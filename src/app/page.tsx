@@ -179,10 +179,6 @@ interface PortfolioData {
   balance: { balance: number; payout: number };
 }
 
-// Auth credentials
-const VALID_USERS = ['jwax', 'jlewis'];
-const VALID_PIN = '7724';
-
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('markets');
   
@@ -191,6 +187,7 @@ export default function Dashboard() {
   const [authUsername, setAuthUsername] = useState('');
   const [authPin, setAuthPin] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
 
   // Check for existing auth on mount
   useEffect(() => {
@@ -200,14 +197,28 @@ export default function Dashboard() {
     }
   }, []);
 
-  const handleLogin = () => {
-    const username = authUsername.toLowerCase().trim();
-    if (VALID_USERS.includes(username) && authPin === VALID_PIN) {
-      setIsAuthenticated(true);
-      sessionStorage.setItem('kalshi_auth', 'true');
-      setAuthError('');
-    } else {
-      setAuthError('Invalid username or PIN');
+  const handleLogin = async () => {
+    setAuthLoading(true);
+    setAuthError('');
+    
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: authUsername, pin: authPin }),
+      });
+      const data = await res.json();
+      
+      if (data.success) {
+        setIsAuthenticated(true);
+        sessionStorage.setItem('kalshi_auth', 'true');
+      } else {
+        setAuthError(data.error || 'Invalid credentials');
+      }
+    } catch (err) {
+      setAuthError('Authentication failed');
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -262,9 +273,10 @@ export default function Dashboard() {
             
             <button
               onClick={handleLogin}
-              className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 transition-colors"
+              disabled={authLoading}
+              className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 transition-colors disabled:opacity-50"
             >
-              Login
+              {authLoading ? 'Verifying...' : 'Login'}
             </button>
           </div>
         </div>
