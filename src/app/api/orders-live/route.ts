@@ -157,9 +157,16 @@ export async function GET(request: Request) {
     const todayConfirmed = todayOrders.filter(o => o.placement_status === 'confirmed');
     const todayWon = todayConfirmed.filter(o => o.result_status === 'won');
     const todayLost = todayConfirmed.filter(o => o.result_status === 'lost');
-    const todayWonPayout = todayWon.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    // Payout received for today's won orders
+    const todayPayout = todayWon.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+    // Fees paid on today's settled orders
+    const todayFees = [...todayWon, ...todayLost].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+    // Cost paid for today's won orders (not losses - those are separate)
+    const todayWonCost = todayWon.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Lost amount
     const todayLostCost = todayLost.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-    const todayPnl = todayWonPayout - todayLostCost;
+    // Profit = Payout - Fees - Cost of Won Trades - Losses
+    const todayProfit = todayPayout - todayFees - todayWonCost - todayLostCost;
 
     // Enrich batches with their orders
     const enrichedBatches = (batches || []).map(batch => ({
@@ -183,7 +190,11 @@ export async function GET(request: Request) {
           confirmed: todayConfirmed.length,
           won: todayWon.length,
           lost: todayLost.length,
-          pnl_cents: todayPnl,
+          payout_cents: todayPayout,
+          fees_cents: todayFees,
+          cost_cents: todayWonCost,
+          lost_cents: todayLostCost,
+          profit_cents: todayProfit,
         },
         
         total_batches: (batches || []).length,

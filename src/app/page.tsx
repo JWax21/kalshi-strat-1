@@ -95,7 +95,11 @@ interface LiveOrdersStats {
     confirmed: number;
     won: number;
     lost: number;
-    pnl_cents: number;
+    payout_cents: number;
+    fees_cents: number;
+    cost_cents: number;
+    lost_cents: number;
+    profit_cents: number;
   };
   total_batches: number;
   total_orders: number;
@@ -1280,10 +1284,12 @@ export default function Dashboard() {
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase">Profit (Today)</div>
-                  <div className={`text-2xl font-bold ${(liveOrdersStats.today?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {(liveOrdersStats.today?.pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.today?.pnl_cents || 0) / 100).toFixed(2)}
+                  <div className={`text-2xl font-bold ${(liveOrdersStats.today?.profit_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {(liveOrdersStats.today?.profit_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.today?.profit_cents || 0) / 100).toFixed(2)}
                   </div>
-                  <div className="text-xs text-slate-500">All-time: {liveOrdersStats.roi_percent}% ROI</div>
+                  <div className="text-xs text-slate-500">
+                    ${((liveOrdersStats.today?.payout_cents || 0) / 100).toFixed(2)} - ${((liveOrdersStats.today?.fees_cents || 0) / 100).toFixed(2)} - ${((liveOrdersStats.today?.cost_cents || 0) / 100).toFixed(2)}
+                  </div>
                 </div>
               </div>
             )}
