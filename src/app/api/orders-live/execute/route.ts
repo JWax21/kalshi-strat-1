@@ -132,28 +132,39 @@ async function executeOrders() {
       const kalshiOrderId = result.order?.order_id;
       const status = result.order?.status;
       
-      // Capture actual execution price if available
-      // Kalshi returns yes_price/no_price in cents for the fill
-      const executedPriceCents = order.side === 'YES' 
-        ? result.order?.yes_price 
-        : result.order?.no_price;
-      const executedCostCents = executedPriceCents ? executedPriceCents * 1 : null; // 1 unit
+      // Only count as "confirmed" if actually executed (filled)
+      // "resting" means the order is on the book waiting to match
+      const isExecuted = status === 'executed';
+      const isResting = status === 'resting';
+      
+      // Capture actual execution price only if executed
+      let executedPriceCents = null;
+      let executedCostCents = null;
+      
+      if (isExecuted) {
+        executedPriceCents = order.side === 'YES' 
+          ? result.order?.yes_price 
+          : result.order?.no_price;
+        executedCostCents = executedPriceCents ? executedPriceCents * 1 : null;
+      }
 
       await supabase
         .from('orders')
         .update({
-          placement_status: status === 'resting' || status === 'executed' ? 'confirmed' : 'placed',
+          placement_status: isExecuted ? 'confirmed' : 'placed', // resting = placed, not confirmed
           placement_status_at: new Date().toISOString(),
           kalshi_order_id: kalshiOrderId,
-          executed_price_cents: executedPriceCents || null,
-          executed_cost_cents: executedCostCents || null,
+          executed_price_cents: executedPriceCents,
+          executed_cost_cents: executedCostCents,
         })
         .eq('id', order.id);
 
       placedCount++;
-      if (status === 'resting' || status === 'executed') {
+      if (isExecuted) {
         confirmedCount++;
       }
+      
+      console.log(`Order ${order.ticker}: status=${status}, executed=${isExecuted}, resting=${isResting}`);
 
       // Small delay to avoid rate limits
       await new Promise(r => setTimeout(r, 200));

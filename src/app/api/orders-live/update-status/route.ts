@@ -6,6 +6,56 @@ import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Helper to check order fill status
+async function getOrderStatus(orderId: string): Promise<{
+  status: string;
+  filledCount: number;
+  yesPrice: number | null;
+  noPrice: number | null;
+}> {
+  try {
+    const timestampMs = Date.now().toString();
+    const method = 'GET';
+    const endpoint = `/portfolio/orders/${orderId}`;
+    const fullPath = `/trade-api/v2${endpoint}`;
+
+    const message = `${timestampMs}${method}${fullPath}`;
+    const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+    const signature = crypto.sign('sha256', Buffer.from(message), {
+      key: privateKey,
+      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+    }).toString('base64');
+
+    const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+        'KALSHI-ACCESS-SIGNATURE': signature,
+        'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+      },
+    });
+
+    if (!response.ok) {
+      return { status: 'error', filledCount: 0, yesPrice: null, noPrice: null };
+    }
+
+    const data = await response.json();
+    const order = data.order;
+
+    return {
+      status: order.status,
+      filledCount: order.filled_count || 0,
+      yesPrice: order.yes_price,
+      noPrice: order.no_price,
+    };
+  } catch (error) {
+    console.error(`Error checking order ${orderId}:`, error);
+    return { status: 'error', filledCount: 0, yesPrice: null, noPrice: null };
+  }
+}
+
 // Helper to check market result
 async function getMarketResult(ticker: string): Promise<{ 
   settled: boolean; 
@@ -82,32 +132,72 @@ async function updateOrderStatuses() {
   let updatedCount = 0;
   let wonCount = 0;
   let lostCount = 0;
+  let filledCount = 0;
   const errors: string[] = [];
 
   for (const order of orders) {
     try {
-      const { settled, result, status } = await getMarketResult(order.ticker);
+      // First, check if "placed" orders have been filled
+      if (order.placement_status === 'placed' && order.kalshi_order_id) {
+        const orderStatus = await getOrderStatus(order.kalshi_order_id);
+        
+        if (orderStatus.status === 'executed' || orderStatus.filledCount > 0) {
+          // Order has been filled!
+          const executedPriceCents = order.side === 'YES' 
+            ? orderStatus.yesPrice 
+            : orderStatus.noPrice;
+          
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'confirmed',
+              placement_status_at: new Date().toISOString(),
+              executed_price_cents: executedPriceCents,
+              executed_cost_cents: executedPriceCents ? executedPriceCents * 1 : null,
+            })
+            .eq('id', order.id);
+          
+          filledCount++;
+          console.log(`Order ${order.ticker} filled at ${executedPriceCents}¢`);
+        } else if (orderStatus.status === 'cancelled') {
+          // Order was cancelled
+          await supabase
+            .from('orders')
+            .update({
+              settlement_status: 'closed',
+              settlement_status_at: new Date().toISOString(),
+            })
+            .eq('id', order.id);
+        }
+        
+        await new Promise(r => setTimeout(r, 100));
+      }
+      
+      // Then check if confirmed orders have market results
+      if (order.placement_status === 'confirmed' || order.placement_status === 'placed') {
+        const { settled, result } = await getMarketResult(order.ticker);
 
-      if (settled && result) {
-        const won = order.side.toLowerCase() === result;
-        const resultStatus = won ? 'won' : 'lost';
-        const settlementStatus = won ? 'success' : 'closed';
+        if (settled && result) {
+          const won = order.side.toLowerCase() === result;
+          const resultStatus = won ? 'won' : 'lost';
+          const settlementStatus = won ? 'success' : 'closed';
 
-        await supabase
-          .from('orders')
-          .update({
-            result_status: resultStatus,
-            result_status_at: new Date().toISOString(),
-            settlement_status: settlementStatus,
-            settlement_status_at: new Date().toISOString(),
-          })
-          .eq('id', order.id);
+          await supabase
+            .from('orders')
+            .update({
+              result_status: resultStatus,
+              result_status_at: new Date().toISOString(),
+              settlement_status: settlementStatus,
+              settlement_status_at: new Date().toISOString(),
+            })
+            .eq('id', order.id);
 
-        updatedCount++;
-        if (won) wonCount++;
-        else lostCount++;
+          updatedCount++;
+          if (won) wonCount++;
+          else lostCount++;
 
-        console.log(`Updated ${order.ticker}: ${resultStatus}`);
+          console.log(`Updated ${order.ticker}: ${resultStatus}`);
+        }
       }
 
       // Small delay to avoid rate limits
@@ -121,6 +211,7 @@ async function updateOrderStatuses() {
     success: true,
     stats: {
       checked: orders.length,
+      filled: filledCount,
       updated: updatedCount,
       won: wonCount,
       lost: lostCount,
