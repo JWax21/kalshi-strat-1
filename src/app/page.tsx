@@ -543,18 +543,18 @@ export default function Dashboard() {
     }
   };
 
-  // Prepare tomorrow's orders
-  const prepareTomorrowOrders = async () => {
+  // Prepare orders
+  const prepareOrders = async (forToday: boolean = false) => {
     setPreparingOrders(true);
     try {
       const res = await fetch('/api/orders-live/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 1000 }),
+        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 1000, forToday }),
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Prepared ${data.batch.total_orders} orders for tomorrow`);
+        alert(`Prepared ${data.batch.total_orders} orders for ${forToday ? 'today' : 'tomorrow'}`);
         fetchLiveOrders();
       } else {
         alert(`Error: ${data.error}`);
@@ -1117,7 +1117,7 @@ export default function Dashboard() {
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-4 mb-6">
               <button
-                onClick={prepareTomorrowOrders}
+                onClick={() => prepareOrders(false)}
                 disabled={preparingOrders}
                 className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-500 disabled:opacity-50"
               >
@@ -1125,6 +1125,17 @@ export default function Dashboard() {
                   <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Preparing...</>
                 ) : (
                   <>📋 Prepare Tomorrow</>
+                )}
+              </button>
+              <button
+                onClick={() => prepareOrders(true)}
+                disabled={preparingOrders}
+                className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-500 disabled:opacity-50"
+              >
+                {preparingOrders ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Preparing...</>
+                ) : (
+                  <>📋 Prepare Today</>
                 )}
               </button>
               <button

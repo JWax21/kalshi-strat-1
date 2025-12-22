@@ -5,33 +5,37 @@ import { getMarkets, filterHighOddsMarkets, getMarketOdds, KalshiMarket } from '
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+
 interface PrepareParams {
   unitSizeCents: number;
   minOdds: number;
   maxOdds: number;
   minOpenInterest: number;
-  maxOpenInterest: number; // To exclude low OI
+  maxOpenInterest: number;
+  forToday?: boolean; // If true, prepare for today instead of tomorrow
 }
 
 async function prepareOrders(params: PrepareParams) {
-  const { unitSizeCents, minOdds, maxOdds, minOpenInterest, maxOpenInterest } = params;
+  const { unitSizeCents, minOdds, maxOdds, minOpenInterest, maxOpenInterest, forToday } = params;
 
-  // Get tomorrow's date
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  // Get target date (today or tomorrow)
+  const targetDate = new Date();
+  if (!forToday) {
+    targetDate.setDate(targetDate.getDate() + 1);
+  }
+  const targetDateStr = targetDate.toISOString().split('T')[0];
 
   // Check if batch already exists for tomorrow
   const { data: existing } = await supabase
     .from('order_batches')
     .select('id')
-    .eq('batch_date', tomorrowStr)
+    .eq('batch_date', targetDateStr)
     .single();
 
   if (existing) {
     return {
       success: false,
-      error: `Batch already exists for ${tomorrowStr}`,
+      error: `Batch already exists for ${targetDateStr}`,
       batch_id: existing.id,
     };
   }
@@ -97,7 +101,7 @@ async function prepareOrders(params: PrepareParams) {
   const { data: batch, error: batchError } = await supabase
     .from('order_batches')
     .insert({
-      batch_date: tomorrowStr,
+      batch_date: targetDateStr,
       unit_size_cents: unitSizeCents,
       total_orders: enrichedMarkets.length,
       total_cost_cents: totalCost,
@@ -139,11 +143,11 @@ async function prepareOrders(params: PrepareParams) {
     success: true,
     batch: {
       id: batch.id,
-      date: tomorrowStr,
+      date: targetDateStr,
       total_orders: enrichedMarkets.length,
       total_cost_cents: totalCost,
     },
-    message: `Prepared ${enrichedMarkets.length} orders for ${tomorrowStr}`,
+    message: `Prepared ${enrichedMarkets.length} orders for ${targetDateStr}`,
   };
 }
 
@@ -182,8 +186,9 @@ export async function POST(request: Request) {
       unitSizeCents: body.unitSizeCents || 100,
       minOdds: body.minOdds || 0.85,
       maxOdds: body.maxOdds || 0.995,
-      minOpenInterest: body.minOpenInterest || 1000, // Default to 1K+ OI
+      minOpenInterest: body.minOpenInterest || 1000,
       maxOpenInterest: body.maxOpenInterest || 100,
+      forToday: body.forToday || false,
     });
 
     return NextResponse.json(result);
