@@ -95,6 +95,29 @@ interface LiveOrdersStats {
   total_payout_cents: number;
   net_pnl_cents: number;
   roi_percent: string;
+  placement_breakdown: {
+    pending: number;
+    placed: number;
+    confirmed: number;
+  };
+  result_breakdown: {
+    undecided: number;
+    won: number;
+    lost: number;
+  };
+  settlement_breakdown: {
+    pending: number;
+    closed: number;
+    success: number;
+  };
+  cost_breakdown: {
+    estimated_cost_cents: number;
+    actual_cost_cents: number;
+    potential_payout_cents: number;
+    actual_payout_cents: number;
+    total_lost_cents: number;
+    net_pnl_cents: number;
+  };
 }
 
 interface SimulationStats {
@@ -1203,7 +1226,7 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Summary Stats */}
+            {/* Summary Stats Cards */}
             {liveOrdersStats && (
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div className="bg-slate-900 rounded-xl p-4">
@@ -1230,6 +1253,169 @@ export default function Dashboard() {
                     ${(liveOrdersStats.net_pnl_cents / 100).toFixed(2)}
                   </div>
                   <div className="text-xs text-slate-500">ROI: {liveOrdersStats.roi_percent}%</div>
+                </div>
+              </div>
+            )}
+
+            {/* Detailed Summary Table */}
+            {liveOrdersStats && liveOrdersStats.placement_breakdown && (
+              <div className="bg-slate-900 rounded-xl p-6 mb-6">
+                <h3 className="text-lg font-bold text-white mb-4">📊 Order Summary</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Status Breakdowns */}
+                  <div className="space-y-4">
+                    {/* Placement Status */}
+                    <div>
+                      <div className="text-sm font-medium text-slate-400 mb-2">Placement Status</div>
+                      <div className="bg-slate-800 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Pending</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-slate-700 text-slate-300 rounded text-xs font-medium">
+                                  {liveOrdersStats.placement_breakdown.pending}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Placed (Resting)</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.placement_breakdown.placed}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 text-slate-400">Confirmed (Filled)</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.placement_breakdown.confirmed}
+                                </span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Result Status */}
+                    <div>
+                      <div className="text-sm font-medium text-slate-400 mb-2">Result Status</div>
+                      <div className="bg-slate-800 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Undecided</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-slate-700 text-slate-300 rounded text-xs font-medium">
+                                  {liveOrdersStats.result_breakdown.undecided}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Won</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.result_breakdown.won}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 text-slate-400">Lost</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.result_breakdown.lost}
+                                </span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Settlement Status */}
+                    <div>
+                      <div className="text-sm font-medium text-slate-400 mb-2">Settlement Status</div>
+                      <div className="bg-slate-800 rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Pending</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-yellow-900/50 text-yellow-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.settlement_breakdown.pending}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Closed (Lost)</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.settlement_breakdown.closed}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="px-3 py-2 text-slate-400">Success (Paid)</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
+                                  {liveOrdersStats.settlement_breakdown.success}
+                                </span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial Summary */}
+                  <div>
+                    <div className="text-sm font-medium text-slate-400 mb-2">Financial Summary</div>
+                    <div className="bg-slate-800 rounded-lg overflow-hidden">
+                      <table className="w-full text-sm">
+                        <tbody>
+                          <tr className="border-b border-slate-700">
+                            <td className="px-3 py-2.5 text-slate-400">Estimated Cost</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-slate-300">
+                              ${(liveOrdersStats.cost_breakdown.estimated_cost_cents / 100).toFixed(2)}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-slate-700 bg-slate-700/30">
+                            <td className="px-3 py-2.5 text-white font-medium">Actual Cost</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-white font-medium">
+                              ${(liveOrdersStats.cost_breakdown.actual_cost_cents / 100).toFixed(2)}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-slate-700">
+                            <td className="px-3 py-2.5 text-slate-400">Potential Payout</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-slate-300">
+                              ${(liveOrdersStats.cost_breakdown.potential_payout_cents / 100).toFixed(2)}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-slate-700 bg-emerald-900/20">
+                            <td className="px-3 py-2.5 text-emerald-400 font-medium">Actual Payout (Won)</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-emerald-400 font-medium">
+                              ${(liveOrdersStats.cost_breakdown.actual_payout_cents / 100).toFixed(2)}
+                            </td>
+                          </tr>
+                          <tr className="border-b border-slate-700 bg-red-900/20">
+                            <td className="px-3 py-2.5 text-red-400 font-medium">Total Lost</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-red-400 font-medium">
+                              -${(liveOrdersStats.cost_breakdown.total_lost_cents / 100).toFixed(2)}
+                            </td>
+                          </tr>
+                          <tr className={`${liveOrdersStats.cost_breakdown.net_pnl_cents >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
+                            <td className="px-3 py-3 text-white font-bold text-base">Net P&L</td>
+                            <td className={`px-3 py-3 text-right font-mono font-bold text-base ${liveOrdersStats.cost_breakdown.net_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {liveOrdersStats.cost_breakdown.net_pnl_cents >= 0 ? '+' : ''}${(liveOrdersStats.cost_breakdown.net_pnl_cents / 100).toFixed(2)}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

@@ -48,15 +48,37 @@ export async function GET(request: Request) {
 
     // Calculate aggregate stats
     const allOrders = orders;
+    
+    // Placement status breakdown
+    const pendingPlacement = allOrders.filter(o => o.placement_status === 'pending');
+    const placedOrders = allOrders.filter(o => o.placement_status === 'placed');
     const confirmedOrders = allOrders.filter(o => o.placement_status === 'confirmed');
+    
+    // Result status breakdown
+    const undecidedOrders = allOrders.filter(o => o.result_status === 'undecided');
     const wonOrders = allOrders.filter(o => o.result_status === 'won');
     const lostOrders = allOrders.filter(o => o.result_status === 'lost');
+    
+    // Settlement status breakdown
+    const pendingSettlement = allOrders.filter(o => o.settlement_status === 'pending');
+    const closedOrders = allOrders.filter(o => o.settlement_status === 'closed');
+    const successOrders = allOrders.filter(o => o.settlement_status === 'success');
+    
     const settledOrders = [...wonOrders, ...lostOrders];
 
-    const totalCost = confirmedOrders.reduce((sum, o) => sum + o.cost_cents, 0);
-    const totalPayout = wonOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
-    const totalLost = lostOrders.reduce((sum, o) => sum + o.cost_cents, 0);
-    const netPnl = totalPayout - totalLost;
+    // Cost calculations
+    // Estimated cost = price_cents (what we expected to pay)
+    const totalEstimatedCost = confirmedOrders.reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+    // Actual cost = executed_cost_cents (what we actually paid)
+    const totalActualCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Potential payout for confirmed orders
+    const totalPotentialPayout = confirmedOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    // Actual payout received (from won orders that are settled)
+    const totalActualPayout = wonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    // Total lost
+    const totalLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Net P&L (actual payout - actual cost of lost orders)
+    const netPnl = totalActualPayout - totalLost;
 
     const winRate = settledOrders.length > 0
       ? (wonOrders.length / settledOrders.length * 100).toFixed(1)
@@ -77,12 +99,36 @@ export async function GET(request: Request) {
         confirmed_orders: confirmedOrders.length,
         won_orders: wonOrders.length,
         lost_orders: lostOrders.length,
-        pending_orders: allOrders.filter(o => o.result_status === 'undecided').length,
+        pending_orders: undecidedOrders.length,
         win_rate: winRate,
-        total_cost_cents: totalCost,
-        total_payout_cents: totalPayout,
+        total_cost_cents: totalActualCost,
+        total_payout_cents: totalActualPayout,
         net_pnl_cents: netPnl,
-        roi_percent: totalCost > 0 ? ((netPnl / totalCost) * 100).toFixed(2) : '0.00',
+        roi_percent: totalActualCost > 0 ? ((netPnl / totalActualCost) * 100).toFixed(2) : '0.00',
+        // Detailed breakdowns
+        placement_breakdown: {
+          pending: pendingPlacement.length,
+          placed: placedOrders.length,
+          confirmed: confirmedOrders.length,
+        },
+        result_breakdown: {
+          undecided: undecidedOrders.length,
+          won: wonOrders.length,
+          lost: lostOrders.length,
+        },
+        settlement_breakdown: {
+          pending: pendingSettlement.length,
+          closed: closedOrders.length,
+          success: successOrders.length,
+        },
+        cost_breakdown: {
+          estimated_cost_cents: totalEstimatedCost,
+          actual_cost_cents: totalActualCost,
+          potential_payout_cents: totalPotentialPayout,
+          actual_payout_cents: totalActualPayout,
+          total_lost_cents: totalLost,
+          net_pnl_cents: netPnl,
+        },
       },
     });
   } catch (error) {
