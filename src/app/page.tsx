@@ -179,8 +179,98 @@ interface PortfolioData {
   balance: { balance: number; payout: number };
 }
 
+// Auth credentials
+const VALID_USERS = ['jwax', 'jlewis'];
+const VALID_PIN = '9518';
+
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('markets');
+  
+  // Auth state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authUsername, setAuthUsername] = useState('');
+  const [authPin, setAuthPin] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  // Check for existing auth on mount
+  useEffect(() => {
+    const savedAuth = sessionStorage.getItem('kalshi_auth');
+    if (savedAuth === 'true') {
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = () => {
+    const username = authUsername.toLowerCase().trim();
+    if (VALID_USERS.includes(username) && authPin === VALID_PIN) {
+      setIsAuthenticated(true);
+      sessionStorage.setItem('kalshi_auth', 'true');
+      setAuthError('');
+    } else {
+      setAuthError('Invalid username or PIN');
+    }
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    sessionStorage.removeItem('kalshi_auth');
+    setAuthUsername('');
+    setAuthPin('');
+  };
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <main className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="bg-slate-900 rounded-2xl p-8 w-full max-w-md border border-slate-800 shadow-2xl">
+          <div className="text-center mb-8">
+            <img src="/jl.png" alt="Logo" className="w-16 h-16 rounded-lg mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-white">Kalshi Favorites Fund</h1>
+            <p className="text-slate-400 mt-2">Enter credentials to continue</p>
+          </div>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Username</label>
+              <input
+                type="text"
+                value={authUsername}
+                onChange={(e) => setAuthUsername(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                placeholder="Enter username"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">PIN</label>
+              <input
+                type="password"
+                value={authPin}
+                onChange={(e) => setAuthPin(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                placeholder="Enter PIN"
+              />
+            </div>
+            
+            {authError && (
+              <div className="text-red-400 text-sm text-center py-2 bg-red-500/10 rounded-lg">
+                {authError}
+              </div>
+            )}
+            
+            <button
+              onClick={handleLogin}
+              className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 transition-colors"
+            >
+              Login
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
   const [portfolioSubTab, setPortfolioSubTab] = useState<PortfolioSubTab>('positions');
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
@@ -737,6 +827,12 @@ export default function Dashboard() {
                   <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
                 Refresh
+              </button>
+              <button 
+                onClick={handleLogout}
+                className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700"
+              >
+                Logout
               </button>
             </div>
           </div>
