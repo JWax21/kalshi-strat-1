@@ -83,13 +83,20 @@ async function getPositions(): Promise<any[]> {
   return data.market_positions || [];
 }
 
+// Get balance
+async function getBalance(): Promise<any> {
+  const data = await kalshiFetch('/portfolio/balance');
+  return data;
+}
+
 export async function GET() {
   try {
     // Fetch from all portfolio endpoints
-    const [orders, fills, positions] = await Promise.all([
+    const [orders, fills, positions, balance] = await Promise.all([
       getAllOrders(),
       getAllFills(),
       getPositions(),
+      getBalance(),
     ]);
 
     // Categorize orders by status
@@ -101,25 +108,51 @@ export async function GET() {
     // Get unique tickers with fills
     const tickersWithFills = new Set(fills.map(f => f.ticker));
 
+    // Calculate total fills value
+    const totalFillsCost = fills.reduce((sum, f) => sum + ((f.price || 0) * (f.count || 0)), 0);
+
     // Get positions summary
     const positionsSummary = positions.map(p => ({
       ticker: p.ticker,
-      position: p.position,
+      position: p.position, // positive = long, negative = short
       market_exposure: p.market_exposure,
       realized_pnl: p.realized_pnl,
+      total_traded: p.total_traded,
+      resting_orders_count: p.resting_orders_count,
     }));
+
+    // Calculate totals from positions
+    const totalPositionExposure = positions.reduce((sum, p) => sum + (p.market_exposure || 0), 0);
+    const totalRealizedPnl = positions.reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
+    const totalRestingOrders = positions.reduce((sum, p) => sum + (p.resting_orders_count || 0), 0);
 
     return NextResponse.json({
       success: true,
+      // Portfolio Balance
+      balance: {
+        available_balance_cents: balance.balance,
+        available_balance_dollars: (balance.balance / 100).toFixed(2),
+        portfolio_value_cents: balance.portfolio_value,
+        portfolio_value_dollars: (balance.portfolio_value / 100).toFixed(2),
+        total_value_cents: balance.balance + balance.portfolio_value,
+        total_value_dollars: ((balance.balance + balance.portfolio_value) / 100).toFixed(2),
+        updated_at: new Date(balance.updated_ts * 1000).toISOString(),
+      },
+      // Summary stats
       summary: {
         total_orders: orders.length,
         orders_by_status: ordersByStatus,
         total_fills: fills.length,
+        total_fills_cost_cents: totalFillsCost,
+        total_fills_cost_dollars: (totalFillsCost / 100).toFixed(2),
         unique_tickers_with_fills: tickersWithFills.size,
         total_positions: positions.length,
+        total_position_exposure_cents: totalPositionExposure,
+        total_realized_pnl_cents: totalRealizedPnl,
+        total_resting_orders: totalRestingOrders,
       },
       // Sample data for debugging
-      sample_orders: orders.slice(0, 5).map(o => ({
+      sample_orders: orders.slice(0, 10).map(o => ({
         order_id: o.order_id,
         ticker: o.ticker,
         status: o.status,
@@ -132,7 +165,7 @@ export async function GET() {
         no_price: o.no_price,
         created_time: o.created_time,
       })),
-      sample_fills: fills.slice(0, 5).map(f => ({
+      sample_fills: fills.slice(0, 10).map(f => ({
         trade_id: f.trade_id,
         order_id: f.order_id,
         ticker: f.ticker,
