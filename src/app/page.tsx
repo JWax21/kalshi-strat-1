@@ -181,7 +181,7 @@ interface PortfolioData {
 
 // Auth credentials
 const VALID_USERS = ['jwax', 'jlewis'];
-const VALID_PIN = '9518';
+const VALID_PIN = '9511';
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('markets');
