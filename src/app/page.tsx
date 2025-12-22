@@ -84,6 +84,19 @@ interface LiveOrder {
 }
 
 interface LiveOrdersStats {
+  // Account info
+  balance_cents: number;
+  portfolio_value_cents: number;
+  total_exposure_cents: number;
+  // Today's stats
+  today: {
+    date: string;
+    orders: number;
+    confirmed: number;
+    won: number;
+    lost: number;
+    pnl_cents: number;
+  };
   total_batches: number;
   total_orders: number;
   confirmed_orders: number;
@@ -1234,33 +1247,34 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {/* Summary Stats Cards */}
+            {/* Top Summary Cards */}
             {liveOrdersStats && (
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Orders</div>
-                  <div className="text-2xl font-bold text-white">{liveOrdersStats.total_orders}</div>
-                  <div className="text-xs text-slate-500">{liveOrdersStats.pending_orders} pending</div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Balance</div>
+                  <div className="text-2xl font-bold text-white">${((liveOrdersStats.balance_cents || 0) / 100).toFixed(2)}</div>
+                  <div className="text-xs text-slate-500">Available cash</div>
                 </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Win Rate</div>
-                  <div className="text-2xl font-bold text-emerald-400">{liveOrdersStats.win_rate}%</div>
-                  <div className="text-xs text-slate-500">{liveOrdersStats.won_orders}W / {liveOrdersStats.lost_orders}L</div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Total Exposure</div>
+                  <div className="text-2xl font-bold text-blue-400">${((liveOrdersStats.total_exposure_cents || 0) / 100).toFixed(2)}</div>
+                  <div className="text-xs text-slate-500">Portfolio value</div>
                 </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Cost</div>
-                  <div className="text-2xl font-bold text-white">${(liveOrdersStats.total_cost_cents / 100).toFixed(2)}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Payout</div>
-                  <div className="text-2xl font-bold text-emerald-400">${(liveOrdersStats.total_payout_cents / 100).toFixed(2)}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Net P&L</div>
-                  <div className={`text-2xl font-bold ${liveOrdersStats.net_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    ${(liveOrdersStats.net_pnl_cents / 100).toFixed(2)}
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">W-L (Today)</div>
+                  <div className="text-2xl font-bold text-white">
+                    <span className="text-emerald-400">{liveOrdersStats.today?.won || 0}W</span>
+                    {' - '}
+                    <span className="text-red-400">{liveOrdersStats.today?.lost || 0}L</span>
                   </div>
-                  <div className="text-xs text-slate-500">ROI: {liveOrdersStats.roi_percent}%</div>
+                  <div className="text-xs text-slate-500">{liveOrdersStats.today?.confirmed || 0} confirmed today</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">P&L (Today)</div>
+                  <div className={`text-2xl font-bold ${(liveOrdersStats.today?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {(liveOrdersStats.today?.pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.today?.pnl_cents || 0) / 100).toFixed(2)}
+                  </div>
+                  <div className="text-xs text-slate-500">All-time: {liveOrdersStats.roi_percent}% ROI</div>
                 </div>
               </div>
             )}
@@ -1294,11 +1308,21 @@ export default function Dashboard() {
                                 </span>
                               </td>
                             </tr>
-                            <tr>
+                            <tr className="border-b border-slate-700">
                               <td className="px-3 py-2 text-slate-400">Confirmed (Filled)</td>
                               <td className="px-3 py-2 text-right">
                                 <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
                                   {liveOrdersStats.placement_breakdown.confirmed}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr className="bg-slate-700/50">
+                              <td className="px-3 py-2 text-white font-medium">Total</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-slate-600 text-white rounded text-xs font-bold">
+                                  {(liveOrdersStats.placement_breakdown.pending || 0) + 
+                                   (liveOrdersStats.placement_breakdown.placed || 0) + 
+                                   (liveOrdersStats.placement_breakdown.confirmed || 0)}
                                 </span>
                               </td>
                             </tr>
@@ -1329,11 +1353,21 @@ export default function Dashboard() {
                                 </span>
                               </td>
                             </tr>
-                            <tr>
+                            <tr className="border-b border-slate-700">
                               <td className="px-3 py-2 text-slate-400">Lost</td>
                               <td className="px-3 py-2 text-right">
                                 <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs font-medium">
                                   {liveOrdersStats.result_breakdown.lost}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr className="bg-slate-700/50">
+                              <td className="px-3 py-2 text-white font-medium">Total (Confirmed)</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-slate-600 text-white rounded text-xs font-bold">
+                                  {(liveOrdersStats.result_breakdown.undecided || 0) + 
+                                   (liveOrdersStats.result_breakdown.won || 0) + 
+                                   (liveOrdersStats.result_breakdown.lost || 0)}
                                 </span>
                               </td>
                             </tr>
@@ -1364,11 +1398,21 @@ export default function Dashboard() {
                                 </span>
                               </td>
                             </tr>
-                            <tr>
+                            <tr className="border-b border-slate-700">
                               <td className="px-3 py-2 text-slate-400">Success (Paid)</td>
                               <td className="px-3 py-2 text-right">
                                 <span className="px-2 py-0.5 bg-emerald-900/50 text-emerald-400 rounded text-xs font-medium">
                                   {liveOrdersStats.settlement_breakdown.success}
+                                </span>
+                              </td>
+                            </tr>
+                            <tr className="bg-slate-700/50">
+                              <td className="px-3 py-2 text-white font-medium">Total</td>
+                              <td className="px-3 py-2 text-right">
+                                <span className="px-2 py-0.5 bg-slate-600 text-white rounded text-xs font-bold">
+                                  {(liveOrdersStats.settlement_breakdown.pending || 0) + 
+                                   (liveOrdersStats.settlement_breakdown.closed || 0) + 
+                                   (liveOrdersStats.settlement_breakdown.success || 0)}
                                 </span>
                               </td>
                             </tr>

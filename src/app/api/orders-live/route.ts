@@ -1,8 +1,42 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import crypto from 'crypto';
+import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Helper to make authenticated Kalshi API calls
+async function kalshiFetch(endpoint: string): Promise<any> {
+  const timestampMs = Date.now().toString();
+  const method = 'GET';
+  const pathWithoutQuery = endpoint.split('?')[0];
+  const fullPath = `/trade-api/v2${pathWithoutQuery}`;
+
+  const message = `${timestampMs}${method}${fullPath}`;
+  const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+  const signature = crypto.sign('sha256', Buffer.from(message), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  }).toString('base64');
+
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kalshi API error: ${response.status}`);
+  }
+
+  return response.json();
+}
 
 // GET - Fetch all batches and orders with stats
 export async function GET(request: Request) {
@@ -98,6 +132,26 @@ export async function GET(request: Request) {
       ? (wonOrders.length / decidedOrders.length * 100).toFixed(1)
       : '0.0';
 
+    // ===== FETCH BALANCE FROM KALSHI =====
+    let balance = { balance: 0, portfolio_value: 0 };
+    try {
+      balance = await kalshiFetch('/portfolio/balance');
+    } catch (e) {
+      console.error('Error fetching balance:', e);
+    }
+
+    // ===== TODAY'S STATS =====
+    const today = new Date().toISOString().split('T')[0];
+    const todayBatch = (batches || []).find(b => b.batch_date === today);
+    const todayOrders = todayBatch ? (ordersByBatch[todayBatch.id] || []) : [];
+    
+    const todayConfirmed = todayOrders.filter(o => o.placement_status === 'confirmed');
+    const todayWon = todayConfirmed.filter(o => o.result_status === 'won');
+    const todayLost = todayConfirmed.filter(o => o.result_status === 'lost');
+    const todayWonPayout = todayWon.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    const todayLostCost = todayLost.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    const todayPnl = todayWonPayout - todayLostCost;
+
     // Enrich batches with their orders
     const enrichedBatches = (batches || []).map(batch => ({
       ...batch,
@@ -108,6 +162,21 @@ export async function GET(request: Request) {
       success: true,
       batches: enrichedBatches,
       stats: {
+        // Account info from Kalshi
+        balance_cents: balance.balance,
+        portfolio_value_cents: balance.portfolio_value,
+        total_exposure_cents: balance.portfolio_value, // portfolio_value = market exposure
+        
+        // Today's stats
+        today: {
+          date: today,
+          orders: todayOrders.length,
+          confirmed: todayConfirmed.length,
+          won: todayWon.length,
+          lost: todayLost.length,
+          pnl_cents: todayPnl,
+        },
+        
         total_batches: (batches || []).length,
         total_orders: allOrders.length,
         confirmed_orders: confirmedOrders.length,
