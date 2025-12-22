@@ -106,6 +106,7 @@ interface LiveOrdersStats {
   win_rate: string;
   total_cost_cents: number;
   total_payout_cents: number;
+  total_fees_cents: number;
   net_pnl_cents: number;
   roi_percent: string;
   placement_breakdown: {
@@ -137,8 +138,10 @@ interface LiveOrdersStats {
   settlement_financials: {
     projected_payout_cents: number;
     actual_payout_cents: number;
+    won_cost_cents: number;
+    fees_paid_cents: number;
     actual_lost_cents: number;
-    net_pnl_cents: number;
+    net_profit_cents: number;
   };
 }
 
@@ -1250,7 +1253,7 @@ export default function Dashboard() {
 
             {/* Top Summary Cards */}
             {liveOrdersStats && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase">Balance</div>
                   <div className="text-2xl font-bold text-white">${((liveOrdersStats.balance_cents || 0) / 100).toFixed(2)}</div>
@@ -1271,7 +1274,12 @@ export default function Dashboard() {
                   <div className="text-xs text-slate-500">{liveOrdersStats.today?.confirmed || 0} confirmed today</div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">P&L (Today)</div>
+                  <div className="text-xs text-slate-500 uppercase">Fees Paid</div>
+                  <div className="text-2xl font-bold text-orange-400">${((liveOrdersStats.total_fees_cents || 0) / 100).toFixed(2)}</div>
+                  <div className="text-xs text-slate-500">On settled trades</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Profit (Today)</div>
                   <div className={`text-2xl font-bold ${(liveOrdersStats.today?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                     {(liveOrdersStats.today?.pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.today?.pnl_cents || 0) / 100).toFixed(2)}
                   </div>
@@ -1448,21 +1456,33 @@ export default function Dashboard() {
                               </td>
                             </tr>
                             <tr className="border-b border-slate-700 bg-emerald-900/20">
-                              <td className="px-3 py-2 text-emerald-400 font-medium">Actual Payout (received)</td>
-                              <td className="px-3 py-2 text-right font-mono text-emerald-400 font-medium">
-                                ${((liveOrdersStats.settlement_financials?.actual_payout_cents || 0) / 100).toFixed(2)}
+                              <td className="px-3 py-2 text-emerald-400">Payout Received</td>
+                              <td className="px-3 py-2 text-right font-mono text-emerald-400">
+                                +${((liveOrdersStats.settlement_financials?.actual_payout_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700">
+                              <td className="px-3 py-2 text-slate-400">Cost of Won Trades</td>
+                              <td className="px-3 py-2 text-right font-mono text-slate-300">
+                                -${((liveOrdersStats.settlement_financials?.won_cost_cents || 0) / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                            <tr className="border-b border-slate-700 bg-orange-900/20">
+                              <td className="px-3 py-2 text-orange-400">Fees Paid</td>
+                              <td className="px-3 py-2 text-right font-mono text-orange-400">
+                                -${((liveOrdersStats.settlement_financials?.fees_paid_cents || 0) / 100).toFixed(2)}
                               </td>
                             </tr>
                             <tr className="border-b border-slate-700 bg-red-900/20">
-                              <td className="px-3 py-2 text-red-400 font-medium">Actual Lost (closed)</td>
-                              <td className="px-3 py-2 text-right font-mono text-red-400 font-medium">
+                              <td className="px-3 py-2 text-red-400">Lost Trades</td>
+                              <td className="px-3 py-2 text-right font-mono text-red-400">
                                 -${((liveOrdersStats.settlement_financials?.actual_lost_cents || 0) / 100).toFixed(2)}
                               </td>
                             </tr>
-                            <tr className={`${(liveOrdersStats.settlement_financials?.net_pnl_cents || 0) >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
-                              <td className="px-3 py-3 text-white font-bold text-base">Net P&L (actual)</td>
-                              <td className={`px-3 py-3 text-right font-mono font-bold text-base ${(liveOrdersStats.settlement_financials?.net_pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {(liveOrdersStats.settlement_financials?.net_pnl_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.settlement_financials?.net_pnl_cents || 0) / 100).toFixed(2)}
+                            <tr className={`${(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? 'bg-emerald-900/30' : 'bg-red-900/30'}`}>
+                              <td className="px-3 py-3 text-white font-bold text-base">Net Profit</td>
+                              <td className={`px-3 py-3 text-right font-mono font-bold text-base ${(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {(liveOrdersStats.settlement_financials?.net_profit_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.settlement_financials?.net_profit_cents || 0) / 100).toFixed(2)}
                               </td>
                             </tr>
                           </tbody>

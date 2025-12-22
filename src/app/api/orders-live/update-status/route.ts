@@ -266,12 +266,13 @@ async function updateOrderStatuses() {
             .update({
               settlement_status: 'success',
               settlement_status_at: settlementResult.settled_time || new Date().toISOString(),
-              // Store actual revenue received
+              // Store actual revenue and fees
               actual_payout_cents: settlementResult.revenue,
+              fee_cents: Math.round(settlementResult.fee_cost),
             })
             .eq('id', order.id);
           
-          console.log(`Settlement received for ${order.ticker}: revenue=$${(settlementResult.revenue / 100).toFixed(2)}, count=${settlementResult.count}, weWon=${weWon}`);
+          console.log(`Settlement received for ${order.ticker}: revenue=$${(settlementResult.revenue / 100).toFixed(2)}, fee=$${(settlementResult.fee_cost / 100).toFixed(2)}, weWon=${weWon}`);
         }
         
         await new Promise(r => setTimeout(r, 100));

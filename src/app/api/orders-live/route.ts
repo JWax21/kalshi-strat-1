@@ -125,11 +125,17 @@ export async function GET(request: Request) {
       .filter(o => o.settlement_status === 'pending')
       .reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
     // Actual payout = from orders with settlement_status = 'success' (cash received)
+    // For won orders: payout is $1 per contract = 100 cents
     const settlementActualPayout = successOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+    // Actual cost of won orders that were settled
+    const settlementWonCost = successOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Total fees paid on settled trades
+    const settlementFeesPaid = successOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
     // Actual lost = from orders with settlement_status = 'closed'
     const settlementActualLost = closedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-    // Net P&L = actual cash received - actual cash lost
-    const settlementNetPnl = settlementActualPayout - settlementActualLost;
+    // Net P&L = (payout - cost - fees) for won orders - lost amount
+    // Profit = payout received - cost paid - fees paid - losses
+    const settlementNetProfit = settlementActualPayout - settlementWonCost - settlementFeesPaid - settlementActualLost;
 
     const winRate = decidedOrders.length > 0
       ? (wonOrders.length / decidedOrders.length * 100).toFixed(1)
@@ -190,8 +196,9 @@ export async function GET(request: Request) {
         // Legacy fields for backward compatibility
         total_cost_cents: placementActualCost,
         total_payout_cents: settlementActualPayout,
-        net_pnl_cents: settlementNetPnl,
-        roi_percent: placementActualCost > 0 ? ((settlementNetPnl / placementActualCost) * 100).toFixed(2) : '0.00',
+        total_fees_cents: settlementFeesPaid,
+        net_pnl_cents: settlementNetProfit,
+        roi_percent: placementActualCost > 0 ? ((settlementNetProfit / placementActualCost) * 100).toFixed(2) : '0.00',
         // Status breakdowns
         placement_breakdown: {
           pending: pendingPlacement.length,
@@ -223,8 +230,10 @@ export async function GET(request: Request) {
         settlement_financials: {
           projected_payout_cents: settlementProjectedPayout,
           actual_payout_cents: settlementActualPayout,
+          won_cost_cents: settlementWonCost,
+          fees_paid_cents: settlementFeesPaid,
           actual_lost_cents: settlementActualLost,
-          net_pnl_cents: settlementNetPnl,
+          net_profit_cents: settlementNetProfit,
         },
       },
     });
