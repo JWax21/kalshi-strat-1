@@ -7,7 +7,18 @@
     {
       "path": "/api/simulation/settle",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/orders-live/prepare",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/orders-live/execute",
+      "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/orders-live/update-status",
+      "schedule": "0 * * * *"
     }
   ]
 }
-

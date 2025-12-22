@@ -46,8 +46,54 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'markets' | 'portfolio' | 'simulation';
+type Tab = 'markets' | 'portfolio' | 'simulation' | 'orders';
 type PortfolioSubTab = 'positions' | 'history';
+
+interface OrderBatch {
+  id: string;
+  batch_date: string;
+  unit_size_cents: number;
+  total_orders: number;
+  total_cost_cents: number;
+  total_potential_payout_cents: number;
+  is_paused: boolean;
+  prepared_at: string | null;
+  executed_at: string | null;
+  orders: LiveOrder[];
+}
+
+interface LiveOrder {
+  id: string;
+  ticker: string;
+  title: string;
+  side: 'YES' | 'NO';
+  price_cents: number;
+  units: number;
+  cost_cents: number;
+  potential_payout_cents: number;
+  open_interest: number;
+  market_close_time: string;
+  placement_status: 'pending' | 'placed' | 'confirmed';
+  placement_status_at: string | null;
+  result_status: 'undecided' | 'won' | 'lost';
+  result_status_at: string | null;
+  settlement_status: 'pending' | 'closed' | 'success';
+  settlement_status_at: string | null;
+}
+
+interface LiveOrdersStats {
+  total_batches: number;
+  total_orders: number;
+  confirmed_orders: number;
+  won_orders: number;
+  lost_orders: number;
+  pending_orders: number;
+  win_rate: string;
+  total_cost_cents: number;
+  total_payout_cents: number;
+  net_pnl_cents: number;
+  roi_percent: string;
+}
 
 interface SimulationStats {
   total_snapshots: number;
@@ -166,6 +212,16 @@ export default function Dashboard() {
   const [snapshotCreating, setSnapshotCreating] = useState(false);
   const [settlingOrders, setSettlingOrders] = useState(false);
   const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
+
+  // Live Orders state
+  const [orderBatches, setOrderBatches] = useState<OrderBatch[]>([]);
+  const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
+  const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
+  const [preparingOrders, setPreparingOrders] = useState(false);
+  const [executingOrders, setExecutingOrders] = useState(false);
+  const [updatingStatuses, setUpdatingStatuses] = useState(false);
+  const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   const fetchMarkets = useCallback(async () => {
     setMarketsLoading(true);
@@ -427,12 +483,110 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch portfolio/simulation when tab changes
+  // Fetch live orders data
+  const fetchLiveOrders = async () => {
+    setLiveOrdersLoading(true);
+    try {
+      const res = await fetch('/api/orders-live?days=30');
+      const data = await res.json();
+      if (data.success) {
+        setOrderBatches(data.batches || []);
+        setLiveOrdersStats(data.stats || null);
+      }
+    } catch (err) {
+      console.error('Error fetching live orders:', err);
+    } finally {
+      setLiveOrdersLoading(false);
+    }
+  };
+
+  // Prepare tomorrow's orders
+  const prepareTomorrowOrders = async () => {
+    setPreparingOrders(true);
+    try {
+      const res = await fetch('/api/orders-live/prepare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 5000 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Prepared ${data.batch.total_orders} orders for tomorrow`);
+        fetchLiveOrders();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Error preparing orders');
+    } finally {
+      setPreparingOrders(false);
+    }
+  };
+
+  // Execute today's orders
+  const executeTodayOrders = async () => {
+    if (!confirm('Execute all pending orders for today? This will place real orders!')) return;
+    setExecutingOrders(true);
+    try {
+      const res = await fetch('/api/orders-live/execute', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Executed: ${data.stats.placed} placed, ${data.stats.confirmed} confirmed, ${data.stats.skipped} skipped`);
+        fetchLiveOrders();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Error executing orders');
+    } finally {
+      setExecutingOrders(false);
+    }
+  };
+
+  // Update order statuses
+  const updateOrderStatuses = async () => {
+    setUpdatingStatuses(true);
+    try {
+      const res = await fetch('/api/orders-live/update-status', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert(`Updated ${data.stats.updated} orders: ${data.stats.won} won, ${data.stats.lost} lost`);
+        fetchLiveOrders();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Error updating statuses');
+    } finally {
+      setUpdatingStatuses(false);
+    }
+  };
+
+  // Toggle pause for a batch
+  const togglePause = async (batchId: string, currentPaused: boolean) => {
+    try {
+      const res = await fetch('/api/orders-live/pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ batch_id: batchId, is_paused: !currentPaused }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchLiveOrders();
+      }
+    } catch (err) {
+      console.error('Error toggling pause:', err);
+    }
+  };
+
+  // Fetch portfolio/simulation/orders when tab changes
   useEffect(() => {
     if (activeTab === 'portfolio') {
       fetchPortfolio();
     } else if (activeTab === 'simulation') {
       fetchSimulation();
+    } else if (activeTab === 'orders') {
+      fetchLiveOrders();
     }
   }, [activeTab]);
 
@@ -599,6 +753,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mt-6">
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Markets</button>
+            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
             <button onClick={() => setActiveTab('portfolio')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'portfolio' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Portfolio</button>
             <button onClick={() => setActiveTab('simulation')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'simulation' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Simulation</button>
           </div>
@@ -850,6 +1005,297 @@ export default function Dashboard() {
             <button onClick={fetchPortfolio} className="mt-4 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700">
               Refresh Portfolio
             </button>
+          </div>
+        )}
+
+        {/* Orders Tab (Live Trading) */}
+        {activeTab === 'orders' && (
+          <div className="py-8">
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              <button
+                onClick={prepareTomorrowOrders}
+                disabled={preparingOrders}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-500 disabled:opacity-50"
+              >
+                {preparingOrders ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Preparing...</>
+                ) : (
+                  <>📋 Prepare Tomorrow</>
+                )}
+              </button>
+              <button
+                onClick={executeTodayOrders}
+                disabled={executingOrders}
+                className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {executingOrders ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Executing...</>
+                ) : (
+                  <>🚀 Execute Today</>
+                )}
+              </button>
+              <button
+                onClick={updateOrderStatuses}
+                disabled={updatingStatuses}
+                className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
+              >
+                {updatingStatuses ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Updating...</>
+                ) : (
+                  <>🔄 Update Statuses</>
+                )}
+              </button>
+              <button
+                onClick={fetchLiveOrders}
+                disabled={liveOrdersLoading}
+                className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
+              >
+                ↻ Refresh
+              </button>
+            </div>
+
+            {/* Summary Stats */}
+            {liveOrdersStats && (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Total Orders</div>
+                  <div className="text-2xl font-bold text-white">{liveOrdersStats.total_orders}</div>
+                  <div className="text-xs text-slate-500">{liveOrdersStats.pending_orders} pending</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Win Rate</div>
+                  <div className="text-2xl font-bold text-emerald-400">{liveOrdersStats.win_rate}%</div>
+                  <div className="text-xs text-slate-500">{liveOrdersStats.won_orders}W / {liveOrdersStats.lost_orders}L</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Total Cost</div>
+                  <div className="text-2xl font-bold text-white">${(liveOrdersStats.total_cost_cents / 100).toFixed(2)}</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Total Payout</div>
+                  <div className="text-2xl font-bold text-emerald-400">${(liveOrdersStats.total_payout_cents / 100).toFixed(2)}</div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4">
+                  <div className="text-xs text-slate-500 uppercase">Net P&L</div>
+                  <div className={`text-2xl font-bold ${liveOrdersStats.net_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    ${(liveOrdersStats.net_pnl_cents / 100).toFixed(2)}
+                  </div>
+                  <div className="text-xs text-slate-500">ROI: {liveOrdersStats.roi_percent}%</div>
+                </div>
+              </div>
+            )}
+
+            {/* Day Toggle Bar */}
+            {orderBatches.length > 0 && (
+              <div className="bg-slate-900 rounded-xl p-4 mb-6">
+                <div className="text-sm text-slate-400 mb-3">Filter by Day</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                      selectedDay === null
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    All
+                  </button>
+                  {orderBatches.map((batch) => {
+                    const date = new Date(batch.batch_date);
+                    const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    return (
+                      <button
+                        key={batch.id}
+                        onClick={() => setSelectedDay(batch.batch_date)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
+                          selectedDay === batch.batch_date
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                        }`}
+                      >
+                        {dayLabel}
+                        {batch.is_paused && <span className="text-amber-400">⏸</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Batches List */}
+            {liveOrdersLoading ? (
+              <div className="flex flex-col items-center py-20 text-slate-400">
+                <div className="w-10 h-10 border-4 border-slate-700 border-t-blue-400 rounded-full animate-spin" />
+                <p className="mt-4">Loading orders...</p>
+              </div>
+            ) : orderBatches.length === 0 ? (
+              <div className="text-center py-20 text-slate-400">
+                <p className="text-xl mb-4">No order batches yet</p>
+                <p className="text-sm">Click "Prepare Tomorrow" to create your first batch</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {orderBatches
+                  .filter(batch => !selectedDay || batch.batch_date === selectedDay)
+                  .map((batch) => {
+                    const batchDate = new Date(batch.batch_date);
+                    const isToday = batch.batch_date === new Date().toISOString().split('T')[0];
+                    const isTomorrow = batch.batch_date === new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                    
+                    // Calculate batch stats
+                    const confirmedOrders = batch.orders.filter(o => o.placement_status === 'confirmed');
+                    const wonOrders = batch.orders.filter(o => o.result_status === 'won');
+                    const lostOrders = batch.orders.filter(o => o.result_status === 'lost');
+                    const pendingOrders = batch.orders.filter(o => o.result_status === 'undecided');
+                    const batchCost = confirmedOrders.reduce((sum, o) => sum + o.cost_cents, 0);
+                    const batchPayout = wonOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
+                    const batchLoss = lostOrders.reduce((sum, o) => sum + o.cost_cents, 0);
+                    const batchPnl = batchPayout - batchLoss;
+
+                    return (
+                      <div key={batch.id} className="bg-slate-900 rounded-xl overflow-hidden">
+                        {/* Batch Header */}
+                        <div
+                          onClick={() => setExpandedBatch(expandedBatch === batch.id ? null : batch.id)}
+                          className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/50"
+                        >
+                          <div className="flex items-center gap-4">
+                            <div>
+                              <div className="text-lg font-bold text-white flex items-center gap-2">
+                                {batchDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                {isToday && <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">TODAY</span>}
+                                {isTomorrow && <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded">TOMORROW</span>}
+                                {batch.is_paused && <span className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded">PAUSED</span>}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {batch.orders.length} orders • {confirmedOrders.length} confirmed
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-6">
+                            <div className="text-right">
+                              <div className="text-xs text-slate-500">Cost</div>
+                              <div className="text-white font-mono">${(batchCost / 100).toFixed(2)}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-slate-500">Payout</div>
+                              <div className="text-emerald-400 font-mono">${(batchPayout / 100).toFixed(2)}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-slate-500">P&L</div>
+                              <div className={`font-mono font-bold ${batchPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                ${(batchPnl / 100).toFixed(2)}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-slate-500">Status</div>
+                              <div className="text-sm">
+                                <span className="text-emerald-400">{wonOrders.length}W</span>
+                                <span className="text-slate-500"> / </span>
+                                <span className="text-red-400">{lostOrders.length}L</span>
+                                <span className="text-slate-500"> / </span>
+                                <span className="text-slate-400">{pendingOrders.length}P</span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); togglePause(batch.id, batch.is_paused); }}
+                              className={`px-3 py-1 rounded text-xs font-medium ${
+                                batch.is_paused 
+                                  ? 'bg-emerald-600 text-white hover:bg-emerald-500' 
+                                  : 'bg-amber-600 text-white hover:bg-amber-500'
+                              }`}
+                            >
+                              {batch.is_paused ? '▶ Resume' : '⏸ Pause'}
+                            </button>
+                            <div className="text-slate-400">
+                              {expandedBatch === batch.id ? '▲' : '▼'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Expanded Orders */}
+                        {expandedBatch === batch.id && (
+                          <div className="border-t border-slate-800">
+                            <table className="w-full text-sm">
+                              <thead className="bg-slate-800/50">
+                                <tr>
+                                  <th className="text-left p-3 text-slate-400 font-medium">Market</th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">Side</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Cost</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">Placement</th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">Result</th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">Settlement</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {batch.orders.map((order) => (
+                                  <tr key={order.id} className="border-t border-slate-800/50">
+                                    <td className="p-3 text-white max-w-xs">
+                                      <div className="truncate">{order.title}</div>
+                                      <div className="text-xs text-slate-500">OI: {order.open_interest.toLocaleString()}</div>
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                        {order.side}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-right text-slate-300 font-mono">${(order.cost_cents / 100).toFixed(2)}</td>
+                                    <td className="p-3 text-right text-emerald-400 font-mono">${(order.potential_payout_cents / 100).toFixed(2)}</td>
+                                    <td className="p-3 text-center">
+                                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                        order.placement_status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400' :
+                                        order.placement_status === 'placed' ? 'bg-blue-500/20 text-blue-400' :
+                                        'bg-slate-700 text-slate-400'
+                                      }`}>
+                                        {order.placement_status.toUpperCase()}
+                                      </div>
+                                      {order.placement_status_at && (
+                                        <div className="text-[10px] text-slate-500 mt-0.5">
+                                          {new Date(order.placement_status_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                        order.result_status === 'won' ? 'bg-emerald-500/20 text-emerald-400' :
+                                        order.result_status === 'lost' ? 'bg-red-500/20 text-red-400' :
+                                        'bg-slate-700 text-slate-400'
+                                      }`}>
+                                        {order.result_status.toUpperCase()}
+                                      </div>
+                                      {order.result_status_at && (
+                                        <div className="text-[10px] text-slate-500 mt-0.5">
+                                          {new Date(order.result_status_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                        order.settlement_status === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+                                        order.settlement_status === 'closed' ? 'bg-red-500/20 text-red-400' :
+                                        'bg-amber-500/20 text-amber-400'
+                                      }`}>
+                                        {order.settlement_status.toUpperCase()}
+                                      </div>
+                                      {order.settlement_status_at && (
+                                        <div className="text-[10px] text-slate-500 mt-0.5">
+                                          {new Date(order.settlement_status_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         )}
 
