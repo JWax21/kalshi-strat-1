@@ -168,9 +168,13 @@ async function reconcileOrders() {
       results.confirmed++;
     } else if (kalshiOrder) {
       // No fills but order exists in Kalshi
-      if (kalshiOrder.status === 'resting') {
+      const kalshiStatus = kalshiOrder.status;
+      detail.kalshi_status = kalshiStatus;
+      
+      if (kalshiStatus === 'resting' || kalshiStatus === 'pending') {
+        // Order is on the book, waiting to match
         results.placed_resting++;
-        detail.action = 'resting_on_book';
+        detail.action = `resting_on_book (${kalshiStatus})`;
         
         if (dbOrder.placement_status === 'confirmed') {
           // Fix: it's not confirmed, it's just placed
@@ -186,30 +190,70 @@ async function reconcileOrders() {
           
           results.updated++;
           detail.action = 'downgraded_to_placed';
+        } else if (dbOrder.placement_status === 'pending') {
+          // Was never marked as placed, fix it
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'placed',
+              placement_status_at: new Date().toISOString(),
+            })
+            .eq('id', dbOrder.id);
+          
+          results.updated++;
+          detail.action = 'upgraded_to_placed';
         }
-      } else if (kalshiOrder.status === 'cancelled') {
+      } else if (kalshiStatus === 'cancelled' || kalshiStatus === 'expired') {
         results.cancelled++;
-        detail.action = 'cancelled';
+        detail.action = `cancelled (${kalshiStatus})`;
         
         // Mark as closed
         await supabase
           .from('orders')
           .update({
+            placement_status: 'placed', // It was placed but cancelled
             settlement_status: 'closed',
             settlement_status_at: new Date().toISOString(),
           })
           .eq('id', dbOrder.id);
         
         results.updated++;
-      } else if (kalshiOrder.status === 'executed') {
-        // Executed but no fills yet? This shouldn't happen
-        results.confirmed++;
-        detail.action = 'executed_no_fills_yet';
+      } else if (kalshiStatus === 'executed') {
+        // Executed but no fills yet? Check filled_count
+        if (kalshiOrder.filled_count > 0) {
+          results.confirmed++;
+          detail.action = 'executed_filled_count_gt_0';
+          
+          // Update as confirmed using Kalshi order data
+          const price = dbOrder.side === 'YES' ? kalshiOrder.yes_price : kalshiOrder.no_price;
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'confirmed',
+              placement_status_at: new Date().toISOString(),
+              executed_price_cents: price,
+              executed_cost_cents: price * kalshiOrder.filled_count,
+            })
+            .eq('id', dbOrder.id);
+          
+          results.updated++;
+        } else {
+          results.confirmed++;
+          detail.action = 'executed_no_fills_strange';
+        }
+      } else {
+        // Unknown status
+        detail.action = `unknown_status: ${kalshiStatus}`;
       }
     } else {
       // Order not found in Kalshi at all
       results.not_found++;
       detail.action = 'not_found_in_kalshi';
+      
+      // If we think it's confirmed but Kalshi doesn't know about it, something is wrong
+      if (dbOrder.placement_status === 'confirmed' || dbOrder.placement_status === 'placed') {
+        detail.warning = 'Order marked as placed/confirmed but not found in Kalshi!';
+      }
     }
     
     orderDetails.push(detail);
