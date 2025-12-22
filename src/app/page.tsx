@@ -222,6 +222,8 @@ export default function Dashboard() {
   const [preparingOrders, setPreparingOrders] = useState(false);
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
+  const [reconcilingOrders, setReconcilingOrders] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState<any>(null);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [nextRefresh, setNextRefresh] = useState<number>(5 * 60);
@@ -602,6 +604,27 @@ export default function Dashboard() {
       alert('Error updating statuses');
     } finally {
       setUpdatingStatuses(false);
+    }
+  };
+
+  // Reconcile orders with Kalshi
+  const reconcileOrders = async () => {
+    setReconcilingOrders(true);
+    setReconcileResult(null);
+    try {
+      const res = await fetch('/api/orders-live/reconcile', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setReconcileResult(data);
+        alert(`Reconciled! Updated ${data.summary.updated} orders. Confirmed: ${data.summary.confirmed}, Resting: ${data.summary.placed_resting}, Never sent: ${data.summary.never_sent_to_kalshi}`);
+        fetchLiveOrders();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Error reconciling orders');
+    } finally {
+      setReconcilingOrders(false);
     }
   };
 
@@ -1158,6 +1181,17 @@ export default function Dashboard() {
                   <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Updating...</>
                 ) : (
                   <>🔄 Update Statuses</>
+                )}
+              </button>
+              <button
+                onClick={reconcileOrders}
+                disabled={reconcilingOrders}
+                className="flex items-center gap-2 px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-500 disabled:opacity-50"
+              >
+                {reconcilingOrders ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Reconciling...</>
+                ) : (
+                  <>🔧 Reconcile with Kalshi</>
                 )}
               </button>
               <button
