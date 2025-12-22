@@ -131,6 +131,13 @@ async function executeOrders() {
       // Update order status
       const kalshiOrderId = result.order?.order_id;
       const status = result.order?.status;
+      
+      // Capture actual execution price if available
+      // Kalshi returns yes_price/no_price in cents for the fill
+      const executedPriceCents = order.side === 'YES' 
+        ? result.order?.yes_price 
+        : result.order?.no_price;
+      const executedCostCents = executedPriceCents ? executedPriceCents * 1 : null; // 1 unit
 
       await supabase
         .from('orders')
@@ -138,6 +145,8 @@ async function executeOrders() {
           placement_status: status === 'resting' || status === 'executed' ? 'confirmed' : 'placed',
           placement_status_at: new Date().toISOString(),
           kalshi_order_id: kalshiOrderId,
+          executed_price_cents: executedPriceCents || null,
+          executed_cost_cents: executedCostCents || null,
         })
         .eq('id', order.id);
 

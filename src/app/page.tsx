@@ -79,6 +79,8 @@ interface LiveOrder {
   result_status_at: string | null;
   settlement_status: 'pending' | 'closed' | 'success';
   settlement_status_at: string | null;
+  executed_price_cents: number | null;
+  executed_cost_cents: number | null;
 }
 
 interface LiveOrdersStats {
@@ -1143,14 +1145,14 @@ export default function Dashboard() {
                     const isToday = batch.batch_date === new Date().toISOString().split('T')[0];
                     const isTomorrow = batch.batch_date === new Date(Date.now() + 86400000).toISOString().split('T')[0];
                     
-                    // Calculate batch stats
+                    // Calculate batch stats (use actual cost when available)
                     const confirmedOrders = batch.orders.filter(o => o.placement_status === 'confirmed');
                     const wonOrders = batch.orders.filter(o => o.result_status === 'won');
                     const lostOrders = batch.orders.filter(o => o.result_status === 'lost');
                     const pendingOrders = batch.orders.filter(o => o.result_status === 'undecided');
-                    const batchCost = confirmedOrders.reduce((sum, o) => sum + o.cost_cents, 0);
+                    const batchCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
                     const batchPayout = wonOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
-                    const batchLoss = lostOrders.reduce((sum, o) => sum + o.cost_cents, 0);
+                    const batchLoss = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
                     const batchPnl = batchPayout - batchLoss;
 
                     return (
@@ -1222,7 +1224,8 @@ export default function Dashboard() {
                                 <tr>
                                   <th className="text-left p-3 text-slate-400 font-medium">Market</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Side</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Cost</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Est. Cost</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Actual Cost</th>
                                   <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Placement</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Result</th>
@@ -1241,7 +1244,16 @@ export default function Dashboard() {
                                         {order.side}
                                       </span>
                                     </td>
-                                    <td className="p-3 text-right text-slate-300 font-mono">${(order.cost_cents / 100).toFixed(2)}</td>
+                                    <td className="p-3 text-right text-slate-500 font-mono">${(order.cost_cents / 100).toFixed(2)}</td>
+                                    <td className="p-3 text-right font-mono">
+                                      {order.executed_cost_cents !== null ? (
+                                        <span className={order.executed_cost_cents < order.cost_cents ? 'text-emerald-400' : 'text-white'}>
+                                          ${(order.executed_cost_cents / 100).toFixed(2)}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-500">-</span>
+                                      )}
+                                    </td>
                                     <td className="p-3 text-right text-emerald-400 font-mono">${(order.potential_payout_cents / 100).toFixed(2)}</td>
                                     <td className="p-3 text-center">
                                       <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
