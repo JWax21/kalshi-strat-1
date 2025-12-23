@@ -1573,7 +1573,7 @@ export default function Dashboard() {
                   {(() => {
                     const records = recordsData.records || [];
                     const avgRoic = records.length > 0 
-                      ? records.reduce((sum, r) => sum + parseFloat(r.roic_percent || '0'), 0) / records.length
+                      ? records.reduce((sum, r) => sum + parseFloat(String(r.roic_percent || 0)), 0) / records.length
                       : 0;
                     return (
                       <div className={`text-lg font-bold ${avgRoic >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
