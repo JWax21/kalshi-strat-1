@@ -54,10 +54,13 @@ interface MarketWithUnits {
   potential_payout_cents: number;
 }
 
+const MAX_POSITION_PERCENT = 0.03; // 3% max per market
+
 /**
  * Distribute capital across markets as evenly as possible.
  * Markets are sorted by open interest (highest first).
  * Higher OI markets get priority for extra units.
+ * Respects 3% position limit per market.
  */
 function distributeCapital(
   markets: any[],
@@ -70,41 +73,50 @@ function distributeCapital(
   // Sort by open interest descending (already sorted, but ensure)
   const sortedMarkets = [...markets].sort((a, b) => b.open_interest - a.open_interest);
   
-  // Calculate total cost per unit for all markets
-  const totalCostPerRound = sortedMarkets.reduce((sum, m) => sum + m.price_cents, 0);
+  // Calculate max units per market based on 3% limit
+  // Max position value = 3% of total capital
+  const maxPositionCents = Math.floor(availableCapitalCents * MAX_POSITION_PERCENT);
   
-  if (totalCostPerRound === 0) {
-    return [];
-  }
-
-  // Calculate how many complete "rounds" of units we can afford
-  // A round = 1 unit for every market
-  const completeRounds = Math.floor(availableCapitalCents / totalCostPerRound);
-  let remainingCapital = availableCapitalCents - (completeRounds * totalCostPerRound);
-
-  // Initialize each market with the base number of units
-  const result: MarketWithUnits[] = sortedMarkets.map(market => ({
+  // Calculate max units for each market based on their price
+  const marketsWithLimits = sortedMarkets.map(market => ({
     market,
-    units: completeRounds,
-    cost_cents: market.price_cents * completeRounds,
-    potential_payout_cents: 100 * completeRounds, // $1 payout per contract
+    maxUnits: Math.floor(maxPositionCents / market.price_cents),
+    currentUnits: 0,
   }));
 
-  // Distribute remaining capital to markets with highest OI first
-  // (they're already sorted by OI)
-  for (let i = 0; i < result.length && remainingCapital > 0; i++) {
-    const market = result[i];
-    const costForOneMore = market.market.price_cents;
+  // Initialize result array
+  const result: MarketWithUnits[] = marketsWithLimits.map(m => ({
+    market: m.market,
+    units: 0,
+    cost_cents: 0,
+    potential_payout_cents: 0,
+  }));
+
+  let remainingCapital = availableCapitalCents;
+  let madeProgress = true;
+
+  // Keep distributing units until we can't anymore
+  while (remainingCapital > 0 && madeProgress) {
+    madeProgress = false;
     
-    if (remainingCapital >= costForOneMore) {
-      market.units += 1;
-      market.cost_cents += costForOneMore;
-      market.potential_payout_cents += 100;
-      remainingCapital -= costForOneMore;
+    // Try to add one unit to each market (respecting limits)
+    for (let i = 0; i < result.length && remainingCapital > 0; i++) {
+      const marketLimit = marketsWithLimits[i];
+      const marketResult = result[i];
+      const costForOne = marketResult.market.price_cents;
+      
+      // Check if we can add another unit (within 3% limit and have capital)
+      if (marketResult.units < marketLimit.maxUnits && remainingCapital >= costForOne) {
+        marketResult.units += 1;
+        marketResult.cost_cents += costForOne;
+        marketResult.potential_payout_cents += 100;
+        remainingCapital -= costForOne;
+        madeProgress = true;
+      }
     }
   }
 
-  // Filter out markets with 0 units (shouldn't happen if we have capital)
+  // Filter out markets with 0 units
   return result.filter(r => r.units > 0);
 }
 
@@ -183,6 +195,14 @@ async function prepareOrders(params: PrepareParams) {
 
   // Filter by open interest (require minimum OI)
   filteredMarkets = filteredMarkets.filter(m => m.open_interest >= minOpenInterest);
+
+  // Exclude blacklisted (illiquid) markets
+  const { data: blacklistedMarkets } = await supabase
+    .from('illiquid_markets')
+    .select('ticker');
+  
+  const blacklistedTickers = new Set((blacklistedMarkets || []).map(m => m.ticker));
+  filteredMarkets = filteredMarkets.filter(m => !blacklistedTickers.has(m.ticker));
 
   // Sort by open interest descending
   filteredMarkets.sort((a, b) => b.open_interest - a.open_interest);

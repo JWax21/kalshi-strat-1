@@ -21,6 +21,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/orders-live/rebalance",
+      "schedule": "30 * * * *"
+    },
+    {
       "path": "/api/snapshot",
       "schedule": "55 4 * * *"
     }
