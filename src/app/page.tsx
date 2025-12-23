@@ -105,6 +105,8 @@ interface LiveOrder {
   settlement_status_at: string | null;
   executed_price_cents: number | null;
   executed_cost_cents: number | null;
+  actual_payout_cents: number | null;
+  fee_cents: number | null;
 }
 
 interface LiveOrdersStats {
