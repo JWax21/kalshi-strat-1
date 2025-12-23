@@ -107,6 +107,7 @@ interface LiveOrder {
   executed_cost_cents: number | null;
   actual_payout_cents: number | null;
   fee_cents: number | null;
+  kalshi_order_id: string | null;
 }
 
 interface LiveOrdersStats {
