@@ -1265,7 +1265,7 @@ export default function Dashboard() {
                     All
                   </button>
                   {orderBatches.map((batch) => {
-                    const date = new Date(batch.batch_date);
+                    const date = new Date(batch.batch_date + 'T12:00:00');
                     const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                     return (
                       <button
@@ -1302,9 +1302,12 @@ export default function Dashboard() {
                 {orderBatches
                   .filter(batch => !selectedDay || batch.batch_date === selectedDay)
                   .map((batch) => {
-                    const batchDate = new Date(batch.batch_date);
-                    const isToday = batch.batch_date === new Date().toISOString().split('T')[0];
-                    const isTomorrow = batch.batch_date === new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                    // Add T12:00:00 to avoid timezone shift issues
+                    const batchDate = new Date(batch.batch_date + 'T12:00:00');
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                    const isToday = batch.batch_date === todayStr;
+                    const isTomorrow = batch.batch_date === tomorrowStr;
                     
                     // Calculate batch stats (use actual cost when available)
                     const confirmedOrders = batch.orders.filter(o => o.placement_status === 'confirmed');
@@ -1326,7 +1329,7 @@ export default function Dashboard() {
                           <div className="flex items-center gap-4">
                             <div>
                               <div className="text-lg font-bold text-white flex items-center gap-2">
-                                {batchDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                Games for {batchDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 {isToday && <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">TODAY</span>}
                                 {isTomorrow && <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded">TOMORROW</span>}
                                 {batch.is_paused && <span className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded">PAUSED</span>}
