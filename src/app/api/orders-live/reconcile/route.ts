@@ -174,12 +174,31 @@ async function reconcileOrders() {
       action: 'none',
     };
     
-    if (fills.length > 0) {
-      // Has fills = confirmed execution
+    if (fills.length > 0 || (kalshiOrder && kalshiOrder.filled_count > 0)) {
+      // Has fills or kalshi order shows filled = confirmed execution
       // Note: Kalshi returns prices in CENTS (integer), not dollars
-      const totalCount = fills.reduce((sum, f) => sum + (f.count || 0), 0);
-      const avgPriceCents = fills[0]?.price || null; // Price is in cents
-      const totalCostCents = fills.reduce((sum, f) => sum + ((f.price || 0) * (f.count || 0)), 0);
+      
+      // Get fill data
+      const fillCount = fills.reduce((sum, f) => sum + (f.count || 0), 0);
+      const fillPrice = fills[0]?.price || null;
+      const fillCost = fills.reduce((sum, f) => sum + ((f.price || 0) * (f.count || 0)), 0);
+      
+      // Get order data as fallback/cross-check
+      const orderFilledCount = kalshiOrder?.filled_count || 0;
+      const orderPrice = dbOrder.side === 'YES' ? kalshiOrder?.yes_price : kalshiOrder?.no_price;
+      
+      // Use the LARGER count (in case fills are incomplete)
+      const actualCount = Math.max(fillCount, orderFilledCount, dbOrder.units || 1);
+      
+      // Use fill price if available, otherwise order price
+      const avgPriceCents = fillPrice || orderPrice || dbOrder.price_cents;
+      
+      // Calculate total cost: if fills gave us a good total, use it; otherwise calculate from count
+      let totalCostCents = fillCost;
+      if (fillCount < actualCount && avgPriceCents) {
+        // Fills don't account for all units, recalculate
+        totalCostCents = avgPriceCents * actualCount;
+      }
       
       // Always update executed_cost_cents when we have fills
       const updates: any = {
@@ -204,6 +223,9 @@ async function reconcileOrders() {
       
       detail.executed_price = avgPriceCents;
       detail.executed_cost = totalCostCents;
+      detail.fill_count = fillCount;
+      detail.order_filled_count = orderFilledCount;
+      detail.actual_count = actualCount;
       results.confirmed++;
     } else if (kalshiOrder) {
       // No fills but order exists in Kalshi
