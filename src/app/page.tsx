@@ -46,8 +46,30 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'markets' | 'portfolio' | 'simulation' | 'orders';
+type Tab = 'markets' | 'portfolio' | 'simulation' | 'orders' | 'records';
 type PortfolioSubTab = 'positions' | 'history';
+
+interface DailyRecord {
+  date: string;
+  start_balance_cents: number;
+  end_balance_cents: number;
+  end_exposure_cents: number;
+  portfolio_value_cents: number;
+  wins: number;
+  losses: number;
+  pnl_cents: number;
+}
+
+interface RecordsData {
+  records: DailyRecord[];
+  current_balance_cents: number;
+  current_exposure_cents: number;
+  totals: {
+    wins: number;
+    losses: number;
+    pnl_cents: number;
+  };
+}
 
 interface OrderBatch {
   id: string;
@@ -272,6 +294,10 @@ export default function Dashboard() {
   const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
   const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
   const [preparingOrders, setPreparingOrders] = useState(false);
+  
+  // Records state
+  const [recordsData, setRecordsData] = useState<RecordsData | null>(null);
+  const [recordsLoading, setRecordsLoading] = useState(false);
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
@@ -597,6 +623,22 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch records data
+  const fetchRecords = async () => {
+    setRecordsLoading(true);
+    try {
+      const res = await fetch('/api/records?days=90');
+      const data = await res.json();
+      if (data.success) {
+        setRecordsData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching records:', err);
+    } finally {
+      setRecordsLoading(false);
+    }
+  };
+
   // Prepare orders
   const prepareOrders = async (forToday: boolean = false) => {
     setPreparingOrders(true);
@@ -697,7 +739,7 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch portfolio/simulation/orders when tab changes
+  // Fetch portfolio/simulation/orders/records when tab changes
   useEffect(() => {
     if (activeTab === 'portfolio') {
       fetchPortfolio();
@@ -705,6 +747,8 @@ export default function Dashboard() {
       fetchSimulation();
     } else if (activeTab === 'orders') {
       fetchLiveOrders();
+    } else if (activeTab === 'records') {
+      fetchRecords();
     }
   }, [activeTab]);
 
@@ -932,6 +976,7 @@ export default function Dashboard() {
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Markets</button>
             <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
+            <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-purple-500 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
             <button onClick={() => setActiveTab('portfolio')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'portfolio' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Portfolio</button>
             <button onClick={() => setActiveTab('simulation')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'simulation' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Simulation</button>
           </div>
@@ -1836,6 +1881,105 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Records Tab */}
+        {activeTab === 'records' && (
+          <div className="py-8">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Daily Records</h2>
+              <button
+                onClick={fetchRecords}
+                disabled={recordsLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
+              >
+                {recordsLoading ? 'Loading...' : '↻ Refresh'}
+              </button>
+            </div>
+
+            {/* Summary Cards */}
+            {recordsData && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Current Balance</div>
+                  <div className="text-2xl font-bold text-white">
+                    ${((recordsData.current_balance_cents || 0) / 100).toFixed(2)}
+                  </div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Current Exposure</div>
+                  <div className="text-2xl font-bold text-amber-400">
+                    ${((recordsData.current_exposure_cents || 0) / 100).toFixed(2)}
+                  </div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Total W-L</div>
+                  <div className="text-2xl font-bold text-white">
+                    {recordsData.totals?.wins || 0}W / {recordsData.totals?.losses || 0}L
+                  </div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase">Total P&L</div>
+                  <div className={`text-2xl font-bold ${(recordsData.totals?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {(recordsData.totals?.pnl_cents || 0) >= 0 ? '+' : ''}${((recordsData.totals?.pnl_cents || 0) / 100).toFixed(2)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Records Table */}
+            {recordsLoading && !recordsData ? (
+              <div className="text-center py-12 text-slate-400">Loading records...</div>
+            ) : recordsData?.records && recordsData.records.length > 0 ? (
+              <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                <table className="w-full">
+                  <thead className="bg-slate-800/50">
+                    <tr>
+                      <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Balance</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Balance</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Exposure</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Portfolio Value</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W-L</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recordsData.records.map((record, idx) => (
+                      <tr key={record.date} className={`border-t border-slate-800 ${idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/50'}`}>
+                        <td className="p-4 text-white font-medium">
+                          {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                        </td>
+                        <td className="p-4 text-right font-mono text-slate-300">
+                          ${(record.start_balance_cents / 100).toFixed(2)}
+                        </td>
+                        <td className="p-4 text-right font-mono text-slate-300">
+                          ${(record.end_balance_cents / 100).toFixed(2)}
+                        </td>
+                        <td className="p-4 text-right font-mono text-amber-400">
+                          ${(record.end_exposure_cents / 100).toFixed(2)}
+                        </td>
+                        <td className="p-4 text-right font-mono text-white font-medium">
+                          ${(record.portfolio_value_cents / 100).toFixed(2)}
+                        </td>
+                        <td className="p-4 text-center">
+                          <span className="text-emerald-400">{record.wins}W</span>
+                          <span className="text-slate-500 mx-1">/</span>
+                          <span className="text-red-400">{record.losses}L</span>
+                        </td>
+                        <td className={`p-4 text-right font-mono font-bold ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {record.pnl_cents >= 0 ? '+' : ''}${(record.pnl_cents / 100).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-slate-400">No records found. Start trading to see daily records.</div>
             )}
           </div>
         )}
