@@ -337,8 +337,15 @@ export default function Dashboard() {
     }
   };
 
-  const handleRefresh = () => {
-    fetchMarkets();
+  const handleRefresh = async () => {
+    // Tab-aware refresh
+    if (activeTab === 'orders') {
+      await refreshAll();
+    } else if (activeTab === 'records') {
+      await fetchRecords();
+    } else {
+      fetchMarkets();
+    }
   };
 
   // Fetch orderbook for a market
@@ -833,8 +840,12 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={handleRefresh} disabled={loading} className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white hover:bg-slate-700 disabled:opacity-60">
-                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <button 
+                onClick={handleRefresh} 
+                disabled={loading || refreshingAll || liveOrdersLoading || recordsLoading} 
+                className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white hover:bg-slate-700 disabled:opacity-60"
+              >
+                <svg className={`w-4 h-4 ${(loading || refreshingAll || liveOrdersLoading || recordsLoading) ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
                 Refresh
@@ -1040,60 +1051,6 @@ export default function Dashboard() {
         {/* Orders Tab (Live Trading) */}
         {activeTab === 'orders' && (
           <div className="py-8">
-            {/* Action Buttons */}
-            <div className="flex flex-wrap gap-4 mb-6">
-              <button
-                onClick={refreshAll}
-                disabled={refreshingAll || updatingStatuses || reconcilingOrders || liveOrdersLoading}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
-              >
-                {(refreshingAll || updatingStatuses || reconcilingOrders || liveOrdersLoading) ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Syncing...</>
-                ) : (
-                  <>↻ Refresh</>
-                )}
-              </button>
-            </div>
-
-            {/* Top Summary Cards */}
-            {liveOrdersStats && (
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Balance</div>
-                  <div className="text-2xl font-bold text-white">${((liveOrdersStats.balance_cents || 0) / 100).toFixed(2)}</div>
-                  <div className="text-xs text-slate-500">Available cash</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Total Exposure</div>
-                  <div className="text-2xl font-bold text-blue-400">${((liveOrdersStats.total_exposure_cents || 0) / 100).toFixed(2)}</div>
-                  <div className="text-xs text-slate-500">Portfolio value</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">W-L (Today)</div>
-                  <div className="text-2xl font-bold text-white">
-                    <span className="text-emerald-400">{liveOrdersStats.today?.won || 0}W</span>
-                    {' - '}
-                    <span className="text-red-400">{liveOrdersStats.today?.lost || 0}L</span>
-                  </div>
-                  <div className="text-xs text-slate-500">{liveOrdersStats.today?.confirmed || 0} confirmed today</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Fees Paid</div>
-                  <div className="text-2xl font-bold text-orange-400">${((liveOrdersStats.total_fees_cents || 0) / 100).toFixed(2)}</div>
-                  <div className="text-xs text-slate-500">On settled trades</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Profit (Today)</div>
-                  <div className={`text-2xl font-bold ${(liveOrdersStats.today?.profit_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {(liveOrdersStats.today?.profit_cents || 0) >= 0 ? '+' : ''}${((liveOrdersStats.today?.profit_cents || 0) / 100).toFixed(2)}
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    ${((liveOrdersStats.today?.payout_cents || 0) / 100).toFixed(2)} - ${((liveOrdersStats.today?.fees_cents || 0) / 100).toFixed(2)} - ${((liveOrdersStats.today?.cost_cents || 0) / 100).toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Day Toggle Bar */}
             {orderBatches.length > 0 && (
               <div className="bg-slate-900 rounded-xl p-4 mb-6">
@@ -1594,34 +1551,25 @@ export default function Dashboard() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-white">Daily Records</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    try {
-                      const res = await fetch('/api/snapshot', { method: 'POST' });
-                      const data = await res.json();
-                      if (data.success) {
-                        alert(`Snapshot captured: Balance $${data.snapshot.balance.toFixed(2)}, Positions $${data.snapshot.positions.toFixed(2)}`);
-                        fetchRecords();
-                      } else {
-                        alert(`Error: ${data.error}`);
-                      }
-                    } catch (err) {
-                      alert('Error capturing snapshot');
+              <button
+                onClick={async () => {
+                  try {
+                    const res = await fetch('/api/snapshot', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.success) {
+                      alert(`Snapshot captured: Balance $${data.snapshot.balance.toFixed(2)}, Positions $${data.snapshot.positions.toFixed(2)}`);
+                      fetchRecords();
+                    } else {
+                      alert(`Error: ${data.error}`);
                     }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                >
-                  📸 Capture Snapshot
-                </button>
-                <button
-                  onClick={fetchRecords}
-                  disabled={recordsLoading}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
-                >
-                  {recordsLoading ? 'Loading...' : '↻ Refresh'}
-                </button>
-              </div>
+                  } catch (err) {
+                    alert('Error capturing snapshot');
+                  }
+                }}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+              >
+                📸 Capture Snapshot
+              </button>
             </div>
 
             {/* Summary Cards */}
