@@ -1941,7 +1941,7 @@ export default function Dashboard() {
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Balance</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">End Balance</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Positions</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Current Positions</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Portfolio Value</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W-L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
