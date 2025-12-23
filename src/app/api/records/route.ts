@@ -131,16 +131,15 @@ export async function GET(request: Request) {
     // This is an approximation since we don't have historical balance snapshots
     let runningBalance = currentBalance;
     
-    // Process dates in reverse to calculate historical balances
+    // Process dates to calculate P&L for each day
     const reversedDates = [...sortedDates].reverse();
-    const dailyPnL: Record<string, { pnl: number, wins: number, losses: number, positions: number }> = {};
+    const dailyPnL: Record<string, { pnl: number, wins: number, losses: number }> = {};
     
     reversedDates.forEach(date => {
       const dayOrders = ordersByDate[date] || [];
       const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
       const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
       const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
-      const undecidedOrders = confirmedOrders.filter(o => o.result_status === 'undecided');
       
       // Calculate P&L for the day
       const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
@@ -149,14 +148,10 @@ export async function GET(request: Request) {
       const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
       const dayPnl = payout - fees - wonCost - lostCost;
       
-      // Exposure for undecided orders
-      const dayExposure = undecidedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-      
       dailyPnL[date] = {
         pnl: dayPnl,
         wins: wonOrders.length,
         losses: lostOrders.length,
-        positions: dayExposure,
       };
     });
 
@@ -174,14 +169,14 @@ export async function GET(request: Request) {
       const dayData = dailyPnL[date];
       const startBalance = previousEndBalance;
       const endBalance = startBalance + (dayData?.pnl || 0);
-      const positions = dayData?.positions || 0;
       
+      // Use current positions for all rows - this represents the CURRENT state
       records.push({
         date,
         start_balance_cents: Math.round(startBalance),
         end_balance_cents: Math.round(endBalance),
-        end_positions_cents: positions,
-        portfolio_value_cents: Math.round(endBalance) + positions,
+        end_positions_cents: currentPositions,
+        portfolio_value_cents: Math.round(endBalance) + currentPositions,
         wins: dayData?.wins || 0,
         losses: dayData?.losses || 0,
         pnl_cents: dayData?.pnl || 0,
@@ -195,13 +190,7 @@ export async function GET(request: Request) {
     const totalLosses = records.reduce((sum, r) => sum + r.losses, 0);
     const totalPnl = records.reduce((sum, r) => sum + r.pnl_cents, 0);
 
-    // For the most recent day (today), use the actual positions from Kalshi
     const reversedRecords = records.reverse();
-    const today = new Date().toISOString().split('T')[0];
-    if (reversedRecords.length > 0 && reversedRecords[0].date === today) {
-      reversedRecords[0].end_positions_cents = currentPositions;
-      reversedRecords[0].portfolio_value_cents = reversedRecords[0].end_balance_cents + currentPositions;
-    }
 
     return NextResponse.json({
       success: true,
