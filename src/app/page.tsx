@@ -1604,9 +1604,14 @@ export default function Dashboard() {
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Avg Daily ROIC</div>
                   {(() => {
-                    const records = recordsData.records || [];
-                    const avgRoic = records.length > 0 
-                      ? records.reduce((sum, r) => sum + parseFloat(String(r.roic_percent || 0)), 0) / records.length
+                    const today = new Date().toISOString().split('T')[0];
+                    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                    // Only include past days (not today or tomorrow)
+                    const pastRecords = (recordsData.records || []).filter(r => 
+                      r.date < today
+                    );
+                    const avgRoic = pastRecords.length > 0 
+                      ? pastRecords.reduce((sum, r) => sum + parseFloat(String(r.roic_percent || 0)), 0) / pastRecords.length
                       : 0;
                     return (
                       <div className={`text-lg font-bold ${avgRoic >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
