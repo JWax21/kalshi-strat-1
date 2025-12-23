@@ -5,23 +5,30 @@ import { getBalance, getPositions } from '@/lib/kalshi';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const { searchParams } = new URL(request.url);
+    const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
 
-    // Get today's batch
+    // Get the batch for specified date
     const { data: batch, error: batchError } = await supabase
       .from('order_batches')
       .select('*')
-      .eq('batch_date', today)
+      .eq('batch_date', date)
       .single();
 
-    // Get orders for today's batch
+    if (!batch) {
+      return NextResponse.json({ 
+        error: `No batch found for ${date}`,
+        batchError: batchError?.message 
+      });
+    }
+
+    // Get ALL orders for this batch
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select('*')
-      .eq('batch_id', batch?.id)
-      .limit(10);
+      .eq('batch_id', batch.id);
 
     // Get Kalshi balance
     let kalshiBalance = null;
@@ -39,26 +46,47 @@ export async function GET() {
       kalshiPositions = { error: String(e) };
     }
 
+    // Count orders with kalshi_order_id (actually sent to Kalshi)
+    const ordersWithKalshiId = orders?.filter(o => o.kalshi_order_id) || [];
+    const ordersWithoutKalshiId = orders?.filter(o => !o.kalshi_order_id) || [];
+
     return NextResponse.json({
-      today,
-      batch: batch || { error: batchError?.message },
-      sample_orders: orders?.slice(0, 5).map(o => ({
-        id: o.id,
+      date,
+      batch: {
+        id: batch.id,
+        executed_at: batch.executed_at,
+        is_paused: batch.is_paused,
+        total_orders: batch.total_orders,
+      },
+      order_breakdown: {
+        total: orders?.length || 0,
+        with_kalshi_order_id: ordersWithKalshiId.length,
+        without_kalshi_order_id: ordersWithoutKalshiId.length,
+        by_placement_status: {
+          pending: orders?.filter(o => o.placement_status === 'pending').length || 0,
+          placed: orders?.filter(o => o.placement_status === 'placed').length || 0,
+          confirmed: orders?.filter(o => o.placement_status === 'confirmed').length || 0,
+        },
+      },
+      sample_orders_with_kalshi_id: ordersWithKalshiId.slice(0, 3).map(o => ({
+        ticker: o.ticker,
+        kalshi_order_id: o.kalshi_order_id,
+        placement_status: o.placement_status,
+        units: o.units,
+      })),
+      sample_orders_without_kalshi_id: ordersWithoutKalshiId.slice(0, 3).map(o => ({
         ticker: o.ticker,
         placement_status: o.placement_status,
-        kalshi_order_id: o.kalshi_order_id,
         units: o.units,
-        cost_cents: o.cost_cents,
       })),
-      order_stats: {
-        total: orders?.length,
-        pending: orders?.filter(o => o.placement_status === 'pending').length,
-        placed: orders?.filter(o => o.placement_status === 'placed').length,
-        confirmed: orders?.filter(o => o.placement_status === 'confirmed').length,
+      kalshi_account: {
+        balance_cents: kalshiBalance?.balance,
+        balance_dollars: kalshiBalance?.balance ? (kalshiBalance.balance / 100).toFixed(2) : null,
       },
-      kalshi_balance: kalshiBalance,
-      kalshi_positions_count: kalshiPositions?.market_positions?.length || 0,
-      kalshi_positions_sample: kalshiPositions?.market_positions?.slice(0, 3),
+      kalshi_positions: {
+        count: kalshiPositions?.market_positions?.length || 0,
+        tickers: kalshiPositions?.market_positions?.map((p: any) => p.ticker).slice(0, 10) || [],
+      },
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
