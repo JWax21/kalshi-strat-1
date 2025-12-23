@@ -51,12 +51,15 @@ type PortfolioSubTab = 'positions' | 'history';
 
 interface DailyRecord {
   date: string;
-  balance_cents: number;
-  positions_cents: number;
-  portfolio_value_cents: number;
+  start_cash_cents: number;
+  start_portfolio_cents: number;
+  end_cash_cents: number;
+  end_portfolio_cents: number;
   wins: number;
   losses: number;
+  pending: number;
   pnl_cents: number;
+  roic_percent: number;
   source: 'snapshot' | 'calculated';
 }
 
@@ -1960,11 +1963,13 @@ export default function Dashboard() {
                   <thead className="bg-slate-800/50">
                     <tr>
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Balance</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Positions</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Portfolio Value</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W-L</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Cash</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Portfolio</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Cash</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Portfolio</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
                     </tr>
                   </thead>
@@ -1975,21 +1980,29 @@ export default function Dashboard() {
                           {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                         </td>
                         <td className="p-4 text-right font-mono text-slate-300">
-                          ${(record.balance_cents / 100).toFixed(2)}
+                          ${(record.start_cash_cents / 100).toFixed(2)}
                         </td>
-                        <td className="p-4 text-right font-mono text-amber-400">
-                          ${(record.positions_cents / 100).toFixed(2)}
+                        <td className="p-4 text-right font-mono text-slate-400">
+                          ${(record.start_portfolio_cents / 100).toFixed(2)}
+                        </td>
+                        <td className="p-4 text-right font-mono text-slate-300">
+                          ${(record.end_cash_cents / 100).toFixed(2)}
                         </td>
                         <td className="p-4 text-right font-mono text-white font-medium">
-                          ${(record.portfolio_value_cents / 100).toFixed(2)}
+                          ${(record.end_portfolio_cents / 100).toFixed(2)}
                         </td>
-                        <td className="p-4 text-center">
-                          <span className="text-emerald-400">{record.wins}W</span>
-                          <span className="text-slate-500 mx-1">/</span>
-                          <span className="text-red-400">{record.losses}L</span>
+                        <td className="p-4 text-center text-sm">
+                          <span className="text-emerald-400">{record.wins}</span>
+                          <span className="text-slate-500">/</span>
+                          <span className="text-red-400">{record.losses}</span>
+                          <span className="text-slate-500">/</span>
+                          <span className="text-amber-400">{record.pending}</span>
                         </td>
                         <td className={`p-4 text-right font-mono font-bold ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                           {record.pnl_cents >= 0 ? '+' : ''}${(record.pnl_cents / 100).toFixed(2)}
+                        </td>
+                        <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
                         </td>
                         <td className="p-4 text-center">
                           <span className={`px-2 py-0.5 rounded text-xs ${record.source === 'snapshot' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-400'}`}>

@@ -40,12 +40,15 @@ async function kalshiFetch(endpoint: string): Promise<any> {
 
 interface DailyRecord {
   date: string;
-  balance_cents: number;
-  positions_cents: number;
-  portfolio_value_cents: number;
+  start_cash_cents: number;
+  start_portfolio_cents: number;
+  end_cash_cents: number;
+  end_portfolio_cents: number;
   wins: number;
   losses: number;
+  pending: number;
   pnl_cents: number;
+  roic_percent: number;
   source: 'snapshot' | 'calculated';
 }
 
@@ -91,32 +94,16 @@ export async function GET(request: Request) {
       console.error('Failed to fetch positions:', e);
     }
 
-    // Build records from snapshots
-    const records: DailyRecord[] = [];
-    const snapshotDates = new Set<string>();
-
-    if (snapshots && snapshots.length > 0) {
-      snapshots.forEach(s => {
-        snapshotDates.add(s.snapshot_date);
-        records.push({
-          date: s.snapshot_date,
-          balance_cents: s.balance_cents,
-          positions_cents: s.positions_cents,
-          portfolio_value_cents: s.portfolio_value_cents,
-          wins: s.wins,
-          losses: s.losses,
-          pnl_cents: s.pnl_cents,
-          source: 'snapshot',
-        });
-      });
-    }
-
-    // For dates without snapshots, calculate from orders
+    // Get all batches and orders for calculations
     const { data: batches } = await supabase
       .from('order_batches')
       .select('*')
       .gte('batch_date', startDateStr)
       .order('batch_date', { ascending: true });
+
+    let allOrders: any[] = [];
+    const ordersByDate: Record<string, any[]> = {};
+    const batchDateMap: Record<string, string> = {};
 
     if (batches && batches.length > 0) {
       const batchIds = batches.map(b => b.id);
@@ -124,57 +111,115 @@ export async function GET(request: Request) {
         .from('orders')
         .select('*')
         .in('batch_id', batchIds);
-
-      // Group orders by batch date
-      const ordersByDate: Record<string, any[]> = {};
-      const batchDateMap: Record<string, string> = {};
+      
+      allOrders = orders || [];
       
       batches.forEach(batch => {
         batchDateMap[batch.id] = batch.batch_date;
       });
 
-      (orders || []).forEach(order => {
+      allOrders.forEach(order => {
         const date = batchDateMap[order.batch_id];
-        if (date && !snapshotDates.has(date)) {
+        if (date) {
           if (!ordersByDate[date]) {
             ordersByDate[date] = [];
           }
           ordersByDate[date].push(order);
         }
       });
+    }
 
-      // Calculate records for dates without snapshots
-      Object.keys(ordersByDate).forEach(date => {
-        const dayOrders = ordersByDate[date];
-        const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
-        const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
-        const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
-        
-        const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-        const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-        const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-        const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-        const dayPnl = payout - fees - wonCost - lostCost;
-
-        records.push({
-          date,
-          balance_cents: currentBalance, // Use current as estimate
-          positions_cents: currentPositions,
-          portfolio_value_cents: currentBalance + currentPositions,
-          wins: wonOrders.length,
-          losses: lostOrders.length,
-          pnl_cents: dayPnl,
-          source: 'calculated',
-        });
+    // Build snapshot map for quick lookup
+    const snapshotMap: Record<string, any> = {};
+    if (snapshots && snapshots.length > 0) {
+      snapshots.forEach(s => {
+        snapshotMap[s.snapshot_date] = s;
       });
     }
 
-    // Sort by date descending
+    // Get all unique dates and sort ascending
+    const allDates = [...new Set([
+      ...Object.keys(ordersByDate),
+      ...Object.keys(snapshotMap),
+    ])].sort();
+
+    // Build records with start/end values
+    const records: DailyRecord[] = [];
+    let previousEndCash = currentBalance;
+    let previousEndPositions = currentPositions;
+
+    // Work backwards to estimate historical start values
+    for (let i = allDates.length - 1; i >= 0; i--) {
+      const date = allDates[i];
+      const dayOrders = ordersByDate[date] || [];
+      const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
+      const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
+      const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
+      
+      const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+      const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+      const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+      const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+      const dayPnl = payout - fees - wonCost - lostCost;
+      
+      // Subtract P&L to get previous day's end cash
+      previousEndCash = previousEndCash - dayPnl;
+    }
+
+    // Now build records going forward
+    let runningCash = previousEndCash;
+    
+    for (const date of allDates) {
+      const snapshot = snapshotMap[date];
+      const dayOrders = ordersByDate[date] || [];
+      const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
+      const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
+      const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
+      const pendingOrders = confirmedOrders.filter(o => o.result_status === 'undecided');
+      
+      const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+      const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+      const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+      const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+      const dayPnl = payout - fees - wonCost - lostCost;
+      
+      const startCash = runningCash;
+      const endCash = startCash + dayPnl;
+      
+      // Use snapshot positions if available, otherwise current positions
+      const endPositions = snapshot ? snapshot.positions_cents : currentPositions;
+      const startPositions = endPositions; // Approximate - positions at start roughly same
+      
+      const startPortfolio = startCash + startPositions;
+      const endPortfolio = endCash + endPositions;
+      
+      // Calculate ROIC
+      const roic = startPortfolio > 0 ? (dayPnl / startPortfolio) * 100 : 0;
+      
+      records.push({
+        date,
+        start_cash_cents: Math.round(startCash),
+        start_portfolio_cents: Math.round(startPortfolio),
+        end_cash_cents: Math.round(endCash),
+        end_portfolio_cents: Math.round(endPortfolio),
+        wins: wonOrders.length,
+        losses: lostOrders.length,
+        pending: pendingOrders.length,
+        pnl_cents: dayPnl,
+        roic_percent: Math.round(roic * 100) / 100,
+        source: snapshot ? 'snapshot' : 'calculated',
+      });
+      
+      runningCash = endCash;
+    }
+
+    // Sort by date descending (most recent first)
     records.sort((a, b) => b.date.localeCompare(a.date));
 
     // Calculate totals
     const totalWins = records.reduce((sum, r) => sum + r.wins, 0);
     const totalLosses = records.reduce((sum, r) => sum + r.losses, 0);
+    const totalPending = records.reduce((sum, r) => sum + r.pending, 0);
     const totalPnl = records.reduce((sum, r) => sum + r.pnl_cents, 0);
 
     return NextResponse.json({
@@ -185,6 +230,7 @@ export async function GET(request: Request) {
       totals: {
         wins: totalWins,
         losses: totalLosses,
+        pending: totalPending,
         pnl_cents: totalPnl,
       },
     });
