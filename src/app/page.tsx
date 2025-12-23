@@ -1043,39 +1043,6 @@ export default function Dashboard() {
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-4 mb-6">
               <button
-                onClick={() => prepareOrders(false)}
-                disabled={preparingOrders}
-                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-500 disabled:opacity-50"
-              >
-                {preparingOrders ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Preparing...</>
-                ) : (
-                  <>📋 Prepare Tomorrow</>
-                )}
-              </button>
-              <button
-                onClick={() => prepareOrders(true)}
-                disabled={preparingOrders}
-                className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-500 disabled:opacity-50"
-              >
-                {preparingOrders ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Preparing...</>
-                ) : (
-                  <>📋 Prepare Today</>
-                )}
-              </button>
-              <button
-                onClick={executeTodayOrders}
-                disabled={executingOrders}
-                className="flex items-center gap-2 px-6 py-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-500 disabled:opacity-50"
-              >
-                {executingOrders ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Executing...</>
-                ) : (
-                  <>🚀 Execute Today</>
-                )}
-              </button>
-              <button
                 onClick={refreshAll}
                 disabled={refreshingAll || updatingStatuses || reconcilingOrders || liveOrdersLoading}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
@@ -1329,6 +1296,30 @@ export default function Dashboard() {
               );
             })()}
 
+            {/* Quick Prepare Buttons for missing batches */}
+            {!liveOrdersLoading && orderBatches.length > 0 && (
+              <div className="flex gap-2 mb-4">
+                {!orderBatches.some(b => b.batch_date === new Date().toISOString().split('T')[0]) && (
+                  <button
+                    onClick={() => prepareOrders(true)}
+                    disabled={preparingOrders}
+                    className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50"
+                  >
+                    {preparingOrders ? '...' : '+ Prepare Today'}
+                  </button>
+                )}
+                {!orderBatches.some(b => b.batch_date === new Date(Date.now() + 86400000).toISOString().split('T')[0]) && (
+                  <button
+                    onClick={() => prepareOrders(false)}
+                    disabled={preparingOrders}
+                    className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50"
+                  >
+                    {preparingOrders ? '...' : '+ Prepare Tomorrow'}
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Batches List */}
             {liveOrdersLoading ? (
               <div className="flex flex-col items-center py-20 text-slate-400">
@@ -1338,7 +1329,22 @@ export default function Dashboard() {
             ) : orderBatches.length === 0 ? (
               <div className="text-center py-20 text-slate-400">
                 <p className="text-xl mb-4">No order batches yet</p>
-                <p className="text-sm">Click "Prepare Tomorrow" to create your first batch</p>
+                <div className="flex justify-center gap-4 mt-4">
+                  <button
+                    onClick={() => prepareOrders(true)}
+                    disabled={preparingOrders}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50"
+                  >
+                    {preparingOrders ? 'Preparing...' : '📋 Prepare Today'}
+                  </button>
+                  <button
+                    onClick={() => prepareOrders(false)}
+                    disabled={preparingOrders}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50"
+                  >
+                    {preparingOrders ? 'Preparing...' : '📋 Prepare Tomorrow'}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -1407,6 +1413,42 @@ export default function Dashboard() {
                                 <span className="text-slate-400">{pendingOrders.length}P</span>
                               </div>
                             </div>
+                            {/* Prepare button - disabled since batch already exists */}
+                            <button
+                              disabled
+                              className="px-3 py-1 rounded text-xs font-medium bg-slate-700 text-slate-500 cursor-not-allowed"
+                            >
+                              ✓ Prepared
+                            </button>
+                            {/* Execute button - only for today's batch with pending orders */}
+                            {isToday && confirmedOrders.length === 0 && batch.orders.filter(o => o.placement_status === 'pending').length > 0 && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm('Execute all pending orders? This will place real orders!')) return;
+                                  setExecutingOrders(true);
+                                  try {
+                                    const res = await fetch('/api/orders-live/execute', { method: 'POST' });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      alert(`Executed ${data.results?.filter((r: any) => r.success).length || 0} orders!`);
+                                      refreshAll();
+                                    } else {
+                                      alert(`Error: ${data.error}`);
+                                    }
+                                  } catch (err) {
+                                    alert('Error executing orders');
+                                  } finally {
+                                    setExecutingOrders(false);
+                                  }
+                                }}
+                                disabled={executingOrders}
+                                className="px-3 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                {executingOrders ? '...' : '🚀 Execute'}
+                              </button>
+                            )}
+                            {/* Recalculate button - only for pending batches */}
                             {confirmedOrders.length === 0 && (
                               <button
                                 onClick={async (e) => {
