@@ -1544,6 +1544,21 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Investment Rules */}
+            <div className="bg-slate-900 rounded-xl p-4 mb-6 border border-slate-800">
+              <div className="text-sm font-medium text-white mb-3">Investment Rules</div>
+              <ul className="text-sm text-slate-400 space-y-1">
+                <li>— Target markets with favorites at 85-99.5% odds</li>
+                <li>— Minimum open interest of $1,000</li>
+                <li>— Deploy 100% of available capital daily</li>
+                <li>— Distribute evenly across all qualifying markets</li>
+                <li>— Prioritize deepest markets (highest OI) for extra units</li>
+                <li>— Maximum 3% of portfolio in any single market</li>
+                <li>— Cancel unfilled orders after 4 hours and redeploy</li>
+                <li>— Blacklist illiquid markets that fail to fill</li>
+              </ul>
+            </div>
+
             {/* Records Table */}
             {recordsLoading && !recordsData ? (
               <div className="text-center py-12 text-slate-400">Loading records...</div>
