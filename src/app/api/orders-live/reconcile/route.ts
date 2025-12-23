@@ -176,28 +176,34 @@ async function reconcileOrders() {
     
     if (fills.length > 0) {
       // Has fills = confirmed execution
+      // Note: Kalshi returns prices in CENTS (integer), not dollars
       const totalCount = fills.reduce((sum, f) => sum + (f.count || 0), 0);
-      const avgPrice = fills[0]?.price || null;
-      const totalCost = fills.reduce((sum, f) => sum + ((f.price || 0) * (f.count || 0)), 0);
+      const avgPriceCents = fills[0]?.price || null; // Price is in cents
+      const totalCostCents = fills.reduce((sum, f) => sum + ((f.price || 0) * (f.count || 0)), 0);
+      
+      // Always update executed_cost_cents when we have fills
+      const updates: any = {
+        executed_price_cents: avgPriceCents,
+        executed_cost_cents: totalCostCents,
+      };
       
       if (dbOrder.placement_status !== 'confirmed') {
-        // Update to confirmed
-        await supabase
-          .from('orders')
-          .update({
-            placement_status: 'confirmed',
-            placement_status_at: new Date().toISOString(),
-            executed_price_cents: avgPrice,
-            executed_cost_cents: totalCost,
-          })
-          .eq('id', dbOrder.id);
-        
-        results.updated++;
+        updates.placement_status = 'confirmed';
+        updates.placement_status_at = new Date().toISOString();
         detail.action = 'updated_to_confirmed';
+      } else if (dbOrder.executed_cost_cents !== totalCostCents) {
+        detail.action = 'updated_cost';
       }
       
-      detail.executed_price = avgPrice;
-      detail.executed_cost = totalCost;
+      await supabase
+        .from('orders')
+        .update(updates)
+        .eq('id', dbOrder.id);
+      
+      results.updated++;
+      
+      detail.executed_price = avgPriceCents;
+      detail.executed_cost = totalCostCents;
       results.confirmed++;
     } else if (kalshiOrder) {
       // No fills but order exists in Kalshi
@@ -308,8 +314,10 @@ async function reconcileOrders() {
       // Settlement exists for this ticker
       const marketResult = settlement.market_result; // 'yes' or 'no'
       const won = dbOrder.side.toLowerCase() === marketResult;
+      // Kalshi returns fee_cost as dollars (string), revenue as cents (integer)
       const feeCents = Math.round(parseFloat(settlement.fee_cost || '0') * 100);
-      const revenue = settlement.revenue || 0;
+      // Revenue from Kalshi is in cents (it's the payout: $1 per contract = 100 cents)
+      const revenueCents = settlement.revenue || 0;
       
       const updates: any = {};
       let needsUpdate = false;
@@ -325,7 +333,7 @@ async function reconcileOrders() {
       if (won && dbOrder.settlement_status !== 'success') {
         updates.settlement_status = 'success';
         updates.settlement_status_at = settlement.settled_time || new Date().toISOString();
-        updates.actual_payout_cents = revenue;
+        updates.actual_payout_cents = revenueCents;
         needsUpdate = true;
         results.settlements_updated++;
       } else if (!won && dbOrder.settlement_status !== 'closed') {
@@ -342,13 +350,19 @@ async function reconcileOrders() {
         results.fees_updated++;
       }
       
+      // Also update actual_payout_cents for won orders even if already success
+      if (won && revenueCents > 0 && dbOrder.actual_payout_cents !== revenueCents) {
+        updates.actual_payout_cents = revenueCents;
+        needsUpdate = true;
+      }
+      
       if (needsUpdate) {
         await supabase
           .from('orders')
           .update(updates)
           .eq('id', dbOrder.id);
         
-        console.log(`Updated settlement for ${dbOrder.ticker}: won=${won}, fee=${feeCents}¢`);
+        console.log(`Updated settlement for ${dbOrder.ticker}: won=${won}, fee=${feeCents}¢, payout=${revenueCents}¢`);
       }
     }
   }
