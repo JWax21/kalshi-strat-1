@@ -1510,23 +1510,15 @@ export default function Dashboard() {
 
             {/* Summary Cards */}
             {recordsData && (
-              <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Cash</div>
-                  <div className="text-2xl font-bold text-white">
-                    ${((recordsData.current_balance_cents || 0) / 100).toFixed(2)}
-                  </div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Positions</div>
-                  <div className="text-2xl font-bold text-amber-400">
-                    ${((recordsData.current_positions_cents || 0) / 100).toFixed(2)}
-                  </div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Portfolio</div>
-                  <div className="text-2xl font-bold text-white">
-                    ${(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toFixed(2)}
+                  <div className="text-xs text-slate-500 uppercase mb-2">Cash | Positions | Portfolio</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-white">${((recordsData.current_balance_cents || 0) / 100).toFixed(2)}</span>
+                    <span className="text-slate-500">|</span>
+                    <span className="text-2xl font-bold text-amber-400">${((recordsData.current_positions_cents || 0) / 100).toFixed(2)}</span>
+                    <span className="text-slate-500">|</span>
+                    <span className="text-2xl font-bold text-white">${(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toFixed(2)}</span>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
