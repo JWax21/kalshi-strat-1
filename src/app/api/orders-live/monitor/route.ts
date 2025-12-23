@@ -240,7 +240,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         const newOrderResult = await placeOrder(payload);
         const newKalshiOrderId = newOrderResult.order?.order_id;
         const newStatus = newOrderResult.order?.status;
-        const filledCount = newOrderResult.order?.filled_count || order.units || 1;
+        const filledCount = (newOrderResult.order as any)?.filled_count || order.units || 1;
 
         await supabase
           .from('orders')
