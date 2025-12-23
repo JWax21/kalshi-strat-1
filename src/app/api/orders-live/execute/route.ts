@@ -145,7 +145,9 @@ async function executeOrders() {
         executedPriceCents = order.side === 'YES' 
           ? result.order?.yes_price 
           : result.order?.no_price;
-        executedCostCents = executedPriceCents ? executedPriceCents * 1 : null;
+        // Multiply by filled count (or order units) to get total cost
+        const filledCount = result.order?.filled_count || order.units || 1;
+        executedCostCents = executedPriceCents ? executedPriceCents * filledCount : null;
       }
 
       await supabase

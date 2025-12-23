@@ -148,17 +148,17 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         const orderDetail = await kalshiFetch(`/portfolio/orders/${order.kalshi_order_id}`);
         if (orderDetail.order?.status === 'executed') {
           // Update to confirmed
+          const executedPrice = order.side === 'YES' 
+            ? orderDetail.order.yes_price 
+            : orderDetail.order.no_price;
+          const filledCount = orderDetail.order.filled_count || order.units || 1;
           await supabase
             .from('orders')
             .update({
               placement_status: 'confirmed',
               placement_status_at: new Date().toISOString(),
-              executed_price_cents: order.side === 'YES' 
-                ? orderDetail.order.yes_price 
-                : orderDetail.order.no_price,
-              executed_cost_cents: order.side === 'YES' 
-                ? orderDetail.order.yes_price 
-                : orderDetail.order.no_price,
+              executed_price_cents: executedPrice,
+              executed_cost_cents: executedPrice * filledCount,
             })
             .eq('id', order.id);
           result.details.improved.push(`${order.ticker}: filled!`);
@@ -240,6 +240,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         const newOrderResult = await placeOrder(payload);
         const newKalshiOrderId = newOrderResult.order?.order_id;
         const newStatus = newOrderResult.order?.status;
+        const filledCount = newOrderResult.order?.filled_count || order.units || 1;
 
         await supabase
           .from('orders')
@@ -249,7 +250,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             placement_status: newStatus === 'executed' ? 'confirmed' : 'placed',
             placement_status_at: new Date().toISOString(),
             executed_price_cents: newStatus === 'executed' ? newPrice : null,
-            executed_cost_cents: newStatus === 'executed' ? newPrice : null,
+            executed_cost_cents: newStatus === 'executed' ? newPrice * filledCount : null,
           })
           .eq('id', order.id);
 
