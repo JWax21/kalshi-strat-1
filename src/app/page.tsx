@@ -63,7 +63,7 @@ interface DailyRecord {
 interface RecordsData {
   records: DailyRecord[];
   current_balance_cents: number;
-  current_exposure_cents: number;
+  current_positions_cents: number;
   totals: {
     wins: number;
     losses: number;
@@ -1912,7 +1912,7 @@ export default function Dashboard() {
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase">Current Positions</div>
                   <div className="text-2xl font-bold text-amber-400">
-                    ${((recordsData.current_exposure_cents || 0) / 100).toFixed(2)}
+                    ${((recordsData.current_positions_cents || 0) / 100).toFixed(2)}
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">

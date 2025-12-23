@@ -108,12 +108,17 @@ export async function GET(request: Request) {
       console.error('Failed to fetch balance:', e);
     }
 
-    // Get current positions for exposure
-    let currentExposure = 0;
+    // Get current positions value from Kalshi API
+    let currentPositions = 0;
     try {
       const positionsData = await kalshiFetch('/portfolio/positions');
       const positions = positionsData?.market_positions || [];
-      currentExposure = positions.reduce((sum: number, p: any) => sum + Math.abs(p.market_exposure || 0), 0);
+      // Sum up the total cost of all open positions (what we paid for them)
+      currentPositions = positions.reduce((sum: number, p: any) => {
+        // position_cost is the total cost basis for the position
+        // market_exposure is the current market value exposure
+        return sum + Math.abs(p.position_cost || p.market_exposure || 0);
+      }, 0);
     } catch (e) {
       console.error('Failed to fetch positions:', e);
     }
@@ -125,7 +130,6 @@ export async function GET(request: Request) {
     // We'll work backwards from today to estimate historical balances
     // This is an approximation since we don't have historical balance snapshots
     let runningBalance = currentBalance;
-    let runningExposure = currentExposure;
     
     // Process dates in reverse to calculate historical balances
     const reversedDates = [...sortedDates].reverse();
@@ -191,11 +195,19 @@ export async function GET(request: Request) {
     const totalLosses = records.reduce((sum, r) => sum + r.losses, 0);
     const totalPnl = records.reduce((sum, r) => sum + r.pnl_cents, 0);
 
+    // For the most recent day (today), use the actual positions from Kalshi
+    const reversedRecords = records.reverse();
+    const today = new Date().toISOString().split('T')[0];
+    if (reversedRecords.length > 0 && reversedRecords[0].date === today) {
+      reversedRecords[0].end_positions_cents = currentPositions;
+      reversedRecords[0].portfolio_value_cents = reversedRecords[0].end_balance_cents + currentPositions;
+    }
+
     return NextResponse.json({
       success: true,
-      records: records.reverse(), // Most recent first
+      records: reversedRecords,
       current_balance_cents: currentBalance,
-      current_exposure_cents: currentExposure,
+      current_positions_cents: currentPositions,
       totals: {
         wins: totalWins,
         losses: totalLosses,
