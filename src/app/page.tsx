@@ -1058,17 +1058,7 @@ export default function Dashboard() {
               <div className="bg-slate-900 rounded-xl p-4 mb-6">
                 <div className="text-sm text-slate-400 mb-3">Filter by Day</div>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setSelectedDay(null)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                      selectedDay === null
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
-                    }`}
-                  >
-                    All
-                  </button>
-                  {orderBatches.map((batch) => {
+                  {[...orderBatches].sort((a, b) => a.batch_date.localeCompare(b.batch_date)).map((batch) => {
                     const date = new Date(batch.batch_date + 'T12:00:00');
                     const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                     return (
@@ -1093,9 +1083,7 @@ export default function Dashboard() {
             {/* Order Summary - filtered by selected day */}
             {(() => {
               // Get orders for the selected day (or all if no day selected)
-              const filteredBatches = selectedDay 
-                ? orderBatches.filter(b => b.batch_date === selectedDay)
-                : orderBatches;
+              const filteredBatches = orderBatches.filter(b => b.batch_date === selectedDay);
               const allOrders = filteredBatches.flatMap(b => b.orders || []);
               
               // Calculate placement breakdown
@@ -1308,7 +1296,7 @@ export default function Dashboard() {
             ) : (
               <div className="space-y-4">
                 {orderBatches
-                  .filter(batch => !selectedDay || batch.batch_date === selectedDay)
+                  .filter(batch => batch.batch_date === selectedDay)
                   .map((batch) => {
                     // Add T12:00:00 to avoid timezone shift issues
                     const batchDate = new Date(batch.batch_date + 'T12:00:00');
@@ -1579,6 +1567,20 @@ export default function Dashboard() {
                   <div className={`text-lg font-bold ${(recordsData.totals?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                     {(recordsData.totals?.pnl_cents || 0) >= 0 ? '+' : ''}${((recordsData.totals?.pnl_cents || 0) / 100).toFixed(2)}
                   </div>
+                </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase mb-2">Avg Daily ROIC</div>
+                  {(() => {
+                    const records = recordsData.records || [];
+                    const avgRoic = records.length > 0 
+                      ? records.reduce((sum, r) => sum + parseFloat(r.roic_percent || '0'), 0) / records.length
+                      : 0;
+                    return (
+                      <div className={`text-lg font-bold ${avgRoic >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {avgRoic >= 0 ? '+' : ''}{avgRoic.toFixed(2)}%
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
