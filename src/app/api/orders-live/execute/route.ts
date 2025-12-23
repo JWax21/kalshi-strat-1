@@ -146,7 +146,7 @@ async function executeOrders() {
           ? result.order?.yes_price 
           : result.order?.no_price;
         // Multiply by filled count (or order units) to get total cost
-        const filledCount = result.order?.filled_count || order.units || 1;
+        const filledCount = (result.order as any)?.filled_count || order.units || 1;
         executedCostCents = executedPriceCents ? executedPriceCents * filledCount : null;
       }
 
