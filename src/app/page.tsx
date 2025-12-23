@@ -1364,6 +1364,32 @@ export default function Dashboard() {
                                 <span className="text-slate-400">{pendingOrders.length}P</span>
                               </div>
                             </div>
+                            {confirmedOrders.length === 0 && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  try {
+                                    const res = await fetch('/api/orders-live/recalculate', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ batchId: batch.id }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      alert(`Recalculated: ${data.total_units} units across ${data.total_orders} orders (${data.capital_utilization} utilization)`);
+                                      fetchLiveOrders();
+                                    } else {
+                                      alert(`Error: ${data.error}`);
+                                    }
+                                  } catch (err) {
+                                    alert('Error recalculating');
+                                  }
+                                }}
+                                className="px-3 py-1 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-500"
+                              >
+                                ⚡ Recalculate
+                              </button>
+                            )}
                             <button
                               onClick={(e) => { e.stopPropagation(); togglePause(batch.id, batch.is_paused); }}
                               className={`px-3 py-1 rounded text-xs font-medium ${
