@@ -51,13 +51,13 @@ type PortfolioSubTab = 'positions' | 'history';
 
 interface DailyRecord {
   date: string;
-  start_balance_cents: number;
-  end_balance_cents: number;
-  end_positions_cents: number;
+  balance_cents: number;
+  positions_cents: number;
   portfolio_value_cents: number;
   wins: number;
   losses: number;
   pnl_cents: number;
+  source: 'snapshot' | 'calculated';
 }
 
 interface RecordsData {
@@ -1891,13 +1891,34 @@ export default function Dashboard() {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-2xl font-bold text-white">Daily Records</h2>
-              <button
-                onClick={fetchRecords}
-                disabled={recordsLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
-              >
-                {recordsLoading ? 'Loading...' : '↻ Refresh'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/snapshot', { method: 'POST' });
+                      const data = await res.json();
+                      if (data.success) {
+                        alert(`Snapshot captured: Balance $${data.snapshot.balance.toFixed(2)}, Positions $${data.snapshot.positions.toFixed(2)}`);
+                        fetchRecords();
+                      } else {
+                        alert(`Error: ${data.error}`);
+                      }
+                    } catch (err) {
+                      alert('Error capturing snapshot');
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
+                >
+                  📸 Capture Snapshot
+                </button>
+                <button
+                  onClick={fetchRecords}
+                  disabled={recordsLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {recordsLoading ? 'Loading...' : '↻ Refresh'}
+                </button>
+              </div>
             </div>
 
             {/* Summary Cards */}
@@ -1939,12 +1960,12 @@ export default function Dashboard() {
                   <thead className="bg-slate-800/50">
                     <tr>
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Balance</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Balance</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Current Positions</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Balance</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Positions</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Portfolio Value</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W-L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1954,13 +1975,10 @@ export default function Dashboard() {
                           {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                         </td>
                         <td className="p-4 text-right font-mono text-slate-300">
-                          ${(record.start_balance_cents / 100).toFixed(2)}
-                        </td>
-                        <td className="p-4 text-right font-mono text-slate-300">
-                          ${(record.end_balance_cents / 100).toFixed(2)}
+                          ${(record.balance_cents / 100).toFixed(2)}
                         </td>
                         <td className="p-4 text-right font-mono text-amber-400">
-                          ${(record.end_positions_cents / 100).toFixed(2)}
+                          ${(record.positions_cents / 100).toFixed(2)}
                         </td>
                         <td className="p-4 text-right font-mono text-white font-medium">
                           ${(record.portfolio_value_cents / 100).toFixed(2)}
@@ -1973,13 +1991,18 @@ export default function Dashboard() {
                         <td className={`p-4 text-right font-mono font-bold ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                           {record.pnl_cents >= 0 ? '+' : ''}${(record.pnl_cents / 100).toFixed(2)}
                         </td>
+                        <td className="p-4 text-center">
+                          <span className={`px-2 py-0.5 rounded text-xs ${record.source === 'snapshot' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-400'}`}>
+                            {record.source === 'snapshot' ? '📸' : '~'}
+                          </span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="text-center py-12 text-slate-400">No records found. Start trading to see daily records.</div>
+              <div className="text-center py-12 text-slate-400">No records found. Click &quot;Capture Snapshot&quot; to start recording daily data.</div>
             )}
           </div>
         )}

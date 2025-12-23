@@ -40,67 +40,40 @@ async function kalshiFetch(endpoint: string): Promise<any> {
 
 interface DailyRecord {
   date: string;
-  start_balance_cents: number;
-  end_balance_cents: number;
-  end_positions_cents: number;
+  balance_cents: number;
+  positions_cents: number;
   portfolio_value_cents: number;
   wins: number;
   losses: number;
   pnl_cents: number;
+  source: 'snapshot' | 'calculated';
 }
 
-// GET - Fetch daily records
+// GET - Fetch daily records (uses snapshots when available, calculates when not)
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const days = parseInt(searchParams.get('days') || '30');
+    const days = parseInt(searchParams.get('days') || '90');
 
-    // Get all batches
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
 
-    const { data: batches, error: batchesError } = await supabase
-      .from('order_batches')
+    // First, try to get snapshots from the database
+    const { data: snapshots, error: snapshotsError } = await supabase
+      .from('daily_snapshots')
       .select('*')
-      .gte('batch_date', startDate.toISOString().split('T')[0])
-      .order('batch_date', { ascending: true });
+      .gte('snapshot_date', startDateStr)
+      .order('snapshot_date', { ascending: false });
 
-    if (batchesError) throw batchesError;
-
-    // Get all orders for these batches
-    const batchIds = (batches || []).map(b => b.id);
-    
-    let orders: any[] = [];
-    if (batchIds.length > 0) {
-      const { data: ordersData, error: ordersError } = await supabase
-        .from('orders')
-        .select('*')
-        .in('batch_id', batchIds);
-
-      if (ordersError) throw ordersError;
-      orders = ordersData || [];
+    if (snapshotsError) {
+      console.error('Error fetching snapshots:', snapshotsError);
     }
 
-    // Group orders by batch date
-    const ordersByDate: Record<string, any[]> = {};
-    const batchDateMap: Record<string, string> = {};
-    
-    batches?.forEach(batch => {
-      batchDateMap[batch.id] = batch.batch_date;
-    });
-
-    orders.forEach(order => {
-      const date = batchDateMap[order.batch_id];
-      if (date) {
-        if (!ordersByDate[date]) {
-          ordersByDate[date] = [];
-        }
-        ordersByDate[date].push(order);
-      }
-    });
-
-    // Get current balance for reference
+    // Get current balance and positions for live data
     let currentBalance = 0;
+    let currentPositions = 0;
+    
     try {
       const balanceData = await kalshiFetch('/portfolio/balance');
       currentBalance = balanceData?.balance || 0;
@@ -108,93 +81,105 @@ export async function GET(request: Request) {
       console.error('Failed to fetch balance:', e);
     }
 
-    // Get current positions value from Kalshi API
-    let currentPositions = 0;
     try {
       const positionsData = await kalshiFetch('/portfolio/positions');
       const positions = positionsData?.market_positions || [];
-      // Sum up the total cost of all open positions (what we paid for them)
       currentPositions = positions.reduce((sum: number, p: any) => {
-        // position_cost is the total cost basis for the position
-        // market_exposure is the current market value exposure
         return sum + Math.abs(p.position_cost || p.market_exposure || 0);
       }, 0);
     } catch (e) {
       console.error('Failed to fetch positions:', e);
     }
 
-    // Calculate daily records
+    // Build records from snapshots
     const records: DailyRecord[] = [];
-    const sortedDates = Object.keys(ordersByDate).sort();
-    
-    // We'll work backwards from today to estimate historical balances
-    // This is an approximation since we don't have historical balance snapshots
-    let runningBalance = currentBalance;
-    
-    // Process dates to calculate P&L for each day
-    const reversedDates = [...sortedDates].reverse();
-    const dailyPnL: Record<string, { pnl: number, wins: number, losses: number }> = {};
-    
-    reversedDates.forEach(date => {
-      const dayOrders = ordersByDate[date] || [];
-      const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
-      const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
-      const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
-      
-      // Calculate P&L for the day
-      const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-      const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-      const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-      const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-      const dayPnl = payout - fees - wonCost - lostCost;
-      
-      dailyPnL[date] = {
-        pnl: dayPnl,
-        wins: wonOrders.length,
-        losses: lostOrders.length,
-      };
-    });
+    const snapshotDates = new Set<string>();
 
-    // Now build records going forward
-    // Estimate start balance by subtracting all P&L from current balance
-    let cumulativePnl = 0;
-    sortedDates.forEach(date => {
-      cumulativePnl += dailyPnL[date]?.pnl || 0;
-    });
-    
-    let estimatedStartBalance = currentBalance - cumulativePnl;
-    let previousEndBalance = estimatedStartBalance;
-
-    sortedDates.forEach(date => {
-      const dayData = dailyPnL[date];
-      const startBalance = previousEndBalance;
-      const endBalance = startBalance + (dayData?.pnl || 0);
-      
-      // Use current positions for all rows - this represents the CURRENT state
-      records.push({
-        date,
-        start_balance_cents: Math.round(startBalance),
-        end_balance_cents: Math.round(endBalance),
-        end_positions_cents: currentPositions,
-        portfolio_value_cents: Math.round(endBalance) + currentPositions,
-        wins: dayData?.wins || 0,
-        losses: dayData?.losses || 0,
-        pnl_cents: dayData?.pnl || 0,
+    if (snapshots && snapshots.length > 0) {
+      snapshots.forEach(s => {
+        snapshotDates.add(s.snapshot_date);
+        records.push({
+          date: s.snapshot_date,
+          balance_cents: s.balance_cents,
+          positions_cents: s.positions_cents,
+          portfolio_value_cents: s.portfolio_value_cents,
+          wins: s.wins,
+          losses: s.losses,
+          pnl_cents: s.pnl_cents,
+          source: 'snapshot',
+        });
       });
+    }
+
+    // For dates without snapshots, calculate from orders
+    const { data: batches } = await supabase
+      .from('order_batches')
+      .select('*')
+      .gte('batch_date', startDateStr)
+      .order('batch_date', { ascending: true });
+
+    if (batches && batches.length > 0) {
+      const batchIds = batches.map(b => b.id);
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('*')
+        .in('batch_id', batchIds);
+
+      // Group orders by batch date
+      const ordersByDate: Record<string, any[]> = {};
+      const batchDateMap: Record<string, string> = {};
       
-      previousEndBalance = endBalance;
-    });
+      batches.forEach(batch => {
+        batchDateMap[batch.id] = batch.batch_date;
+      });
+
+      (orders || []).forEach(order => {
+        const date = batchDateMap[order.batch_id];
+        if (date && !snapshotDates.has(date)) {
+          if (!ordersByDate[date]) {
+            ordersByDate[date] = [];
+          }
+          ordersByDate[date].push(order);
+        }
+      });
+
+      // Calculate records for dates without snapshots
+      Object.keys(ordersByDate).forEach(date => {
+        const dayOrders = ordersByDate[date];
+        const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
+        const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
+        const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
+        
+        const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+        const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+        const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+        const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+        const dayPnl = payout - fees - wonCost - lostCost;
+
+        records.push({
+          date,
+          balance_cents: currentBalance, // Use current as estimate
+          positions_cents: currentPositions,
+          portfolio_value_cents: currentBalance + currentPositions,
+          wins: wonOrders.length,
+          losses: lostOrders.length,
+          pnl_cents: dayPnl,
+          source: 'calculated',
+        });
+      });
+    }
+
+    // Sort by date descending
+    records.sort((a, b) => b.date.localeCompare(a.date));
 
     // Calculate totals
     const totalWins = records.reduce((sum, r) => sum + r.wins, 0);
     const totalLosses = records.reduce((sum, r) => sum + r.losses, 0);
     const totalPnl = records.reduce((sum, r) => sum + r.pnl_cents, 0);
 
-    const reversedRecords = records.reverse();
-
     return NextResponse.json({
       success: true,
-      records: reversedRecords,
+      records,
       current_balance_cents: currentBalance,
       current_positions_cents: currentPositions,
       totals: {
@@ -211,4 +196,3 @@ export async function GET(request: Request) {
     );
   }
 }
-
