@@ -1360,39 +1360,39 @@ export default function Dashboard() {
                                 <span className="text-slate-400">{pendingOrders.length}P</span>
                               </div>
                             </div>
-                            {/* Prepare button - disabled since batch already exists */}
-                            <button
-                              disabled
-                              className="px-3 py-1 rounded text-xs font-medium bg-slate-700 text-slate-500 cursor-not-allowed"
-                            >
-                              ✓ Prepared
-                            </button>
-                            {/* Execute button - only for today's batch with pending orders */}
-                            {isToday && confirmedOrders.length === 0 && batch.orders.filter(o => o.placement_status === 'pending').length > 0 && (
+                            {/* Re-prepare & Execute button */}
+                            {(isToday || isTomorrow) && (
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!confirm('Execute all pending orders? This will place real orders!')) return;
-                                  setExecutingOrders(true);
+                                  const action = confirmedOrders.length > 0 
+                                    ? 'This will DELETE existing orders and re-prepare with fresh markets. Continue?' 
+                                    : 'Re-prepare batch with fresh markets and execute? This will place real orders!';
+                                  if (!confirm(action)) return;
+                                  setPreparingOrders(true);
                                   try {
-                                    const res = await fetch('/api/orders-live/execute', { method: 'POST' });
+                                    const res = await fetch('/api/orders-live/prepare-and-execute', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ forToday: isToday }),
+                                    });
                                     const data = await res.json();
                                     if (data.success) {
-                                      alert(`Executed ${data.results?.filter((r: any) => r.success).length || 0} orders!`);
+                                      alert(`Success! Placed ${data.summary.orders_placed} orders. Cost: ${data.summary.total_cost}`);
                                       refreshAll();
                                     } else {
                                       alert(`Error: ${data.error}`);
                                     }
                                   } catch (err) {
-                                    alert('Error executing orders');
+                                    alert('Error preparing orders');
                                   } finally {
-                                    setExecutingOrders(false);
+                                    setPreparingOrders(false);
                                   }
                                 }}
-                                disabled={executingOrders}
-                                className="px-3 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                                disabled={preparingOrders}
+                                className="px-3 py-1 rounded text-xs font-medium bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-50"
                               >
-                                {executingOrders ? '...' : '🚀 Execute'}
+                                {preparingOrders ? '...' : '🔄 Re-prepare & Execute'}
                               </button>
                             )}
                             {/* Recalculate button - only for pending batches */}
