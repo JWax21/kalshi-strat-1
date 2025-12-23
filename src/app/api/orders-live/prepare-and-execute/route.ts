@@ -154,64 +154,88 @@ export async function POST(request: Request) {
 
     if (batchError) throw batchError;
 
-    // Step 9: Place orders on Kalshi and save to DB
+    // Step 9: First save all orders to DB (as pending), then try to place on Kalshi
     const results: any[] = [];
     let successCount = 0;
     let failCount = 0;
 
-    for (const alloc of ordersToPlace) {
-      const { market, units, cost } = alloc;
-      
+    // First, insert all orders as pending
+    const ordersToInsert = ordersToPlace.map(({ market, units, cost }) => ({
+      batch_id: batch.id,
+      ticker: market.ticker,
+      event_ticker: market.event_ticker,
+      title: market.title,
+      side: market.favorite_side,
+      price_cents: market.price_cents,
+      units: units,
+      cost_cents: cost,
+      potential_payout_cents: units * 100,
+      open_interest: market.open_interest,
+      market_close_time: market.close_time,
+      placement_status: 'pending',
+      placement_status_at: new Date().toISOString(),
+      result_status: 'undecided',
+      settlement_status: 'pending',
+    }));
+
+    const { data: insertedOrders, error: insertError } = await supabase
+      .from('orders')
+      .insert(ordersToInsert)
+      .select();
+
+    if (insertError) {
+      console.error('Failed to insert orders:', insertError);
+      return NextResponse.json({ 
+        success: false, 
+        error: `Failed to save orders: ${insertError.message}`,
+        batch_id: batch.id,
+      });
+    }
+
+    console.log(`Saved ${insertedOrders?.length || 0} orders to database`);
+
+    // Now try to place each order on Kalshi
+    for (const order of insertedOrders || []) {
       try {
         const payload: any = {
-          ticker: market.ticker,
+          ticker: order.ticker,
           action: 'buy',
-          side: market.favorite_side.toLowerCase(),
-          count: units,
+          side: order.side.toLowerCase(),
+          count: order.units,
           type: 'limit',
-          client_order_id: `live_${batch.id}_${market.ticker}_${Date.now()}`,
+          client_order_id: `live_${batch.id}_${order.ticker}_${Date.now()}`,
         };
 
-        if (market.favorite_side === 'YES') {
-          payload.yes_price = market.price_cents;
+        if (order.side === 'YES') {
+          payload.yes_price = order.price_cents;
         } else {
-          payload.no_price = market.price_cents;
+          payload.no_price = order.price_cents;
         }
 
-        console.log(`Placing: ${market.ticker} x${units}`);
+        console.log(`Placing: ${order.ticker} x${order.units}`);
         const result = await placeOrder(payload);
         
         const kalshiOrderId = result.order?.order_id;
         const status = result.order?.status;
         const isExecuted = status === 'executed';
 
-        // Save to database
-        await supabase.from('orders').insert({
-          batch_id: batch.id,
-          ticker: market.ticker,
-          event_ticker: market.event_ticker,
-          title: market.title,
-          side: market.favorite_side,
-          price_cents: market.price_cents,
-          units: units,
-          cost_cents: cost,
-          potential_payout_cents: units * 100,
-          open_interest: market.open_interest,
-          market_close_time: market.close_time,
-          placement_status: isExecuted ? 'confirmed' : 'placed',
-          placement_status_at: new Date().toISOString(),
-          kalshi_order_id: kalshiOrderId,
-          executed_price_cents: isExecuted ? market.price_cents : null,
-          executed_cost_cents: isExecuted ? cost : null,
-          result_status: 'undecided',
-          settlement_status: 'pending',
-        });
+        // Update order with Kalshi result
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: isExecuted ? 'confirmed' : 'placed',
+            placement_status_at: new Date().toISOString(),
+            kalshi_order_id: kalshiOrderId,
+            executed_price_cents: isExecuted ? order.price_cents : null,
+            executed_cost_cents: isExecuted ? order.cost_cents : null,
+          })
+          .eq('id', order.id);
 
         successCount++;
         results.push({
-          ticker: market.ticker,
-          units,
-          cost: `$${(cost/100).toFixed(2)}`,
+          ticker: order.ticker,
+          units: order.units,
+          cost: `$${(order.cost_cents/100).toFixed(2)}`,
           status,
           kalshi_order_id: kalshiOrderId,
         });
@@ -220,11 +244,11 @@ export async function POST(request: Request) {
       } catch (e) {
         failCount++;
         const errMsg = e instanceof Error ? e.message : String(e);
-        console.error(`Failed: ${market.ticker} - ${errMsg}`);
+        console.error(`Failed: ${order.ticker} - ${errMsg}`);
         
         results.push({
-          ticker: market.ticker,
-          units,
+          ticker: order.ticker,
+          units: order.units,
           status: 'failed',
           error: errMsg,
         });
