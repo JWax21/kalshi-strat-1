@@ -448,7 +448,6 @@ export default function Dashboard() {
     alert(`Orders submitted: ${successCount}/${results.length} successful`);
     if (successCount > 0) {
       clearSelections();
-      fetchPortfolio();
     }
   };
 
