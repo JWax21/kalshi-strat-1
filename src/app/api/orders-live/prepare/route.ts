@@ -1,22 +1,115 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getMarkets, filterHighOddsMarkets, getMarketOdds, KalshiMarket } from '@/lib/kalshi';
+import crypto from 'crypto';
+import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+// Helper to make authenticated Kalshi API calls
+async function kalshiFetch(endpoint: string): Promise<any> {
+  const timestampMs = Date.now().toString();
+  const method = 'GET';
+  const pathWithoutQuery = endpoint.split('?')[0];
+  const fullPath = `/trade-api/v2${pathWithoutQuery}`;
+
+  const message = `${timestampMs}${method}${fullPath}`;
+  const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+  const signature = crypto.sign('sha256', Buffer.from(message), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  }).toString('base64');
+
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kalshi API error: ${response.status}`);
+  }
+
+  return response.json();
+}
 
 interface PrepareParams {
-  unitSizeCents: number;
   minOdds: number;
   maxOdds: number;
   minOpenInterest: number;
-  maxOpenInterest: number;
-  forToday?: boolean; // If true, prepare for today instead of tomorrow
+  forToday?: boolean;
+  capitalReservePercent?: number; // Optional: reserve some capital (default 0%)
+}
+
+interface MarketWithUnits {
+  market: any;
+  units: number;
+  cost_cents: number;
+  potential_payout_cents: number;
+}
+
+/**
+ * Distribute capital across markets as evenly as possible.
+ * Markets are sorted by open interest (highest first).
+ * Higher OI markets get priority for extra units.
+ */
+function distributeCapital(
+  markets: any[],
+  availableCapitalCents: number
+): MarketWithUnits[] {
+  if (markets.length === 0 || availableCapitalCents <= 0) {
+    return [];
+  }
+
+  // Sort by open interest descending (already sorted, but ensure)
+  const sortedMarkets = [...markets].sort((a, b) => b.open_interest - a.open_interest);
+  
+  // Calculate total cost per unit for all markets
+  const totalCostPerRound = sortedMarkets.reduce((sum, m) => sum + m.price_cents, 0);
+  
+  if (totalCostPerRound === 0) {
+    return [];
+  }
+
+  // Calculate how many complete "rounds" of units we can afford
+  // A round = 1 unit for every market
+  const completeRounds = Math.floor(availableCapitalCents / totalCostPerRound);
+  let remainingCapital = availableCapitalCents - (completeRounds * totalCostPerRound);
+
+  // Initialize each market with the base number of units
+  const result: MarketWithUnits[] = sortedMarkets.map(market => ({
+    market,
+    units: completeRounds,
+    cost_cents: market.price_cents * completeRounds,
+    potential_payout_cents: 100 * completeRounds, // $1 payout per contract
+  }));
+
+  // Distribute remaining capital to markets with highest OI first
+  // (they're already sorted by OI)
+  for (let i = 0; i < result.length && remainingCapital > 0; i++) {
+    const market = result[i];
+    const costForOneMore = market.market.price_cents;
+    
+    if (remainingCapital >= costForOneMore) {
+      market.units += 1;
+      market.cost_cents += costForOneMore;
+      market.potential_payout_cents += 100;
+      remainingCapital -= costForOneMore;
+    }
+  }
+
+  // Filter out markets with 0 units (shouldn't happen if we have capital)
+  return result.filter(r => r.units > 0);
 }
 
 async function prepareOrders(params: PrepareParams) {
-  const { unitSizeCents, minOdds, maxOdds, minOpenInterest, maxOpenInterest, forToday } = params;
+  const { minOdds, maxOdds, minOpenInterest, forToday, capitalReservePercent = 0 } = params;
 
   // Get target date (today or tomorrow)
   const targetDate = new Date();
@@ -25,7 +118,7 @@ async function prepareOrders(params: PrepareParams) {
   }
   const targetDateStr = targetDate.toISOString().split('T')[0];
 
-  // Check if batch already exists for tomorrow
+  // Check if batch already exists
   const { data: existing } = await supabase
     .from('order_batches')
     .select('id')
@@ -37,6 +130,31 @@ async function prepareOrders(params: PrepareParams) {
       success: false,
       error: `Batch already exists for ${targetDateStr}`,
       batch_id: existing.id,
+    };
+  }
+
+  // Get available balance from Kalshi
+  let availableCapitalCents = 0;
+  try {
+    const balanceData = await kalshiFetch('/portfolio/balance');
+    availableCapitalCents = balanceData?.balance || 0;
+  } catch (e) {
+    console.error('Failed to fetch balance:', e);
+    return {
+      success: false,
+      error: 'Failed to fetch account balance from Kalshi',
+    };
+  }
+
+  // Apply reserve if specified
+  if (capitalReservePercent > 0) {
+    availableCapitalCents = Math.floor(availableCapitalCents * (1 - capitalReservePercent / 100));
+  }
+
+  if (availableCapitalCents <= 0) {
+    return {
+      success: false,
+      error: 'No available capital to deploy',
     };
   }
 
@@ -64,9 +182,7 @@ async function prepareOrders(params: PrepareParams) {
   let filteredMarkets = filterHighOddsMarkets(allMarkets, minOdds, maxOdds);
 
   // Filter by open interest (require minimum OI)
-  filteredMarkets = filteredMarkets.filter(m => {
-    return m.open_interest >= minOpenInterest;
-  });
+  filteredMarkets = filteredMarkets.filter(m => m.open_interest >= minOpenInterest);
 
   // Sort by open interest descending
   filteredMarkets.sort((a, b) => b.open_interest - a.open_interest);
@@ -93,17 +209,29 @@ async function prepareOrders(params: PrepareParams) {
     };
   }
 
+  // Distribute capital across all markets
+  const allocatedMarkets = distributeCapital(enrichedMarkets, availableCapitalCents);
+
+  if (allocatedMarkets.length === 0) {
+    return {
+      success: false,
+      error: 'Insufficient capital to place any orders',
+    };
+  }
+
   // Calculate totals
-  const totalCost = enrichedMarkets.reduce((sum, m) => sum + (m.price_cents * 1), 0); // 1 unit per market initially
-  const totalPayout = enrichedMarkets.reduce((sum, m) => sum + 100, 0); // $1 payout per winning contract
+  const totalCost = allocatedMarkets.reduce((sum, m) => sum + m.cost_cents, 0);
+  const totalPayout = allocatedMarkets.reduce((sum, m) => sum + m.potential_payout_cents, 0);
+  const totalUnits = allocatedMarkets.reduce((sum, m) => sum + m.units, 0);
+  const avgUnitsPerMarket = (totalUnits / allocatedMarkets.length).toFixed(1);
 
   // Create the batch
   const { data: batch, error: batchError } = await supabase
     .from('order_batches')
     .insert({
       batch_date: targetDateStr,
-      unit_size_cents: unitSizeCents,
-      total_orders: enrichedMarkets.length,
+      unit_size_cents: 100, // Base unit is $1
+      total_orders: allocatedMarkets.length,
       total_cost_cents: totalCost,
       total_potential_payout_cents: totalPayout,
       is_paused: false,
@@ -114,17 +242,17 @@ async function prepareOrders(params: PrepareParams) {
 
   if (batchError) throw batchError;
 
-  // Create orders for each market
-  const orders = enrichedMarkets.map(market => ({
+  // Create orders for each market with variable units
+  const orders = allocatedMarkets.map(({ market, units, cost_cents, potential_payout_cents }) => ({
     batch_id: batch.id,
     ticker: market.ticker,
     event_ticker: market.event_ticker,
     title: market.title,
     side: market.favorite_side,
     price_cents: market.price_cents,
-    units: 1, // Will be adjusted at execution based on capital
-    cost_cents: market.price_cents,
-    potential_payout_cents: 100, // $1 per contract
+    units: units,
+    cost_cents: cost_cents,
+    potential_payout_cents: potential_payout_cents,
     open_interest: market.open_interest,
     market_close_time: market.close_time,
     placement_status: 'pending',
@@ -144,10 +272,14 @@ async function prepareOrders(params: PrepareParams) {
     batch: {
       id: batch.id,
       date: targetDateStr,
-      total_orders: enrichedMarkets.length,
+      total_orders: allocatedMarkets.length,
+      total_units: totalUnits,
+      avg_units_per_market: avgUnitsPerMarket,
       total_cost_cents: totalCost,
+      available_capital_cents: availableCapitalCents,
+      capital_utilization: ((totalCost / availableCapitalCents) * 100).toFixed(1) + '%',
     },
-    message: `Prepared ${enrichedMarkets.length} orders for ${targetDateStr}`,
+    message: `Prepared ${allocatedMarkets.length} orders with ${totalUnits} total units (~${avgUnitsPerMarket} per market)`,
   };
 }
 
@@ -160,11 +292,9 @@ export async function GET(request: Request) {
 
   try {
     const result = await prepareOrders({
-      unitSizeCents: 100, // $1 default
       minOdds: 0.85,
       maxOdds: 0.995,
-      minOpenInterest: 1000, // Include all markets with 1K+ OI
-      maxOpenInterest: 100,
+      minOpenInterest: 1000,
     });
 
     return NextResponse.json(result);
@@ -183,12 +313,11 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}));
 
     const result = await prepareOrders({
-      unitSizeCents: body.unitSizeCents || 100,
       minOdds: body.minOdds || 0.85,
       maxOdds: body.maxOdds || 0.995,
       minOpenInterest: body.minOpenInterest || 1000,
-      maxOpenInterest: body.maxOpenInterest || 100,
       forToday: body.forToday || false,
+      capitalReservePercent: body.capitalReservePercent || 0,
     });
 
     return NextResponse.json(result);
@@ -200,4 +329,3 @@ export async function POST(request: Request) {
     );
   }
 }
-
