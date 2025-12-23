@@ -1392,7 +1392,39 @@ export default function Dashboard() {
                                 disabled={preparingOrders}
                                 className="px-3 py-1 rounded text-xs font-medium bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-50"
                               >
-                                {preparingOrders ? '...' : '🔄 Re-prepare & Execute'}
+                                {preparingOrders ? '...' : '🔄 Re-prepare'}
+                              </button>
+                            )}
+                            {/* Execute button - for batches with pending orders */}
+                            {batch.orders.filter((o: LiveOrder) => o.placement_status === 'pending' && !o.kalshi_order_id).length > 0 && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (!confirm(`Execute ${batch.orders.filter((o: LiveOrder) => !o.kalshi_order_id).length} pending orders? This will place real orders on Kalshi!`)) return;
+                                  setExecutingOrders(true);
+                                  try {
+                                    const res = await fetch('/api/orders-live/force-execute', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ batchId: batch.id }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      alert(`Executed! Success: ${data.summary.success}, Failed: ${data.summary.failed}, Skipped: ${data.summary.skipped}`);
+                                      refreshAll();
+                                    } else {
+                                      alert(`Error: ${data.error}`);
+                                    }
+                                  } catch (err) {
+                                    alert('Error executing orders');
+                                  } finally {
+                                    setExecutingOrders(false);
+                                  }
+                                }}
+                                disabled={executingOrders}
+                                className="px-3 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
+                              >
+                                {executingOrders ? '...' : '🚀 Execute'}
                               </button>
                             )}
                             {/* Recalculate button - only for pending batches */}
