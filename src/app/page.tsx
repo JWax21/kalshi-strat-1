@@ -53,7 +53,7 @@ interface DailyRecord {
   date: string;
   start_balance_cents: number;
   end_balance_cents: number;
-  end_exposure_cents: number;
+  end_positions_cents: number;
   portfolio_value_cents: number;
   wins: number;
   losses: number;
@@ -1910,7 +1910,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Current Exposure</div>
+                  <div className="text-xs text-slate-500 uppercase">Current Positions</div>
                   <div className="text-2xl font-bold text-amber-400">
                     ${((recordsData.current_exposure_cents || 0) / 100).toFixed(2)}
                   </div>
@@ -1941,7 +1941,7 @@ export default function Dashboard() {
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Balance</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">End Balance</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Exposure</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Positions</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Portfolio Value</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W-L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
@@ -1960,7 +1960,7 @@ export default function Dashboard() {
                           ${(record.end_balance_cents / 100).toFixed(2)}
                         </td>
                         <td className="p-4 text-right font-mono text-amber-400">
-                          ${(record.end_exposure_cents / 100).toFixed(2)}
+                          ${(record.end_positions_cents / 100).toFixed(2)}
                         </td>
                         <td className="p-4 text-right font-mono text-white font-medium">
                           ${(record.portfolio_value_cents / 100).toFixed(2)}

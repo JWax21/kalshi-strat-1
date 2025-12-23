@@ -42,7 +42,7 @@ interface DailyRecord {
   date: string;
   start_balance_cents: number;
   end_balance_cents: number;
-  end_exposure_cents: number;
+  end_positions_cents: number;
   portfolio_value_cents: number;
   wins: number;
   losses: number;
@@ -129,7 +129,7 @@ export async function GET(request: Request) {
     
     // Process dates in reverse to calculate historical balances
     const reversedDates = [...sortedDates].reverse();
-    const dailyPnL: Record<string, { pnl: number, wins: number, losses: number, exposure: number }> = {};
+    const dailyPnL: Record<string, { pnl: number, wins: number, losses: number, positions: number }> = {};
     
     reversedDates.forEach(date => {
       const dayOrders = ordersByDate[date] || [];
@@ -152,7 +152,7 @@ export async function GET(request: Request) {
         pnl: dayPnl,
         wins: wonOrders.length,
         losses: lostOrders.length,
-        exposure: dayExposure,
+        positions: dayExposure,
       };
     });
 
@@ -170,14 +170,14 @@ export async function GET(request: Request) {
       const dayData = dailyPnL[date];
       const startBalance = previousEndBalance;
       const endBalance = startBalance + (dayData?.pnl || 0);
-      const exposure = dayData?.exposure || 0;
+      const positions = dayData?.positions || 0;
       
       records.push({
         date,
         start_balance_cents: Math.round(startBalance),
         end_balance_cents: Math.round(endBalance),
-        end_exposure_cents: exposure,
-        portfolio_value_cents: Math.round(endBalance) + exposure,
+        end_positions_cents: positions,
+        portfolio_value_cents: Math.round(endBalance) + positions,
         wins: dayData?.wins || 0,
         losses: dayData?.losses || 0,
         pnl_cents: dayData?.pnl || 0,
