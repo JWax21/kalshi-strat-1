@@ -20,18 +20,20 @@ export async function POST(request: Request) {
 
     console.log(`=== Prepare and Execute for ${targetDateStr} ===`);
 
-    // Step 1: Delete existing batch and orders for this date
-    const { data: existingBatch } = await supabase
+    // Step 1: Delete existing batch and orders for this date (if any)
+    const { data: existingBatches } = await supabase
       .from('order_batches')
       .select('id')
-      .eq('batch_date', targetDateStr)
-      .single();
+      .eq('batch_date', targetDateStr);
 
-    if (existingBatch) {
-      console.log(`Deleting existing batch ${existingBatch.id}`);
-      await supabase.from('orders').delete().eq('batch_id', existingBatch.id);
-      await supabase.from('order_batches').delete().eq('id', existingBatch.id);
+    if (existingBatches && existingBatches.length > 0) {
+      for (const batch of existingBatches) {
+        console.log(`Deleting existing batch ${batch.id}`);
+        await supabase.from('orders').delete().eq('batch_id', batch.id);
+        await supabase.from('order_batches').delete().eq('id', batch.id);
+      }
     }
+    console.log('Old batches cleared, proceeding with fresh preparation...');
 
     // Step 2: Get available balance
     let availableBalance = 0;
@@ -48,11 +50,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Insufficient balance' }, { status: 400 });
     }
 
-    // Step 3: Fetch markets closing within 24 hours (today's games)
-    const maxCloseHours = 24;
+    // Step 3: Fetch markets closing within 17 days (same as regular prepare)
+    const maxCloseHours = 17 * 24;
     const sportsSeries = [
       'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
       'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
+      'KXNCAAFCSGAME', 'KXNCAAFGAME',
+      'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
+      'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT'
     ];
 
     let allMarkets: KalshiMarket[] = [];
