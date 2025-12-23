@@ -46,8 +46,7 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'markets' | 'portfolio' | 'simulation' | 'orders' | 'records';
-type PortfolioSubTab = 'positions' | 'history';
+type Tab = 'records' | 'orders' | 'markets';
 
 interface DailyRecord {
   date: string;
@@ -174,53 +173,6 @@ interface LiveOrdersStats {
   };
 }
 
-interface SimulationStats {
-  total_snapshots: number;
-  total_orders: number;
-  pending_orders: number;
-  settled_orders: number;
-  won_orders: number;
-  lost_orders: number;
-  win_rate: string;
-  total_cost_cents: number;
-  total_pnl_cents: number;
-  total_potential_profit_cents: number;
-  roi_percent: string;
-}
-
-interface SimulationSnapshotStats {
-  total: number;
-  pending: number;
-  won: number;
-  lost: number;
-  pnl_cents: number;
-  win_rate: string | null;
-}
-
-interface SimulationOrderData {
-  id: string;
-  ticker: string;
-  title: string;
-  side: 'YES' | 'NO';
-  price_cents: number;
-  units: number;
-  cost_cents: number;
-  potential_profit_cents: number;
-  status: 'pending' | 'won' | 'lost';
-  pnl_cents: number | null;
-  market_close_time: string;
-}
-
-interface SimulationSnapshotData {
-  id: string;
-  snapshot_date: string;
-  total_markets: number;
-  total_cost_cents: number;
-  created_at: string;
-  orders: SimulationOrderData[];
-  stats: SimulationSnapshotStats;
-}
-
 interface OrderbookLevel {
   price: number;
   count: number;
@@ -242,20 +194,6 @@ interface SelectedMarket {
   orderbookLoading?: boolean;
 }
 
-interface Position {
-  ticker: string;
-  market_title: string;
-  position: number;
-  market_exposure: number;
-  realized_pnl: number;
-  total_traded: number;
-}
-
-interface PortfolioData {
-  positions: { market_positions: Position[] };
-  balance: { balance: number; payout: number };
-}
-
 export default function Dashboard() {
   // Auth state (must be first)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -265,8 +203,7 @@ export default function Dashboard() {
   const [authLoading, setAuthLoading] = useState(false);
 
   // All other state hooks (must come before any conditional returns)
-  const [activeTab, setActiveTab] = useState<Tab>('markets');
-  const [portfolioSubTab, setPortfolioSubTab] = useState<PortfolioSubTab>('positions');
+  const [activeTab, setActiveTab] = useState<Tab>('records');
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
@@ -285,14 +222,6 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderCount, setOrderCount] = useState(1);
-  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
-  const [portfolioLoading, setPortfolioLoading] = useState(false);
-  const [simulationSnapshots, setSimulationSnapshots] = useState<SimulationSnapshotData[]>([]);
-  const [simulationStats, setSimulationStats] = useState<SimulationStats | null>(null);
-  const [simulationLoading, setSimulationLoading] = useState(false);
-  const [snapshotCreating, setSnapshotCreating] = useState(false);
-  const [settlingOrders, setSettlingOrders] = useState(false);
-  const [expandedSnapshot, setExpandedSnapshot] = useState<string | null>(null);
   const [orderBatches, setOrderBatches] = useState<OrderBatch[]>([]);
   const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
   const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
@@ -523,22 +452,6 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch portfolio data
-  const fetchPortfolio = async () => {
-    setPortfolioLoading(true);
-    try {
-      const res = await fetch('/api/orders');
-      const data = await res.json();
-      if (data.success) {
-        setPortfolioData(data);
-      }
-    } catch (err) {
-      console.error('Error fetching portfolio:', err);
-    } finally {
-      setPortfolioLoading(false);
-    }
-  };
-
   // Handle Enter key for submitting orders
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -549,65 +462,6 @@ export default function Dashboard() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectedMarkets, orderSubmitting]);
-
-  // Fetch simulation data
-  const fetchSimulation = async () => {
-    setSimulationLoading(true);
-    try {
-      const res = await fetch('/api/simulation');
-      const data = await res.json();
-      if (data.success) {
-        setSimulationSnapshots(data.snapshots || []);
-        setSimulationStats(data.stats || null);
-      }
-    } catch (err) {
-      console.error('Error fetching simulation:', err);
-    } finally {
-      setSimulationLoading(false);
-    }
-  };
-
-  // Create a new snapshot
-  const createSnapshot = async () => {
-    setSnapshotCreating(true);
-    try {
-      const res = await fetch('/api/simulation/snapshot', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ units: 10, minOdds: 0.85, maxOdds: 0.995 }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(`Snapshot created: ${data.snapshot.total_markets} markets (OI ≥ 5K), $${data.snapshot.total_cost_dollars} simulated cost`);
-        fetchSimulation();
-      } else {
-        alert(`Error: ${data.error}`);
-      }
-    } catch (err) {
-      alert('Error creating snapshot');
-    } finally {
-      setSnapshotCreating(false);
-    }
-  };
-
-  // Settle pending orders
-  const settleOrders = async () => {
-    setSettlingOrders(true);
-    try {
-      const res = await fetch('/api/simulation/settle', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        alert(`Settled ${data.stats.settled} orders: ${data.stats.won} won, ${data.stats.lost} lost, P&L: $${data.stats.total_pnl_dollars}`);
-        fetchSimulation();
-      } else {
-        alert(`Error: ${data.error}`);
-      }
-    } catch (err) {
-      alert('Error settling orders');
-    } finally {
-      setSettlingOrders(false);
-    }
-  };
 
   // Fetch live orders data
   const fetchLiveOrders = async () => {
@@ -742,13 +596,9 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch portfolio/simulation/orders/records when tab changes
+  // Fetch data when tab changes
   useEffect(() => {
-    if (activeTab === 'portfolio') {
-      fetchPortfolio();
-    } else if (activeTab === 'simulation') {
-      fetchSimulation();
-    } else if (activeTab === 'orders') {
+    if (activeTab === 'orders') {
       fetchLiveOrders();
     } else if (activeTab === 'records') {
       fetchRecords();
@@ -977,11 +827,9 @@ export default function Dashboard() {
         {/* Main Tabs */}
         <div className="flex items-center justify-between mt-6">
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-            <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Markets</button>
-            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
             <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-purple-500 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
-            <button onClick={() => setActiveTab('portfolio')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'portfolio' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Portfolio</button>
-            <button onClick={() => setActiveTab('simulation')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'simulation' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Simulation</button>
+            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
+            <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Markets</button>
           </div>
           
           {activeTab === 'markets' && filteredMarkets.length > 0 && (
@@ -1153,85 +1001,6 @@ export default function Dashboard() {
                 </div>
               )}
         </div>
-        )}
-
-        {/* Portfolio Tab */}
-        {activeTab === 'portfolio' && (
-          <div className="py-8">
-            {/* Portfolio Sub-tabs */}
-            <div className="flex gap-1 bg-slate-900 p-1 rounded-lg w-fit mb-6">
-              <button onClick={() => setPortfolioSubTab('positions')} className={`px-4 py-2 rounded-md text-sm font-medium ${portfolioSubTab === 'positions' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>Current Positions</button>
-              <button onClick={() => setPortfolioSubTab('history')} className={`px-4 py-2 rounded-md text-sm font-medium ${portfolioSubTab === 'history' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>History</button>
-            </div>
-
-            {/* Summary Metrics */}
-            {portfolioData && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Balance</div>
-                  <div className="text-2xl font-bold text-white">${((portfolioData.balance?.balance || 0) / 100).toFixed(2)}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Payout</div>
-                  <div className="text-2xl font-bold text-emerald-400">${((portfolioData.balance?.payout || 0) / 100).toFixed(2)}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Positions</div>
-                  <div className="text-2xl font-bold text-white">{portfolioData.positions?.market_positions?.length || 0}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Exposure</div>
-                  <div className="text-2xl font-bold text-amber-400">
-                    ${((portfolioData.positions?.market_positions || []).reduce((sum, p) => sum + Math.abs(p.market_exposure || 0), 0) / 100).toFixed(2)}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {portfolioLoading ? (
-              <div className="flex flex-col items-center py-20 text-slate-400">
-                <div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" />
-                <p className="mt-4">Loading portfolio...</p>
-              </div>
-            ) : portfolioSubTab === 'positions' ? (
-              <div className="bg-slate-900 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-800">
-                    <tr>
-                      <th className="text-left p-4 text-slate-400 font-medium">Market</th>
-                      <th className="text-right p-4 text-slate-400 font-medium">Position</th>
-                      <th className="text-right p-4 text-slate-400 font-medium">Exposure</th>
-                      <th className="text-right p-4 text-slate-400 font-medium">P&L</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(portfolioData?.positions?.market_positions || []).length === 0 ? (
-                      <tr><td colSpan={4} className="p-8 text-center text-slate-500">No open positions</td></tr>
-                    ) : (
-                      (portfolioData?.positions?.market_positions || []).map((p, i) => (
-                        <tr key={i} className="border-t border-slate-800">
-                          <td className="p-4 text-white">{p.ticker}</td>
-                          <td className="p-4 text-right text-white">{p.position}</td>
-                          <td className="p-4 text-right text-amber-400">${((p.market_exposure || 0) / 100).toFixed(2)}</td>
-                          <td className={`p-4 text-right ${(p.realized_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            ${((p.realized_pnl || 0) / 100).toFixed(2)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="bg-slate-900 rounded-xl p-8 text-center text-slate-500">
-                <p>Order history coming soon</p>
-              </div>
-            )}
-
-            <button onClick={fetchPortfolio} className="mt-4 px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700">
-              Refresh Portfolio
-            </button>
-          </div>
         )}
 
         {/* Orders Tab (Live Trading) */}
@@ -1699,190 +1468,6 @@ export default function Dashboard() {
                       </div>
                     );
                   })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Simulation Tab */}
-        {activeTab === 'simulation' && (
-          <div className="py-8">
-            {/* Action Buttons */}
-            <div className="flex gap-4 mb-6">
-              <button
-                onClick={createSnapshot}
-                disabled={snapshotCreating}
-                className="flex items-center gap-2 px-6 py-3 bg-amber-500 text-slate-950 font-bold rounded-lg hover:bg-amber-400 disabled:opacity-50"
-              >
-                {snapshotCreating ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>📸 Take 10am Snapshot</>
-                )}
-              </button>
-              <button
-                onClick={settleOrders}
-                disabled={settlingOrders}
-                className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
-              >
-                {settlingOrders ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Settling...
-                  </>
-                ) : (
-                  <>⚖️ Settle Pending Orders</>
-                )}
-              </button>
-              <button
-                onClick={fetchSimulation}
-                disabled={simulationLoading}
-                className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
-              >
-                🔄 Refresh
-              </button>
-            </div>
-
-            {/* Aggregate Stats */}
-            {simulationStats && (
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Snapshots</div>
-                  <div className="text-2xl font-bold text-white">{simulationStats.total_snapshots}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Orders</div>
-                  <div className="text-2xl font-bold text-white">{simulationStats.total_orders}</div>
-                  <div className="text-xs text-slate-500">{simulationStats.pending_orders} pending</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Win Rate</div>
-                  <div className="text-2xl font-bold text-emerald-400">{simulationStats.win_rate}%</div>
-                  <div className="text-xs text-slate-500">{simulationStats.won_orders}W / {simulationStats.lost_orders}L</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total Cost</div>
-                  <div className="text-2xl font-bold text-white">${(simulationStats.total_cost_cents / 100).toFixed(2)}</div>
-                </div>
-                <div className="bg-slate-900 rounded-xl p-4">
-                  <div className="text-xs text-slate-500 uppercase">Total P&L</div>
-                  <div className={`text-2xl font-bold ${simulationStats.total_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    ${(simulationStats.total_pnl_cents / 100).toFixed(2)}
-                  </div>
-                  <div className="text-xs text-slate-500">ROI: {simulationStats.roi_percent}%</div>
-                </div>
-              </div>
-            )}
-
-            {/* Snapshots List */}
-            {simulationLoading ? (
-              <div className="flex flex-col items-center py-20 text-slate-400">
-                <div className="w-10 h-10 border-4 border-slate-700 border-t-amber-400 rounded-full animate-spin" />
-                <p className="mt-4">Loading simulation data...</p>
-              </div>
-            ) : simulationSnapshots.length === 0 ? (
-              <div className="text-center py-20 text-slate-400">
-                <p className="text-xl mb-4">No snapshots yet</p>
-                <p className="text-sm">Click "Take 10am Snapshot" to start tracking simulated orders</p>
-                <p className="text-xs mt-2 text-slate-500">Only markets with 5K+ open interest are included</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {simulationSnapshots.map((snapshot) => (
-                  <div key={snapshot.id} className="bg-slate-900 rounded-xl overflow-hidden">
-                    {/* Snapshot Header */}
-                    <div
-                      onClick={() => setExpandedSnapshot(expandedSnapshot === snapshot.id ? null : snapshot.id)}
-                      className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/50"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div>
-                          <div className="text-lg font-bold text-white">
-                            {new Date(snapshot.snapshot_date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </div>
-                          <div className="text-xs text-slate-500">{snapshot.total_markets} markets</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-6">
-                        <div className="text-right">
-                          <div className="text-xs text-slate-500">Cost</div>
-                          <div className="text-white font-mono">${(snapshot.total_cost_cents / 100).toFixed(2)}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-slate-500">Win Rate</div>
-                          <div className="text-emerald-400 font-mono">{snapshot.stats.win_rate || '-'}%</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-slate-500">P&L</div>
-                          <div className={`font-mono font-bold ${snapshot.stats.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            ${(snapshot.stats.pnl_cents / 100).toFixed(2)}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-slate-500">Status</div>
-                          <div className="text-slate-400 text-sm">
-                            {snapshot.stats.pending > 0 ? `${snapshot.stats.pending} pending` : 'Settled'}
-                          </div>
-                        </div>
-                        <div className="text-slate-400">
-                          {expandedSnapshot === snapshot.id ? '▲' : '▼'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Expanded Orders */}
-                    {expandedSnapshot === snapshot.id && (
-                      <div className="border-t border-slate-800">
-                        <table className="w-full text-sm">
-                          <thead className="bg-slate-800/50">
-                            <tr>
-                              <th className="text-left p-3 text-slate-400 font-medium">Market</th>
-                              <th className="text-center p-3 text-slate-400 font-medium">Side</th>
-                              <th className="text-right p-3 text-slate-400 font-medium">Price</th>
-                              <th className="text-right p-3 text-slate-400 font-medium">Units</th>
-                              <th className="text-right p-3 text-slate-400 font-medium">Cost</th>
-                              <th className="text-center p-3 text-slate-400 font-medium">Status</th>
-                              <th className="text-right p-3 text-slate-400 font-medium">P&L</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {snapshot.orders.map((order) => (
-                              <tr key={order.id} className="border-t border-slate-800/50">
-                                <td className="p-3 text-white max-w-xs truncate">{order.title}</td>
-                                <td className="p-3 text-center">
-                                  <span className={`px-2 py-0.5 rounded text-xs font-bold ${order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                    {order.side}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-right text-slate-300 font-mono">{order.price_cents}¢</td>
-                                <td className="p-3 text-right text-slate-300 font-mono">{order.units}</td>
-                                <td className="p-3 text-right text-slate-300 font-mono">${(order.cost_cents / 100).toFixed(2)}</td>
-                                <td className="p-3 text-center">
-                                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                    order.status === 'won' ? 'bg-emerald-500/20 text-emerald-400' :
-                                    order.status === 'lost' ? 'bg-red-500/20 text-red-400' :
-                                    'bg-slate-700 text-slate-400'
-                                  }`}>
-                                    {order.status.toUpperCase()}
-                                  </span>
-                                </td>
-                                <td className={`p-3 text-right font-mono font-bold ${
-                                  order.pnl_cents === null ? 'text-slate-500' :
-                                  order.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'
-                                }`}>
-                                  {order.pnl_cents !== null ? `$${(order.pnl_cents / 100).toFixed(2)}` : '-'}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                ))}
               </div>
             )}
           </div>
