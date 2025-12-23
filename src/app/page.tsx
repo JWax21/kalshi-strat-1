@@ -605,16 +605,18 @@ export default function Dashboard() {
     }
   };
 
-  // Combined refresh: update statuses, reconcile, then fetch
+  // Combined refresh: update statuses, reconcile, monitor, then fetch
   const [refreshingAll, setRefreshingAll] = useState(false);
   const refreshAll = async () => {
     setRefreshingAll(true);
     try {
       // 1. Update statuses from Kalshi
       await fetch('/api/orders-live/update-status', { method: 'POST' });
-      // 2. Reconcile orders
+      // 2. Reconcile orders (fees, settlements)
       await fetch('/api/orders-live/reconcile', { method: 'POST' });
-      // 3. Fetch fresh data
+      // 3. Monitor & optimize (improve stale orders, find new markets, deploy capital)
+      await fetch('/api/orders-live/monitor', { method: 'POST' });
+      // 4. Fetch fresh data
       await fetchLiveOrders();
     } catch (err) {
       console.error('Error refreshing:', err);
