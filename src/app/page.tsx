@@ -1551,34 +1551,15 @@ export default function Dashboard() {
         {activeTab === 'records' && (
           <div className="py-8">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="mb-6">
               <h2 className="text-2xl font-bold text-white">Daily Records</h2>
-              <button
-                onClick={async () => {
-                  try {
-                    const res = await fetch('/api/snapshot', { method: 'POST' });
-                    const data = await res.json();
-                    if (data.success) {
-                      alert(`Snapshot captured: Balance $${data.snapshot.balance.toFixed(2)}, Positions $${data.snapshot.positions.toFixed(2)}`);
-                      fetchRecords();
-                    } else {
-                      alert(`Error: ${data.error}`);
-                    }
-                  } catch (err) {
-                    alert('Error capturing snapshot');
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-              >
-                📸 Capture Snapshot
-              </button>
             </div>
 
             {/* Summary Cards */}
             {recordsData && (
               <div className="flex flex-wrap gap-4 mb-6">
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase mb-1">Cash | Positions | Portfolio</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">Cash | Positions | Portfolio</div>
                   <div className="flex items-baseline gap-1.5">
                     <span className="text-lg font-bold text-white">${((recordsData.current_balance_cents || 0) / 100).toFixed(2)}</span>
                     <span className="text-slate-600">|</span>
@@ -1588,13 +1569,13 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Total W-L</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">Total W-L</div>
                   <div className="text-lg font-bold text-white">
                     {recordsData.totals?.wins || 0}W / {recordsData.totals?.losses || 0}L
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase">Total P&L</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">Total P&L</div>
                   <div className={`text-lg font-bold ${(recordsData.totals?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                     {(recordsData.totals?.pnl_cents || 0) >= 0 ? '+' : ''}${((recordsData.totals?.pnl_cents || 0) / 100).toFixed(2)}
                   </div>
@@ -1678,7 +1659,7 @@ export default function Dashboard() {
                 </table>
               </div>
             ) : (
-              <div className="text-center py-12 text-slate-400">No records found. Click &quot;Capture Snapshot&quot; to start recording daily data.</div>
+              <div className="text-center py-12 text-slate-400">No records found. Daily snapshots are captured automatically at 11:55pm ET.</div>
             )}
           </div>
         )}
