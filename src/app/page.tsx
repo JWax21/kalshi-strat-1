@@ -566,15 +566,31 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.success) {
         setReconcileResult(data);
-        alert(`Reconciled! Updated ${data.summary.updated} orders. Confirmed: ${data.summary.confirmed}, Resting: ${data.summary.placed_resting}, Never sent: ${data.summary.never_sent_to_kalshi}`);
-        fetchLiveOrders();
       } else {
-        alert(`Error: ${data.error}`);
+        console.error('Reconcile error:', data.error);
       }
     } catch (err) {
-      alert('Error reconciling orders');
+      console.error('Error reconciling orders:', err);
     } finally {
       setReconcilingOrders(false);
+    }
+  };
+
+  // Combined refresh: update statuses, reconcile, then fetch
+  const [refreshingAll, setRefreshingAll] = useState(false);
+  const refreshAll = async () => {
+    setRefreshingAll(true);
+    try {
+      // 1. Update statuses from Kalshi
+      await fetch('/api/orders-live/update-status', { method: 'POST' });
+      // 2. Reconcile orders
+      await fetch('/api/orders-live/reconcile', { method: 'POST' });
+      // 3. Fetch fresh data
+      await fetchLiveOrders();
+    } catch (err) {
+      console.error('Error refreshing:', err);
+    } finally {
+      setRefreshingAll(false);
     }
   };
 
@@ -1041,33 +1057,15 @@ export default function Dashboard() {
                 )}
               </button>
               <button
-                onClick={updateOrderStatuses}
-                disabled={updatingStatuses}
+                onClick={refreshAll}
+                disabled={refreshingAll || updatingStatuses || reconcilingOrders || liveOrdersLoading}
                 className="flex items-center gap-2 px-6 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
               >
-                {updatingStatuses ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Updating...</>
+                {(refreshingAll || updatingStatuses || reconcilingOrders || liveOrdersLoading) ? (
+                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Syncing...</>
                 ) : (
-                  <>🔄 Update Statuses</>
+                  <>↻ Refresh</>
                 )}
-              </button>
-              <button
-                onClick={reconcileOrders}
-                disabled={reconcilingOrders}
-                className="flex items-center gap-2 px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-500 disabled:opacity-50"
-              >
-                {reconcilingOrders ? (
-                  <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Reconciling...</>
-                ) : (
-                  <>🔧 Reconcile with Kalshi</>
-                )}
-              </button>
-              <button
-                onClick={fetchLiveOrders}
-                disabled={liveOrdersLoading}
-                className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50"
-              >
-                ↻ Refresh
               </button>
             </div>
 
