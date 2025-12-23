@@ -1385,6 +1385,7 @@ export default function Dashboard() {
                                 <tr>
                                   <th className="text-left p-3 text-slate-400 font-medium">Market</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Side</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Units</th>
                                   <th className="text-right p-3 text-slate-400 font-medium">Est. Cost</th>
                                   <th className="text-right p-3 text-slate-400 font-medium">Actual Cost</th>
                                   <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
@@ -1405,6 +1406,7 @@ export default function Dashboard() {
                                         {order.side}
                                       </span>
                                     </td>
+                                    <td className="p-3 text-right text-white font-mono">{order.units}</td>
                                     <td className="p-3 text-right text-slate-500 font-mono">${(order.cost_cents / 100).toFixed(2)}</td>
                                     <td className="p-3 text-right font-mono">
                                       {order.executed_cost_cents !== null ? (
