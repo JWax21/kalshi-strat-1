@@ -174,8 +174,14 @@ async function reconcileOrders() {
       action: 'none',
     };
     
-    if (fills.length > 0 || (kalshiOrder && kalshiOrder.filled_count > 0)) {
-      // Has fills or kalshi order shows filled = confirmed execution
+    // Check if order is already confirmed but has wrong executed_cost_cents
+    const isConfirmed = dbOrder.placement_status === 'confirmed';
+    const expectedCost = (dbOrder.price_cents || 0) * (dbOrder.units || 1);
+    const currentCost = dbOrder.executed_cost_cents || 0;
+    const costNeedsUpdate = isConfirmed && Math.abs(currentCost - expectedCost) > 1;
+    
+    if (fills.length > 0 || (kalshiOrder && kalshiOrder.filled_count > 0) || costNeedsUpdate) {
+      // Has fills, kalshi order shows filled, or confirmed order needs cost correction
       // Note: Kalshi returns prices in CENTS (integer), not dollars
       
       // Get fill data
@@ -187,26 +193,27 @@ async function reconcileOrders() {
       const orderFilledCount = kalshiOrder?.filled_count || 0;
       const orderPrice = dbOrder.side === 'YES' ? kalshiOrder?.yes_price : kalshiOrder?.no_price;
       
-      // Use the LARGER count (in case fills are incomplete)
+      // Use the LARGER count (in case fills are incomplete) - always include dbOrder.units
       const actualCount = Math.max(fillCount, orderFilledCount, dbOrder.units || 1);
       
-      // Use fill price if available, otherwise order price
+      // Use fill price if available, otherwise order price, otherwise db price
       const avgPriceCents = fillPrice || orderPrice || dbOrder.price_cents;
       
-      // Calculate total cost: if fills gave us a good total, use it; otherwise calculate from count
+      // Calculate total cost: price * actual count
+      // If fills gave us a reasonable total (matching count), use it; otherwise calculate
       let totalCostCents = fillCost;
-      if (fillCount < actualCount && avgPriceCents) {
-        // Fills don't account for all units, recalculate
-        totalCostCents = avgPriceCents * actualCount;
+      if (fillCount < actualCount || totalCostCents === 0) {
+        // Fills don't account for all units or no fills, calculate from price * count
+        totalCostCents = (avgPriceCents || 0) * actualCount;
       }
       
-      // Always update executed_cost_cents when we have fills
+      // Always update executed_cost_cents
       const updates: any = {
         executed_price_cents: avgPriceCents,
         executed_cost_cents: totalCostCents,
       };
       
-      if (dbOrder.placement_status !== 'confirmed') {
+      if (dbOrder.placement_status !== 'confirmed' && (fills.length > 0 || orderFilledCount > 0)) {
         updates.placement_status = 'confirmed';
         updates.placement_status_at = new Date().toISOString();
         detail.action = 'updated_to_confirmed';
@@ -226,6 +233,8 @@ async function reconcileOrders() {
       detail.fill_count = fillCount;
       detail.order_filled_count = orderFilledCount;
       detail.actual_count = actualCount;
+      detail.db_units = dbOrder.units;
+      detail.expected_cost = expectedCost;
       results.confirmed++;
     } else if (kalshiOrder) {
       // No fills but order exists in Kalshi
