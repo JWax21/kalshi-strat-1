@@ -283,6 +283,7 @@ async function prepareForDay(
       total_cost_dollars: (totalCost / 100).toFixed(2),
     };
   } catch (error) {
+    console.error(`Error preparing day ${targetDateStr}:`, error);
     return {
       date: targetDateStr,
       success: false,
@@ -290,7 +291,7 @@ async function prepareForDay(
       markets_after_filters: 0,
       orders_prepared: 0,
       total_cost_dollars: '0.00',
-      error: error instanceof Error ? error.message : 'Unknown error',
+      error: error instanceof Error ? `${error.name}: ${error.message}` : JSON.stringify(error),
     };
   }
 }
