@@ -203,7 +203,7 @@ async function prepareForDay(
     for (const em of enrichedMarkets) {
       const maxPositionCents = positionLimits.get(em.market.ticker) || baseMaxPositionCents;
       const maxUnits = Math.floor(maxPositionCents / em.price_cents);
-      const units = Math.min(maxUnits, 100); // Cap at 100 units per market for now
+      const units = maxUnits; // Dynamic calculation based on 3% of portfolio
       
       if (units > 0) {
         allocatedMarkets.push({
