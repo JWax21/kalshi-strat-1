@@ -1004,23 +1004,30 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Daily Summary Table */}
+            {/* Daily Summary Table - Unique EVENTS (not markets) */}
             <div className="bg-slate-900 rounded-xl p-4 mb-4">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-slate-400 border-b border-slate-800">
                     <th className="text-left py-2 font-medium">Day</th>
-                    <th className="text-right py-2 font-medium">All Markets</th>
+                    <th className="text-right py-2 font-medium">All Events</th>
                     <th className="text-right py-2 font-medium">High-Odds</th>
                   </tr>
                 </thead>
                 <tbody>
                   {gameDateOptions.map(day => {
                     const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m) === day.value) || [];
-                    const dayHighOdds = dayMarkets.filter(m => {
-                      const odds = m.favorite_odds * 100;
-                      return odds >= displayOddsMin && odds <= displayOddsMax;
-                    });
+                    // Count unique events (deduplicate by event_ticker)
+                    const uniqueEvents = new Set(dayMarkets.map(m => m.event_ticker));
+                    // For high-odds, get unique events where at least one market qualifies
+                    const highOddsEvents = new Set(
+                      dayMarkets
+                        .filter(m => {
+                          const odds = m.favorite_odds * 100;
+                          return odds >= displayOddsMin && odds <= displayOddsMax;
+                        })
+                        .map(m => m.event_ticker)
+                    );
                     return (
                       <tr 
                         key={day.value} 
@@ -1028,8 +1035,8 @@ export default function Dashboard() {
                         onClick={() => setSelectedGameDate(day.value)}
                       >
                         <td className="py-2 text-white">{day.label}</td>
-                        <td className="py-2 text-right text-white font-mono">{dayMarkets.length}</td>
-                        <td className="py-2 text-right text-emerald-400 font-mono">{dayHighOdds.length}</td>
+                        <td className="py-2 text-right text-white font-mono">{uniqueEvents.size}</td>
+                        <td className="py-2 text-right text-emerald-400 font-mono">{highOddsEvents.size}</td>
                       </tr>
                     );
                   })}
@@ -1041,33 +1048,41 @@ export default function Dashboard() {
                       const gameDate = extractGameDate(m);
                       return !gameDate || !gameDateSet.has(gameDate);
                     }) || [];
-                    const otherHighOdds = otherMarkets.filter(m => {
-                      const odds = m.favorite_odds * 100;
-                      return odds >= displayOddsMin && odds <= displayOddsMax;
-                    });
-                    const totalShown = gameDateOptions.reduce((sum, day) => {
-                      return sum + (marketsData?.markets.filter(m => extractGameDate(m) === day.value).length || 0);
-                    }, 0);
-                    const totalHighOdds = gameDateOptions.reduce((sum, day) => {
+                    const otherEvents = new Set(otherMarkets.map(m => m.event_ticker));
+                    const otherHighOddsEvents = new Set(
+                      otherMarkets
+                        .filter(m => {
+                          const odds = m.favorite_odds * 100;
+                          return odds >= displayOddsMin && odds <= displayOddsMax;
+                        })
+                        .map(m => m.event_ticker)
+                    );
+                    // Calculate totals for 7-day window
+                    const allEventsInWindow = new Set<string>();
+                    const highOddsEventsInWindow = new Set<string>();
+                    gameDateOptions.forEach(day => {
                       const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m) === day.value) || [];
-                      return sum + dayMarkets.filter(m => {
-                        const odds = m.favorite_odds * 100;
-                        return odds >= displayOddsMin && odds <= displayOddsMax;
-                      }).length;
-                    }, 0);
+                      dayMarkets.forEach(m => allEventsInWindow.add(m.event_ticker));
+                      dayMarkets
+                        .filter(m => {
+                          const odds = m.favorite_odds * 100;
+                          return odds >= displayOddsMin && odds <= displayOddsMax;
+                        })
+                        .forEach(m => highOddsEventsInWindow.add(m.event_ticker));
+                    });
                     return (
                       <>
-                        {otherMarkets.length > 0 && (
+                        {otherEvents.size > 0 && (
                           <tr className="border-t border-slate-800 text-slate-500">
                             <td className="py-2">Other dates</td>
-                            <td className="py-2 text-right font-mono">{otherMarkets.length}</td>
-                            <td className="py-2 text-right font-mono">{otherHighOdds.length}</td>
+                            <td className="py-2 text-right font-mono">{otherEvents.size}</td>
+                            <td className="py-2 text-right font-mono">{otherHighOddsEvents.size}</td>
                           </tr>
                         )}
                         <tr className="border-t-2 border-slate-700">
                           <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
-                          <td className="py-2 text-right text-white font-mono font-bold">{totalShown}</td>
-                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">{totalHighOdds}</td>
+                          <td className="py-2 text-right text-white font-mono font-bold">{allEventsInWindow.size}</td>
+                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">{highOddsEventsInWindow.size}</td>
                         </tr>
                       </>
                     );
@@ -1076,14 +1091,14 @@ export default function Dashboard() {
               </table>
             </div>
 
-            {/* Sports/Series Summary Table */}
+            {/* Sports/Series Summary Table - Unique EVENTS */}
             <div className="bg-slate-900 rounded-xl p-4 mb-4">
-              <h3 className="text-sm text-slate-400 mb-3">Markets by Sport</h3>
+              <h3 className="text-sm text-slate-400 mb-3">Events by Sport</h3>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-slate-400 border-b border-slate-800">
                     <th className="text-left py-2 font-medium">Sport</th>
-                    <th className="text-right py-2 font-medium">All Markets</th>
+                    <th className="text-right py-2 font-medium">All Events</th>
                     <th className="text-right py-2 font-medium">High-Odds</th>
                   </tr>
                 </thead>
@@ -1094,35 +1109,39 @@ export default function Dashboard() {
                       ? (marketsData?.markets || [])
                       : (marketsData?.markets || []).filter(m => extractGameDate(m) === selectedGameDate);
                     
-                    // Group by series
-                    const seriesData: Record<string, { all: number; highOdds: number }> = {};
+                    // Group by series - count unique EVENTS (not markets)
+                    const seriesData: Record<string, { allEvents: Set<string>; highOddsEvents: Set<string> }> = {};
                     
                     for (const m of dateFilteredMarkets) {
                       const series = getSeriesTag(m.event_ticker);
                       if (!seriesData[series]) {
-                        seriesData[series] = { all: 0, highOdds: 0 };
+                        seriesData[series] = { allEvents: new Set(), highOddsEvents: new Set() };
                       }
-                      seriesData[series].all++;
+                      seriesData[series].allEvents.add(m.event_ticker);
                       const odds = m.favorite_odds * 100;
                       if (odds >= displayOddsMin && odds <= displayOddsMax) {
-                        seriesData[series].highOdds++;
+                        seriesData[series].highOddsEvents.add(m.event_ticker);
                       }
                     }
                     
-                    // Sort by total count descending
-                    const sortedSeries = Object.entries(seriesData)
-                      .sort(([, a], [, b]) => b.all - a.all);
+                    // Convert to counts and sort
+                    const seriesCounts = Object.entries(seriesData).map(([series, data]) => ({
+                      series,
+                      all: data.allEvents.size,
+                      highOdds: data.highOddsEvents.size,
+                    }));
+                    seriesCounts.sort((a, b) => b.all - a.all);
                     
-                    const totalAll = sortedSeries.reduce((sum, [, d]) => sum + d.all, 0);
-                    const totalHighOdds = sortedSeries.reduce((sum, [, d]) => sum + d.highOdds, 0);
+                    const totalAll = seriesCounts.reduce((sum, d) => sum + d.all, 0);
+                    const totalHighOdds = seriesCounts.reduce((sum, d) => sum + d.highOdds, 0);
                     
                     return (
                       <>
-                        {sortedSeries.map(([series, data]) => (
+                        {seriesCounts.map(({ series, all, highOdds }) => (
                           <tr key={series} className="border-b border-slate-800/50">
                             <td className="py-2 text-white">{series}</td>
-                            <td className="py-2 text-right text-white font-mono">{data.all}</td>
-                            <td className="py-2 text-right text-emerald-400 font-mono">{data.highOdds}</td>
+                            <td className="py-2 text-right text-white font-mono">{all}</td>
+                            <td className="py-2 text-right text-emerald-400 font-mono">{highOdds}</td>
                           </tr>
                         ))}
                         <tr className="border-t-2 border-slate-700">
