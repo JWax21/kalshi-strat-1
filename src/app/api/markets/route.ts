@@ -75,6 +75,13 @@ export async function GET(request: Request) {
     // Sort by open interest (most liquid first)
     highOddsMarkets.sort((a, b) => b.open_interest - a.open_interest);
 
+    // Debug: Find unique series prefixes from raw markets
+    const seriesPrefixes: Record<string, number> = {};
+    for (const m of rawMarkets) {
+      const prefix = m.event_ticker.split('-')[0];
+      seriesPrefixes[prefix] = (seriesPrefixes[prefix] || 0) + 1;
+    }
+
     return NextResponse.json({
       success: true,
       raw_markets_fetched: rawMarkets.length,
@@ -82,6 +89,7 @@ export async function GET(request: Request) {
       high_odds_count: highOddsMarkets.length,
       min_odds_filter: minOdds,
       max_odds_filter: maxOdds,
+      series_in_raw_data: seriesPrefixes,  // Debug: show what series exist
       markets: enrichedAll,  // Return ALL enriched markets, let frontend filter by odds
     });
   } catch (error) {
