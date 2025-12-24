@@ -12,7 +12,7 @@ const MAX_POSITION_PERCENT_SPLIT = 0.015; // 1.5% max when betting both YES and 
 const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
-const MIN_ODDS = 0.55; // Minimum favorite odds (55%)
+const MIN_ODDS = 0.85; // Minimum favorite odds (85%)
 const MAX_ODDS = 0.995; // Maximum favorite odds (99.5%)
 const MIN_OPEN_INTEREST = 50; // Minimum open interest
 
