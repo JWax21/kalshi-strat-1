@@ -9,7 +9,7 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/orders-live/prepare",
+      "path": "/api/orders-live/prepare-enhanced",
       "schedule": "0 0 * * *"
     },
     {
