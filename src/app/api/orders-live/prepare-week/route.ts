@@ -251,7 +251,7 @@ async function prepareForDay(
 
     if (batchError) throw batchError;
 
-    // Create orders
+    // Create orders (excluding volume_24h as column may not exist)
     const orders = allocatedMarkets.map(am => ({
       batch_id: batch.id,
       ticker: am.market.ticker,
@@ -263,7 +263,6 @@ async function prepareForDay(
       cost_cents: am.cost_cents,
       potential_payout_cents: am.units * 100,
       open_interest: am.open_interest,
-      volume_24h: am.volume_24h,
       market_close_time: am.market.close_time,
       placement_status: 'pending',
       placement_status_at: new Date().toISOString(),

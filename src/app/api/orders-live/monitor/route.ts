@@ -532,7 +532,6 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             cost_cents: priceCents * units,
             potential_payout_cents: 100 * units,
             open_interest: market.open_interest,
-            volume_24h: market.volume_24h || null,
             market_close_time: market.close_time,
             placement_status: isExecuted ? 'confirmed' : 'placed',
             placement_status_at: new Date().toISOString(),
