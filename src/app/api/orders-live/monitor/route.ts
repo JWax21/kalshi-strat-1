@@ -16,6 +16,35 @@ const MIN_ODDS = 0.85; // Minimum favorite odds (85%)
 const MAX_ODDS = 0.995; // Maximum favorite odds (99.5%)
 const MIN_OPEN_INTEREST = 50; // Minimum open interest
 
+// Extract game date from expected_expiration_time (in ET)
+// Subtract 15 hours to account for: ET offset (5h) + game duration (4h) + settlement buffer (6h)
+function extractGameDate(market: KalshiMarket): string | null {
+  if (market.expected_expiration_time) {
+    const expirationTime = new Date(market.expected_expiration_time);
+    const gameDate = new Date(expirationTime.getTime() - 15 * 60 * 60 * 1000);
+    const year = gameDate.getUTCFullYear();
+    const month = String(gameDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(gameDate.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return null;
+}
+
+// Get today's date in ET (day changes at 4 AM ET)
+function getTodayET(): string {
+  const now = new Date();
+  // Convert to ET (UTC - 5 hours for EST)
+  const etTime = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  // If before 4 AM ET, consider it "yesterday"
+  if (etTime.getUTCHours() < 4) {
+    etTime.setUTCDate(etTime.getUTCDate() - 1);
+  }
+  const year = etTime.getUTCFullYear();
+  const month = String(etTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(etTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Helper to make authenticated Kalshi API calls
 async function kalshiFetch(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
   const timestampMs = Date.now().toString();
@@ -314,6 +343,14 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   // Filter markets by odds and open interest
   let filteredMarkets = filterHighOddsMarkets(allMarkets, MIN_ODDS, MAX_ODDS);
   filteredMarkets = filteredMarkets.filter(m => m.open_interest >= MIN_OPEN_INTEREST);
+
+  // IMPORTANT: Only bet on games happening TODAY
+  const todayET = getTodayET();
+  filteredMarkets = filteredMarkets.filter(m => {
+    const gameDate = extractGameDate(m);
+    return gameDate === todayET;
+  });
+  console.log(`Today (ET): ${todayET}, Games today with 85%+ odds: ${filteredMarkets.length}`);
 
   // Exclude blacklisted markets
   const { data: blacklistedMarkets } = await supabase
