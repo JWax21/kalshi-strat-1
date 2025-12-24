@@ -332,16 +332,29 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   // Also check Kalshi positions directly (in case DB is out of sync)
   const positionTickers = new Set(Array.from(currentPositions.keys()));
   
+  // Extract event_tickers from Kalshi positions (ticker format: EVENT_TICKER-SIDE, e.g., KXNFLGAME-25DEC25DETMIN-DET)
+  // The event_ticker is everything except the last segment after the last hyphen
+  const positionEventTickers = new Set(
+    Array.from(currentPositions.keys()).map((ticker: string) => {
+      const parts = ticker.split('-');
+      // Remove the last segment (which is the team/side)
+      return parts.slice(0, -1).join('-');
+    })
+  );
+  
+  console.log(`Existing event_tickers from DB: ${existingEventTickers.size}, from Kalshi positions: ${positionEventTickers.size}`);
+  
   // Find new markets we don't have orders for
-  // IMPORTANT: Check event_ticker to prevent betting on same game twice
+  // IMPORTANT: Check event_ticker from BOTH DB and Kalshi positions to prevent betting on same game twice
   const newMarkets = filteredMarkets.filter(m => 
     !existingTickers.has(m.ticker) && 
     !existingEventTickers.has(m.event_ticker) &&
-    !positionTickers.has(m.ticker)
+    !positionTickers.has(m.ticker) &&
+    !positionEventTickers.has(m.event_ticker)
   );
   
   result.actions.new_markets_found = newMarkets.length;
-  console.log(`Found ${newMarkets.length} new markets (after excluding ${existingEventTickers.size} existing event_tickers)`);
+  console.log(`Found ${newMarkets.length} new markets (after excluding ${existingEventTickers.size} DB + ${positionEventTickers.size} Kalshi event_tickers)`);
 
   // Step 6: Deploy remaining capital to new markets (if any)
   if (newMarkets.length > 0 && availableBalance > 0) {
