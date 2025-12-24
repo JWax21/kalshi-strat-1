@@ -4,12 +4,25 @@ import { getMarkets } from '@/lib/kalshi';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Game date = close_time - 15 days (markets close ~15 days after game)
-function extractGameDate(closeTime: string): string | null {
-  if (!closeTime) return null;
-  const closeDate = new Date(closeTime);
-  closeDate.setDate(closeDate.getDate() - 15);
-  return closeDate.toISOString().split('T')[0];
+// Extract game date from expected_expiration_time
+// Subtract 15 hours to account for: ET offset (5h) + game duration (4h) + settlement buffer (6h)
+function extractGameDate(market: { expected_expiration_time?: string; close_time: string }): string | null {
+  // Prefer expected_expiration_time (actual settlement time)
+  if (market.expected_expiration_time) {
+    const expirationTime = new Date(market.expected_expiration_time);
+    const gameDate = new Date(expirationTime.getTime() - 15 * 60 * 60 * 1000);
+    const year = gameDate.getUTCFullYear();
+    const month = String(gameDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(gameDate.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  // Fallback: close_time - 15 days
+  if (market.close_time) {
+    const closeDate = new Date(market.close_time);
+    closeDate.setDate(closeDate.getDate() - 15);
+    return closeDate.toISOString().split('T')[0];
+  }
+  return null;
 }
 
 export async function GET(request: Request) {
@@ -77,7 +90,7 @@ export async function GET(request: Request) {
     const tickersWithoutDate: string[] = [];
     
     for (const m of allMarkets) {
-      const gameDate = extractGameDate(m.close_time);
+      const gameDate = extractGameDate(m);
       if (gameDate) {
         if (!marketsByGameDate[gameDate]) {
           marketsByGameDate[gameDate] = { count: 0, sampleTickers: [] };
@@ -115,13 +128,16 @@ export async function GET(request: Request) {
         ticker: m.ticker,
         title: m.title,
         close_time: m.close_time,
-        extracted_game_date: extractGameDate(m.close_time)
+        expected_expiration_time: m.expected_expiration_time,
+        extracted_game_date: extractGameDate(m)
       })),
       sample_all: allOpenMarkets.slice(0, 10).map(m => ({
         ticker: m.ticker,
         title: m.title,
         category: m.category,
-        close_time: m.close_time
+        close_time: m.close_time,
+        expected_expiration_time: m.expected_expiration_time,
+        extracted_game_date: extractGameDate(m)
       }))
     });
   } catch (error) {

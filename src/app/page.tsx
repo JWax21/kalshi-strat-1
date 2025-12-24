@@ -751,18 +751,20 @@ export default function Dashboard() {
 
   // Extract game date from expected_expiration_time in Eastern Time
   const extractGameDate = (market: Market): string | null => {
-    // Prefer expected_expiration_time as it's the actual game END time
+    // Prefer expected_expiration_time as it's the market settlement time
+    // For sports, this is typically set to hours after the game ends (for settlement processing)
     if (market.expected_expiration_time) {
-      const gameEnd = new Date(market.expected_expiration_time);
-      // Subtract 4 hours to get approximate game START time (games typically last 3-4 hours)
-      // Then convert to Eastern Time (UTC-5 in winter)
-      const gameStartApprox = new Date(gameEnd.getTime() - 4 * 60 * 60 * 1000);
-      const etOffset = 5; // hours behind UTC (EST)
-      const etTime = new Date(gameStartApprox.getTime() - etOffset * 60 * 60 * 1000);
-      // Get date in YYYY-MM-DD format
-      const year = etTime.getUTCFullYear();
-      const month = String(etTime.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(etTime.getUTCDate()).padStart(2, '0');
+      const expirationTime = new Date(market.expected_expiration_time);
+      // Subtract 15 hours total to account for:
+      // - 5 hours UTC to ET offset
+      // - 3-4 hours game duration  
+      // - 6-8 hours settlement buffer (expiration is often set to morning after game)
+      // This ensures late-night games (8pm ET ending at midnight) are correctly dated
+      const gameDate = new Date(expirationTime.getTime() - 15 * 60 * 60 * 1000);
+      // Get date in YYYY-MM-DD format using UTC methods
+      const year = gameDate.getUTCFullYear();
+      const month = String(gameDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(gameDate.getUTCDate()).padStart(2, '0');
       return `${year}-${month}-${day}`;
     }
     // Fallback: close_time - 15 days
