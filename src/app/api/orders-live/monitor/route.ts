@@ -266,11 +266,30 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
 
   // Step 5: Look for new qualifying markets
   const sportsSeries = [
-    'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
-    'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
-    'KXNCAAFCSGAME', 'KXNCAAFGAME',
-    'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
-    'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT'
+    // Football
+    'KXNFLGAME', 'KXNCAAFBGAME', 'KXNCAAFCSGAME', 'KXNCAAFGAME',
+    // Basketball
+    'KXNBAGAME', 'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXEUROLEAGUEGAME', 'KXNBLGAME',
+    // Hockey
+    'KXNHLGAME',
+    // Baseball
+    'KXMLBGAME',
+    // Cricket
+    'KXCRICKETTESTMATCH', 'KXCRICKETT20IMATCH',
+    // MMA
+    'KXUFCFIGHT',
+    // Tennis
+    'KXTENNISMATCH', 'KXATPTOUR', 'KXWTATOUR',
+    // Golf
+    'KXPGATOUR', 'KXLPGATOUR', 'KXGOLFTOURNAMENT',
+    // Chess
+    'KXCHESSMATCH',
+    // Motorsport
+    'KXF1RACE', 'KXNASCARRACE', 'KXINDYCARRACE',
+    // Soccer (EFL only)
+    'KXEFLCHAMPIONSHIPGAME',
+    // Esports
+    'KXDOTA2GAME'
   ];
 
   let allMarkets: KalshiMarket[] = [];

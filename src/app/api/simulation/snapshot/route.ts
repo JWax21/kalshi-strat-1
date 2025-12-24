@@ -38,11 +38,30 @@ async function handleSnapshot(params: SnapshotParams) {
     // Fetch current high-odds sports markets (same logic as main page)
     const maxCloseHours = 17 * 24; // 17 days
     const sportsSeries = [
-      'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
-      'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
-      'KXNCAAFCSGAME', 'KXNCAAFGAME',
-      'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
-      'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT'
+      // Football
+      'KXNFLGAME', 'KXNCAAFBGAME', 'KXNCAAFCSGAME', 'KXNCAAFGAME',
+      // Basketball
+      'KXNBAGAME', 'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXEUROLEAGUEGAME', 'KXNBLGAME',
+      // Hockey
+      'KXNHLGAME',
+      // Baseball
+      'KXMLBGAME',
+      // Cricket
+      'KXCRICKETTESTMATCH', 'KXCRICKETT20IMATCH',
+      // MMA
+      'KXUFCFIGHT',
+      // Tennis
+      'KXTENNISMATCH', 'KXATPTOUR', 'KXWTATOUR',
+      // Golf
+      'KXPGATOUR', 'KXLPGATOUR', 'KXGOLFTOURNAMENT',
+      // Chess
+      'KXCHESSMATCH',
+      // Motorsport
+      'KXF1RACE', 'KXNASCARRACE', 'KXINDYCARRACE',
+      // Soccer (EFL only)
+      'KXEFLCHAMPIONSHIPGAME',
+      // Esports
+      'KXDOTA2GAME'
     ];
 
     let allMarkets: Awaited<ReturnType<typeof getMarkets>> = [];

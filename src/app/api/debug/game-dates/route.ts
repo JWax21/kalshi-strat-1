@@ -18,10 +18,30 @@ export async function GET(request: Request) {
     const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '504'); // 21 days default (games up to 7 days out)
     
     const sportsSeries = [
-      'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
-      'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
-      'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
-      'KXCRICKETT20IMATCH', 'KXUFCFIGHT'
+      // Football
+      'KXNFLGAME', 'KXNCAAFBGAME', 'KXNCAAFCSGAME', 'KXNCAAFGAME',
+      // Basketball
+      'KXNBAGAME', 'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXEUROLEAGUEGAME', 'KXNBLGAME',
+      // Hockey
+      'KXNHLGAME',
+      // Baseball
+      'KXMLBGAME',
+      // Cricket
+      'KXCRICKETTESTMATCH', 'KXCRICKETT20IMATCH',
+      // MMA
+      'KXUFCFIGHT',
+      // Tennis
+      'KXTENNISMATCH', 'KXATPTOUR', 'KXWTATOUR',
+      // Golf
+      'KXPGATOUR', 'KXLPGATOUR', 'KXGOLFTOURNAMENT',
+      // Chess
+      'KXCHESSMATCH',
+      // Motorsport
+      'KXF1RACE', 'KXNASCARRACE', 'KXINDYCARRACE',
+      // Soccer (EFL only)
+      'KXEFLCHAMPIONSHIPGAME',
+      // Esports
+      'KXDOTA2GAME'
     ];
     
     let allMarkets: any[] = [];
