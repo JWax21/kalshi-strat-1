@@ -43,9 +43,10 @@ async function kalshiFetch(endpoint: string): Promise<any> {
 interface DayResult {
   date: string;
   success: boolean;
-  markets_found?: number;
-  orders_prepared?: number;
-  total_cost_dollars?: string;
+  markets_in_window: number;
+  markets_after_filters: number;
+  orders_prepared: number;
+  total_cost_dollars: string;
   error?: string;
   skipped?: boolean;
 }
@@ -71,6 +72,10 @@ async function prepareForDay(
         date: targetDateStr,
         success: true,
         skipped: true,
+        markets_in_window: eligibleMarkets.length,
+        markets_after_filters: 0,
+        orders_prepared: 0,
+        total_cost_dollars: '0.00',
         error: 'Batch already exists',
       };
     }
@@ -83,7 +88,8 @@ async function prepareForDay(
       return {
         date: targetDateStr,
         success: true,
-        markets_found: 0,
+        markets_in_window: 0,
+        markets_after_filters: 0,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
       };
@@ -106,7 +112,8 @@ async function prepareForDay(
       return {
         date: targetDateStr,
         success: true,
-        markets_found: eligibleMarkets.length,
+        markets_in_window: eligibleMarkets.length,
+        markets_after_filters: 0,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
       };
@@ -186,7 +193,8 @@ async function prepareForDay(
       return {
         date: targetDateStr,
         success: true,
-        markets_found: eligibleMarkets.length,
+        markets_in_window: eligibleMarkets.length,
+        markets_after_filters: filteredMarkets.length,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
       };
@@ -240,7 +248,8 @@ async function prepareForDay(
     return {
       date: targetDateStr,
       success: true,
-      markets_found: eligibleMarkets.length,
+      markets_in_window: eligibleMarkets.length,
+      markets_after_filters: filteredMarkets.length,
       orders_prepared: allocatedMarkets.length,
       total_cost_dollars: (totalCost / 100).toFixed(2),
     };
@@ -248,6 +257,10 @@ async function prepareForDay(
     return {
       date: targetDateStr,
       success: false,
+      markets_in_window: eligibleMarkets.length,
+      markets_after_filters: 0,
+      orders_prepared: 0,
+      total_cost_dollars: '0.00',
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
@@ -391,18 +404,11 @@ export async function POST(request: Request) {
       );
       results.push(result);
 
-      // Mark these markets as assigned (even if batch creation failed/skipped)
-      // We need to get the tickers that were actually used
-      if (result.success && !result.skipped && result.orders_prepared && result.orders_prepared > 0) {
-        // Fetch the orders we just created to get their tickers
-        const { data: newOrders } = await supabase
-          .from('orders')
-          .select('ticker')
-          .eq('batch_id', (await supabase.from('order_batches').select('id').eq('batch_date', batchDateStr).single()).data?.id);
-        
-        if (newOrders) {
-          newOrders.forEach(o => assignedTickers.add(o.ticker));
-        }
+      // Mark these markets as assigned so they won't be used by later days
+      // Add all eligible markets that passed filters to the assigned set
+      // (Even if batch exists, we should not reuse these markets for other days)
+      for (const m of eligibleMarkets) {
+        assignedTickers.add(m.ticker);
       }
     }
 
