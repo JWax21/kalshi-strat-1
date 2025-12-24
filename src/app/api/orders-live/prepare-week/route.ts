@@ -41,11 +41,12 @@ async function kalshiFetch(endpoint: string): Promise<any> {
 }
 
 // Extract game date from event_ticker (most reliable for sports)
-// Format: KXNBAGAME-25DEC25CLENYK = Dec 25, 2025
+// Format: KXNBAGAME-25DEC26BOSIND = Season 2025 + Dec 26 = Dec 26, 2025
 function extractGameDateFromTicker(eventTicker: string): string | null {
+  // Pattern: -{SEASON_YY}{MONTH}{DAY}
   const tickerMatch = eventTicker.match(/-(\d{2})([A-Z]{3})(\d{2})/);
   if (tickerMatch) {
-    const [, dayStr, monthStr, yearStr] = tickerMatch;
+    const [, seasonStr, monthStr, dayStr] = tickerMatch;
     const monthMap: Record<string, string> = {
       'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
       'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
@@ -53,7 +54,7 @@ function extractGameDateFromTicker(eventTicker: string): string | null {
     };
     const month = monthMap[monthStr];
     if (month) {
-      return `20${yearStr}-${month}-${dayStr}`;
+      return `20${seasonStr}-${month}-${dayStr}`;
     }
   }
   return null;
