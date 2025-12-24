@@ -239,6 +239,7 @@ export default function Dashboard() {
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
   const [reconcileResult, setReconcileResult] = useState<any>(null);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
+  const [preparingWeek, setPreparingWeek] = useState(false);
   
   // Calculate default day based on 4am ET cutoff
   // Before 4am ET = previous day, after 4am ET = current day
@@ -545,6 +546,34 @@ export default function Dashboard() {
       alert('Error preparing orders');
     } finally {
       setPreparingOrders(false);
+    }
+  };
+
+  // Prepare orders for the next 7 days
+  const prepareWeek = async () => {
+    if (!confirm('Prepare orders for the next 7 days? This will create batches for each day.')) return;
+    setPreparingWeek(true);
+    try {
+      const res = await fetch('/api/orders-live/prepare-week', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days: 7, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 100 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        const summary = data.summary;
+        const dayResults = data.days.map((d: any) => 
+          `${d.date}: ${d.skipped ? 'Already exists' : d.orders_prepared + ' orders ($' + d.total_cost_dollars + ')'}`
+        ).join('\n');
+        alert(`Prepared ${summary.total_orders} orders across ${summary.days_prepared} days\n\n${dayResults}`);
+        fetchLiveOrders();
+      } else {
+        alert(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      alert('Error preparing week');
+    } finally {
+      setPreparingWeek(false);
     }
   };
 
@@ -1058,11 +1087,21 @@ export default function Dashboard() {
         {activeTab === 'orders' && (
           <div className="py-8">
             {/* Day Toggle Bar */}
-            {orderBatches.length > 0 && (
-              <div className="bg-slate-900 rounded-xl p-4 mb-6">
-                <div className="text-sm text-slate-400 mb-3">Filter by Day</div>
-                <div className="flex flex-wrap gap-2">
-                  {[...orderBatches].sort((a, b) => a.batch_date.localeCompare(b.batch_date)).map((batch) => {
+            {/* Day Filter and Actions Bar */}
+            <div className="bg-slate-900 rounded-xl p-4 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm text-slate-400">Filter by Day</div>
+                <button
+                  onClick={prepareWeek}
+                  disabled={preparingWeek}
+                  className="px-4 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-colors"
+                >
+                  {preparingWeek ? 'Preparing...' : 'Prepare Week'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {orderBatches.length > 0 ? (
+                  [...orderBatches].sort((a, b) => a.batch_date.localeCompare(b.batch_date)).map((batch) => {
                     const date = new Date(batch.batch_date + 'T12:00:00');
                     const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                     return (
@@ -1079,10 +1118,12 @@ export default function Dashboard() {
                         {batch.is_paused && <span className="text-amber-400">⏸</span>}
                       </button>
                     );
-                  })}
-                </div>
+                  })
+                ) : (
+                  <span className="text-slate-500 text-sm">No batches yet. Click &quot;Prepare Week&quot; to create orders for the next 7 days.</span>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Order Summary - filtered by selected day */}
             {(() => {
