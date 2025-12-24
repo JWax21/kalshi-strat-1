@@ -407,20 +407,20 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     'KXDOTA2GAME'
   ];
 
-  // Fetch all markets at once (more efficient)
-  // Use 30 days window because sports markets close ~15 days after game
-  // So a game 7 days from now has a close date 22 days from now
+  // Fetch markets BY SERIES (bulk fetch misses some series like NBA)
   let allMarkets: KalshiMarket[] = [];
-  try {
-    const rawMarkets = await getMarkets(1000, 30 * 24, 15); // 30 days, 15 pages
-    // Filter to sports series
-    allMarkets = rawMarkets.filter(m => 
-      sportsSeries.some(series => m.event_ticker.startsWith(series))
-    );
-    console.log(`Fetched ${rawMarkets.length} raw markets, ${allMarkets.length} sports markets`);
-  } catch (e) {
-    result.details.errors.push(`Failed to fetch markets: ${e}`);
+  const seriesCounts: Record<string, number> = {};
+  
+  for (const series of sportsSeries) {
+    try {
+      const markets = await getMarkets(500, 30 * 24, 2, series);
+      seriesCounts[series] = markets.length;
+      allMarkets.push(...markets);
+    } catch (e) {
+      seriesCounts[series] = 0;
+    }
   }
+  console.log(`Fetched ${allMarkets.length} sports markets across ${Object.keys(seriesCounts).length} series`);
 
   // Filter markets by odds and open interest
   let filteredMarkets = filterHighOddsMarkets(allMarkets, MIN_ODDS, MAX_ODDS);
