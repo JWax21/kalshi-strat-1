@@ -40,6 +40,28 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
+// Extract game date from ticker like "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26"
+function extractGameDate(ticker: string): string | null {
+  // Pattern: look for YYMONDD in the ticker (e.g., 25DEC26 = Dec 26, 2025)
+  const match = ticker.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i);
+  if (!match) return null;
+  
+  const year = parseInt(match[1]) + 2000; // 25 -> 2025
+  const monthStr = match[2].toUpperCase();
+  const day = parseInt(match[3]);
+  
+  const months: Record<string, string> = {
+    'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+    'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+    'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+  };
+  
+  const month = months[monthStr];
+  if (!month) return null;
+  
+  return `${year}-${month}-${day.toString().padStart(2, '0')}`;
+}
+
 interface DayResult {
   date: string;
   success: boolean;
@@ -50,8 +72,7 @@ interface DayResult {
   error?: string;
   skipped?: boolean;
   debug?: {
-    window_start?: string;
-    window_end?: string;
+    game_date?: string;
     markets_before_odds_filter?: number;
     markets_after_odds_filter?: number;
     markets_after_oi_filter?: number;
@@ -391,22 +412,18 @@ export async function POST(request: Request) {
       batchDate.setDate(batchDate.getDate() + i);
       const batchDateStr = batchDate.toISOString().split('T')[0];
 
-      // Calculate the eligible close window for this day:
-      // Markets must close between batchDate and batchDate + maxCloseWindowDays (inclusive)
-      const windowStartStr = batchDateStr;
-      const windowEndDate = new Date(batchDateStr + 'T12:00:00Z');
-      windowEndDate.setDate(windowEndDate.getDate() + maxCloseWindowDays);
-      const windowEndStr = windowEndDate.toISOString().split('T')[0];
-
-      // Filter markets for this day's window, excluding already assigned
+      // Filter markets by GAME date (extracted from ticker), not close date
+      // Each day gets markets for games happening ON that day
       const eligibleMarkets = allMarkets.filter(m => {
         // Skip if already assigned to a previous day
         if (assignedTickers.has(m.ticker)) return false;
         
-        // Get just the date part of close_time for comparison
-        const closeDate = m.close_time.split('T')[0];
-        // Market must close within this day's window (inclusive on both ends)
-        return closeDate >= windowStartStr && closeDate <= windowEndStr;
+        // Extract game date from ticker (e.g., "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26")
+        const gameDate = extractGameDate(m.ticker);
+        if (!gameDate) return false;
+        
+        // Market must be for a game on this batch date
+        return gameDate === batchDateStr;
       });
 
       // Prepare this day's batch
@@ -419,14 +436,12 @@ export async function POST(request: Request) {
         minOpenInterest
       );
       
-      // Add window dates to debug info
+      // Add game date to debug info
       if (result.debug) {
-        result.debug.window_start = windowStartStr;
-        result.debug.window_end = windowEndStr;
+        result.debug.game_date = batchDateStr;
       } else {
         result.debug = {
-          window_start: windowStartStr,
-          window_end: windowEndStr,
+          game_date: batchDateStr,
         };
       }
       
@@ -443,11 +458,11 @@ export async function POST(request: Request) {
     const totalOrders = results.reduce((sum, r) => sum + (r.orders_prepared || 0), 0);
     const totalCost = results.reduce((sum, r) => sum + parseFloat(r.total_cost_dollars || '0'), 0);
 
-    // Debug: Show market close time distribution
-    const marketsByDay: Record<string, number> = {};
+    // Debug: Show market distribution by GAME date (not close date)
+    const marketsByGameDate: Record<string, number> = {};
     for (const m of allMarkets) {
-      const closeDate = new Date(m.close_time).toISOString().split('T')[0];
-      marketsByDay[closeDate] = (marketsByDay[closeDate] || 0) + 1;
+      const gameDate = extractGameDate(m.ticker) || 'unknown';
+      marketsByGameDate[gameDate] = (marketsByGameDate[gameDate] || 0) + 1;
     }
 
     // Additional debug: sample of markets fetched
@@ -470,7 +485,7 @@ export async function POST(request: Request) {
         max_close_window_days: maxCloseWindowDays,
       },
       debug: {
-        markets_by_close_date: marketsByDay,
+        markets_by_game_date: marketsByGameDate,
         total_assigned_tickers: assignedTickers.size,
         sample_markets: sampleMarkets,
         today_str: todayStr,
