@@ -60,7 +60,7 @@ async function prepareForDay(
   minOpenInterest: number
 ): Promise<DayResult> {
   try {
-    // Check if batch already exists
+    // Delete existing batch and orders for this date (override mode)
     const { data: existing } = await supabase
       .from('order_batches')
       .select('id')
@@ -68,16 +68,17 @@ async function prepareForDay(
       .single();
 
     if (existing) {
-      return {
-        date: targetDateStr,
-        success: true,
-        skipped: true,
-        markets_in_window: eligibleMarkets.length,
-        markets_after_filters: 0,
-        orders_prepared: 0,
-        total_cost_dollars: '0.00',
-        error: 'Batch already exists',
-      };
+      // Delete orders first (foreign key constraint)
+      await supabase
+        .from('orders')
+        .delete()
+        .eq('batch_id', existing.id);
+      
+      // Then delete the batch
+      await supabase
+        .from('order_batches')
+        .delete()
+        .eq('id', existing.id);
     }
 
     // Markets are already pre-filtered by the caller to be:
@@ -355,16 +356,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // Track which tickers have been assigned to previous days
+    // Track which tickers have been assigned to previous days in THIS run
+    // Since we're overriding/recreating all batches, we don't exclude existing DB orders
     const assignedTickers = new Set<string>();
-    
-    // Get already existing orders from DB to exclude
-    const { data: existingOrders } = await supabase
-      .from('orders')
-      .select('ticker');
-    if (existingOrders) {
-      existingOrders.forEach(o => assignedTickers.add(o.ticker));
-    }
 
     // Prepare for each day
     const results: DayResult[] = [];
