@@ -276,7 +276,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Failed to fetch balance' }, { status: 500 });
     }
 
-    // Fetch all markets for next 15 days
+    // Fetch markets with extended window to cover all future days
+    // Base window is 15 days, plus the number of days we're preparing for
+    const baseWindowDays = 15;
+    const totalWindowHours = (baseWindowDays + days) * 24;
+    
     const sportsSeries = [
       'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
       'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
@@ -289,7 +293,7 @@ export async function POST(request: Request) {
     let allMarkets: KalshiMarket[] = [];
     for (const series of sportsSeries) {
       try {
-        const markets = await getMarkets(200, 15 * 24, 1, series);
+        const markets = await getMarkets(200, totalWindowHours, 1, series);
         allMarkets.push(...markets);
       } catch (e) {
         // Skip if no markets
