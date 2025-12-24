@@ -16,6 +16,7 @@ interface Market {
   open_interest: number;
   liquidity_dollars: string;
   close_time: string;
+  expected_expiration_time?: string;  // Actual game end time
   calculated_odds: { yes: number; no: number };
   favorite_side: 'YES' | 'NO';
   favorite_odds: number;
@@ -748,12 +749,20 @@ export default function Dashboard() {
     return 'Other';
   };
 
-  // Game date = close_time - 15 days (markets close ~15 days after game)
-  const extractGameDate = (closeTime: string): string | null => {
-    if (!closeTime) return null;
-    const closeDate = new Date(closeTime);
-    closeDate.setDate(closeDate.getDate() - 15);
-    return closeDate.toISOString().split('T')[0];
+  // Extract game date from expected_expiration_time (actual game end) or fall back to close_time - 15 days
+  const extractGameDate = (market: Market): string | null => {
+    // Prefer expected_expiration_time as it's the actual game time
+    if (market.expected_expiration_time) {
+      const gameEnd = new Date(market.expected_expiration_time);
+      return gameEnd.toISOString().split('T')[0];
+    }
+    // Fallback: close_time - 15 days
+    if (market.close_time) {
+      const closeDate = new Date(market.close_time);
+      closeDate.setDate(closeDate.getDate() - 15);
+      return closeDate.toISOString().split('T')[0];
+    }
+    return null;
   };
 
   // Generate next 7 days for game date filter
@@ -820,7 +829,7 @@ export default function Dashboard() {
     const odds = m.favorite_odds * 100;
     const matchesOdds = odds >= displayOddsMin && odds <= displayOddsMax;
     const matchesSeries = selectedSeries === 'All' || getSeriesTag(m.event_ticker) === selectedSeries;
-    const gameDate = extractGameDate(m.close_time);
+    const gameDate = extractGameDate(m);
     const matchesGameDate = selectedGameDate === 'all' || gameDate === selectedGameDate;
     return matchesOdds && matchesSeries && matchesGameDate;
   }) || [];
@@ -996,7 +1005,7 @@ export default function Dashboard() {
                 </thead>
                 <tbody>
                   {gameDateOptions.map(day => {
-                    const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m.close_time) === day.value) || [];
+                    const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m) === day.value) || [];
                     const dayHighOdds = dayMarkets.filter(m => {
                       const odds = m.favorite_odds * 100;
                       return odds >= displayOddsMin && odds <= displayOddsMax;
@@ -1018,7 +1027,7 @@ export default function Dashboard() {
                   {(() => {
                     const gameDateSet = new Set(gameDateOptions.map(d => d.value));
                     const otherMarkets = marketsData?.markets.filter(m => {
-                      const gameDate = extractGameDate(m.close_time);
+                      const gameDate = extractGameDate(m);
                       return !gameDate || !gameDateSet.has(gameDate);
                     }) || [];
                     const otherHighOdds = otherMarkets.filter(m => {
@@ -1026,10 +1035,10 @@ export default function Dashboard() {
                       return odds >= displayOddsMin && odds <= displayOddsMax;
                     });
                     const totalShown = gameDateOptions.reduce((sum, day) => {
-                      return sum + (marketsData?.markets.filter(m => extractGameDate(m.close_time) === day.value).length || 0);
+                      return sum + (marketsData?.markets.filter(m => extractGameDate(m) === day.value).length || 0);
                     }, 0);
                     const totalHighOdds = gameDateOptions.reduce((sum, day) => {
-                      const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m.close_time) === day.value) || [];
+                      const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m) === day.value) || [];
                       return sum + dayMarkets.filter(m => {
                         const odds = m.favorite_odds * 100;
                         return odds >= displayOddsMin && odds <= displayOddsMax;
@@ -1072,7 +1081,7 @@ export default function Dashboard() {
                     // Get markets filtered by selected game date
                     const dateFilteredMarkets = selectedGameDate === 'all'
                       ? (marketsData?.markets || [])
-                      : (marketsData?.markets || []).filter(m => extractGameDate(m.close_time) === selectedGameDate);
+                      : (marketsData?.markets || []).filter(m => extractGameDate(m) === selectedGameDate);
                     
                     // Group by series
                     const seriesData: Record<string, { all: number; highOdds: number }> = {};
