@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const minOdds = parseFloat(searchParams.get('minOdds') || '0.92');
     const maxOdds = parseFloat(searchParams.get('maxOdds') || '0.995');
     const limit = parseInt(searchParams.get('limit') || '1000');
-    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '48');
+    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '336'); // 14 days
 
     const pages = parseInt(searchParams.get('pages') || '15');
     const category = searchParams.get('category') || undefined;
@@ -25,13 +25,13 @@ export async function GET(request: Request) {
         'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
         'KXNCAAFCSGAME', 'KXNCAAFGAME',
         'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
-        'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT'
+        'KXCRICKETT20IMATCH', 'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT'
       ];
       
-      // Fetch from each series (2 pages each to stay within rate limits)
+      // Fetch from each series with larger limit for 14-day window
       for (const series of sportsSeries) {
         try {
-          const markets = await getMarkets(200, maxCloseHours, 1, series);
+          const markets = await getMarkets(500, maxCloseHours, 1, series);
           allMarkets.push(...markets);
         } catch (e) {
           console.log(`No markets for ${series}`);
