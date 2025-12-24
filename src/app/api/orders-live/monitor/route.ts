@@ -8,9 +8,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
+const MAX_POSITION_PERCENT_SPLIT = 0.015; // 1.5% max when betting both YES and NO on same event
 const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
+const MIN_ODDS = 0.55; // Minimum favorite odds (55%)
+const MAX_ODDS = 0.995; // Maximum favorite odds (99.5%)
+const MIN_OPEN_INTEREST = 50; // Minimum open interest
 
 // Helper to make authenticated Kalshi API calls
 async function kalshiFetch(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
@@ -292,19 +296,22 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     'KXDOTA2GAME'
   ];
 
+  // Fetch all markets at once (more efficient)
   let allMarkets: KalshiMarket[] = [];
-  for (const series of sportsSeries) {
-    try {
-      const markets = await getMarkets(200, 17 * 24, 1, series);
-      allMarkets.push(...markets);
-    } catch (e) {
-      // Skip if no markets
-    }
+  try {
+    const rawMarkets = await getMarkets(1000, 15 * 24, 10); // 15 days, 10 pages
+    // Filter to sports series
+    allMarkets = rawMarkets.filter(m => 
+      sportsSeries.some(series => m.event_ticker.startsWith(series))
+    );
+    console.log(`Fetched ${rawMarkets.length} raw markets, ${allMarkets.length} sports markets`);
+  } catch (e) {
+    result.details.errors.push(`Failed to fetch markets: ${e}`);
   }
 
-  // Filter markets
-  let filteredMarkets = filterHighOddsMarkets(allMarkets, 0.85, 0.995);
-  filteredMarkets = filteredMarkets.filter(m => m.open_interest >= 1000);
+  // Filter markets by odds and open interest
+  let filteredMarkets = filterHighOddsMarkets(allMarkets, MIN_ODDS, MAX_ODDS);
+  filteredMarkets = filteredMarkets.filter(m => m.open_interest >= MIN_OPEN_INTEREST);
 
   // Exclude blacklisted markets
   const { data: blacklistedMarkets } = await supabase
@@ -313,25 +320,39 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const blacklistedTickers = new Set((blacklistedMarkets || []).map(m => m.ticker));
   filteredMarkets = filteredMarkets.filter(m => !blacklistedTickers.has(m.ticker));
 
-  // Get existing orders to exclude markets we already have
+  // Get existing orders - check both ticker AND event_ticker to avoid double-dipping
   const { data: existingOrders } = await supabase
     .from('orders')
-    .select('ticker')
+    .select('ticker, event_ticker')
     .in('placement_status', ['pending', 'placed', 'confirmed']);
+  
   const existingTickers = new Set((existingOrders || []).map(o => o.ticker));
+  const existingEventTickers = new Set((existingOrders || []).map(o => o.event_ticker));
 
+  // Also check Kalshi positions directly (in case DB is out of sync)
+  const positionTickers = new Set(Array.from(currentPositions.keys()));
+  
   // Find new markets we don't have orders for
-  const newMarkets = filteredMarkets.filter(m => !existingTickers.has(m.ticker));
+  // IMPORTANT: Check event_ticker to prevent betting on same game twice
+  const newMarkets = filteredMarkets.filter(m => 
+    !existingTickers.has(m.ticker) && 
+    !existingEventTickers.has(m.event_ticker) &&
+    !positionTickers.has(m.ticker)
+  );
+  
   result.actions.new_markets_found = newMarkets.length;
+  console.log(`Found ${newMarkets.length} new markets (after excluding ${existingEventTickers.size} existing event_tickers)`);
 
   // Step 6: Deploy remaining capital to new markets (if any)
   if (newMarkets.length > 0 && availableBalance > 0) {
-    // Sort by open interest descending
+    // Sort by open interest descending (prefer more liquid markets)
     newMarkets.sort((a, b) => b.open_interest - a.open_interest);
 
-    // Calculate total portfolio for 3% limit
+    // Calculate total portfolio for position limits
     const totalPortfolio = availableBalance + totalExposure;
     const maxPositionCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
+    
+    console.log(`Portfolio: ${totalPortfolio}¢, Max per position: ${maxPositionCents}¢, Available: ${availableBalance}¢`);
 
     // Find or create today's batch
     let batchId: string;
@@ -354,7 +375,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           total_potential_payout_cents: 0,
           is_paused: false,
           prepared_at: new Date().toISOString(),
-          executed_at: new Date().toISOString(), // Mark as executed since we're placing immediately
+          executed_at: new Date().toISOString(),
         })
         .select()
         .single();
@@ -366,22 +387,44 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       batchId = newBatch.id;
     }
 
+    // Track positions per event to enforce limits
+    const positionsPerEvent: Map<string, number> = new Map();
+    
+    // Initialize with existing positions
+    for (const order of existingOrders || []) {
+      const existing = positionsPerEvent.get(order.event_ticker) || 0;
+      positionsPerEvent.set(order.event_ticker, existing + 1);
+    }
+
     // Place orders on new markets
     for (const market of newMarkets) {
       if (availableBalance <= 0) break;
+
+      // Skip if we already have a position on this event (double-check)
+      if (positionsPerEvent.has(market.event_ticker)) {
+        console.log(`Skipping ${market.ticker} - already have position on event ${market.event_ticker}`);
+        continue;
+      }
 
       const odds = getMarketOdds(market);
       const favoriteSide = odds.yes >= odds.no ? 'YES' : 'NO';
       const priceCents = Math.round(Math.max(odds.yes, odds.no) * 100);
 
-      // Check 3% limit
-      if (priceCents > maxPositionCents) continue;
-      if (availableBalance < priceCents) continue;
+      // Skip if single unit exceeds 3% limit
+      if (priceCents > maxPositionCents) {
+        console.log(`Skipping ${market.ticker} - price ${priceCents}¢ exceeds max ${maxPositionCents}¢`);
+        continue;
+      }
+      
+      if (availableBalance < priceCents) {
+        console.log(`Skipping ${market.ticker} - insufficient balance (${availableBalance}¢ < ${priceCents}¢)`);
+        continue;
+      }
 
-      // Calculate max units
+      // Calculate units: fill up to 3% limit, respecting available balance
       const maxUnits = Math.floor(maxPositionCents / priceCents);
       const affordableUnits = Math.floor(availableBalance / priceCents);
-      const units = Math.min(maxUnits, affordableUnits, 3); // Cap at 3 units per new market
+      const units = Math.min(maxUnits, affordableUnits);
 
       if (units <= 0) continue;
 
@@ -406,6 +449,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         const kalshiOrderId = orderResult.order?.order_id;
         const status = orderResult.order?.status;
         const isExecuted = status === 'executed';
+        const filledCount = (orderResult.order as any)?.filled_count || units;
 
         // Save to DB
         await supabase
@@ -421,25 +465,31 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             cost_cents: priceCents * units,
             potential_payout_cents: 100 * units,
             open_interest: market.open_interest,
+            volume_24h: market.volume_24h || null,
             market_close_time: market.close_time,
             placement_status: isExecuted ? 'confirmed' : 'placed',
             placement_status_at: new Date().toISOString(),
             kalshi_order_id: kalshiOrderId,
             executed_price_cents: isExecuted ? priceCents : null,
-            executed_cost_cents: isExecuted ? priceCents * units : null,
+            executed_cost_cents: isExecuted ? priceCents * filledCount : null,
             result_status: 'undecided',
             settlement_status: 'pending',
           });
 
+        // Track this event to prevent double-dipping
+        positionsPerEvent.set(market.event_ticker, 1);
+        
         availableBalance -= priceCents * units;
         result.actions.new_orders_placed++;
         result.details.new_placements.push(
-          `${market.ticker}: ${units}u @ ${priceCents}¢ (${status})`
+          `${market.ticker}: ${units}u @ ${priceCents}¢ ${favoriteSide} (${status})`
         );
 
-        await new Promise(r => setTimeout(r, 200)); // Rate limit
+        console.log(`Placed: ${market.ticker} - ${units}u @ ${priceCents}¢ ${favoriteSide}`);
+        await new Promise(r => setTimeout(r, 300)); // Rate limit
       } catch (e) {
         result.details.errors.push(`Failed to place ${market.ticker}: ${e}`);
+        console.error(`Failed to place ${market.ticker}:`, e);
       }
     }
 
