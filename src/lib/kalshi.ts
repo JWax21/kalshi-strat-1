@@ -121,9 +121,9 @@ export async function getSportsEventTickers(): Promise<Set<string>> {
 }
 
 export async function getMarkets(
-  limit: number = 200,  // Kalshi's actual limit per page
+  limit: number = 1000,  // Kalshi's max limit per page
   maxCloseHours: number = 48,
-  pages: number = 15,
+  pages: number = 20,
   seriesTicker?: string
 ): Promise<KalshiMarket[]> {
   const allMarkets: KalshiMarket[] = [];
