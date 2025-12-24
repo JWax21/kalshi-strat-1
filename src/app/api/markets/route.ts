@@ -13,12 +13,14 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get('limit') || '1000');
     const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '504'); // 21 days (games up to 7 days out)
 
-    const pages = parseInt(searchParams.get('pages') || '15');
+    const pages = parseInt(searchParams.get('pages') || '30'); // Increased to get more markets
     const category = searchParams.get('category') || undefined;
     
-    let allMarkets: Awaited<ReturnType<typeof getMarkets>> = [];
+    // Fetch ALL open markets and filter client-side for sports
+    // This avoids issues with series_ticker filter not working properly
+    let allMarkets = await getMarkets(limit, maxCloseHours, pages);
     
-    // For sports, fetch from multiple known sports series_tickers
+    // If sports category requested, filter to known sports series
     if (category?.toLowerCase() === 'sports') {
       const sportsSeries = [
         // Football
@@ -47,17 +49,10 @@ export async function GET(request: Request) {
         'KXDOTA2GAME'
       ];
       
-      // Fetch from each series with larger limit for 14-day window
-      for (const series of sportsSeries) {
-        try {
-          const markets = await getMarkets(500, maxCloseHours, 1, series);
-          allMarkets.push(...markets);
-        } catch (e) {
-          console.log(`No markets for ${series}`);
-        }
-      }
-    } else {
-      allMarkets = await getMarkets(limit, maxCloseHours, pages);
+      // Filter to sports markets only (check if event_ticker starts with any series)
+      allMarkets = allMarkets.filter(m => 
+        sportsSeries.some(series => m.event_ticker.startsWith(series))
+      );
     }
     
     const highOddsMarkets = filterHighOddsMarkets(allMarkets, minOdds, maxOdds);

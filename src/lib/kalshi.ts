@@ -121,7 +121,7 @@ export async function getSportsEventTickers(): Promise<Set<string>> {
 }
 
 export async function getMarkets(
-  limit: number = 1000, 
+  limit: number = 200,  // Kalshi's actual limit per page
   maxCloseHours: number = 48,
   pages: number = 15,
   seriesTicker?: string
@@ -158,9 +158,9 @@ export async function getMarkets(
       break;
     }
     
-    // Small delay between requests to avoid rate limits (3 seconds = 20 per minute safe)
+    // Small delay between requests to avoid rate limits (1 second = 60 per minute)
     if (page < pages - 1) {
-      await new Promise(r => setTimeout(r, 3000));
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
   
