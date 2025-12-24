@@ -1015,16 +1015,43 @@ export default function Dashboard() {
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-slate-700">
-                    <td className="py-2 text-slate-400 font-medium">Total</td>
-                    <td className="py-2 text-right text-white font-mono font-bold">{marketsData?.total_markets || 0}</td>
-                    <td className="py-2 text-right text-emerald-400 font-mono font-bold">{
-                      marketsData?.markets.filter(m => {
+                  {(() => {
+                    const gameDateSet = new Set(gameDateOptions.map(d => d.value));
+                    const otherMarkets = marketsData?.markets.filter(m => {
+                      const gameDate = extractGameDate(m.close_time);
+                      return !gameDate || !gameDateSet.has(gameDate);
+                    }) || [];
+                    const otherHighOdds = otherMarkets.filter(m => {
+                      const odds = m.favorite_odds * 100;
+                      return odds >= displayOddsMin && odds <= displayOddsMax;
+                    });
+                    const totalShown = gameDateOptions.reduce((sum, day) => {
+                      return sum + (marketsData?.markets.filter(m => extractGameDate(m.close_time) === day.value).length || 0);
+                    }, 0);
+                    const totalHighOdds = gameDateOptions.reduce((sum, day) => {
+                      const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m.close_time) === day.value) || [];
+                      return sum + dayMarkets.filter(m => {
                         const odds = m.favorite_odds * 100;
                         return odds >= displayOddsMin && odds <= displayOddsMax;
-                      }).length || 0
-                    }</td>
-                  </tr>
+                      }).length;
+                    }, 0);
+                    return (
+                      <>
+                        {otherMarkets.length > 0 && (
+                          <tr className="border-t border-slate-800 text-slate-500">
+                            <td className="py-2">Other dates</td>
+                            <td className="py-2 text-right font-mono">{otherMarkets.length}</td>
+                            <td className="py-2 text-right font-mono">{otherHighOdds.length}</td>
+                          </tr>
+                        )}
+                        <tr className="border-t-2 border-slate-700">
+                          <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
+                          <td className="py-2 text-right text-white font-mono font-bold">{totalShown}</td>
+                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">{totalHighOdds}</td>
+                        </tr>
+                      </>
+                    );
+                  })()}
                 </tfoot>
               </table>
             </div>
