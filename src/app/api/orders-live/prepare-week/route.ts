@@ -261,6 +261,53 @@ async function prepareForDay(
   }
 }
 
+// Debug endpoint to check what markets are available
+export async function GET() {
+  try {
+    const sportsSeries = [
+      'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
+      'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
+      'KXNCAAFCSGAME', 'KXNCAAFGAME',
+      'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
+      'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT',
+      'KXCRICKETT20IMATCH'
+    ];
+
+    const totalWindowHours = 22 * 24; // 22 days
+    
+    let allMarkets: KalshiMarket[] = [];
+    for (const series of sportsSeries) {
+      try {
+        const markets = await getMarkets(200, totalWindowHours, 1, series);
+        allMarkets.push(...markets);
+      } catch (e) {
+        // Skip if no markets
+      }
+    }
+
+    // Group by close date
+    const marketsByDay: Record<string, { count: number; tickers: string[] }> = {};
+    for (const m of allMarkets) {
+      const closeDate = new Date(m.close_time).toISOString().split('T')[0];
+      if (!marketsByDay[closeDate]) {
+        marketsByDay[closeDate] = { count: 0, tickers: [] };
+      }
+      marketsByDay[closeDate].count++;
+      if (marketsByDay[closeDate].tickers.length < 3) {
+        marketsByDay[closeDate].tickers.push(m.ticker);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      total_markets: allMarkets.length,
+      markets_by_date: marketsByDay,
+    });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: error instanceof Error ? error.message : 'Unknown error' }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
