@@ -997,10 +997,22 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Total Count Card */}
+            {/* Market Count Card */}
             <div className="bg-slate-900 rounded-xl p-6 mb-4">
-              <span className="text-5xl font-bold text-white">{filteredMarkets.length}</span>
-              <p className="text-slate-400 mt-1">High-Odds Markets {selectedGameDate !== 'all' && `(${gameDateOptions.find(d => d.value === selectedGameDate)?.label})`}</p>
+              <div className="flex items-baseline gap-3">
+                <span className="text-5xl font-bold text-white">{
+                  // All markets matching game date (before odds filter)
+                  marketsData?.markets.filter(m => {
+                    const gameDate = extractGameDate(m.ticker);
+                    return selectedGameDate === 'all' || gameDate === selectedGameDate;
+                  }).length || 0
+                }</span>
+                <span className="text-2xl text-slate-500">|</span>
+                <span className="text-5xl font-bold text-emerald-400">{filteredMarkets.length}</span>
+              </div>
+              <p className="text-slate-400 mt-1">
+                All Markets | High-Odds Markets {selectedGameDate !== 'all' && `(${gameDateOptions.find(d => d.value === selectedGameDate)?.label})`}
+              </p>
             </div>
 
             {/* Odds Range Slider with Tick Marks */}
