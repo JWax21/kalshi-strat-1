@@ -369,12 +369,13 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const existingEventTickers = new Set((existingOrders || []).map(o => o.event_ticker));
 
   // Also check Kalshi positions directly (in case DB is out of sync)
-  const positionTickers = new Set(Array.from(currentPositions.keys()));
+  const positionTickersList = Array.from(currentPositions.keys()) as string[];
+  const positionTickers = new Set(positionTickersList);
   
   // Extract event_tickers from Kalshi positions (ticker format: EVENT_TICKER-SIDE, e.g., KXNFLGAME-25DEC25DETMIN-DET)
   // The event_ticker is everything except the last segment after the last hyphen
   const positionEventTickers = new Set(
-    Array.from(currentPositions.keys()).map((ticker: string) => {
+    positionTickersList.map((ticker) => {
       const parts = ticker.split('-');
       // Remove the last segment (which is the team/side)
       return parts.slice(0, -1).join('-');
