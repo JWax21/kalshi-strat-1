@@ -297,9 +297,11 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   ];
 
   // Fetch all markets at once (more efficient)
+  // Use 30 days window because sports markets close ~15 days after game
+  // So a game 7 days from now has a close date 22 days from now
   let allMarkets: KalshiMarket[] = [];
   try {
-    const rawMarkets = await getMarkets(1000, 15 * 24, 10); // 15 days, 10 pages
+    const rawMarkets = await getMarkets(1000, 30 * 24, 15); // 30 days, 15 pages
     // Filter to sports series
     allMarkets = rawMarkets.filter(m => 
       sportsSeries.some(series => m.event_ticker.startsWith(series))
