@@ -749,15 +749,21 @@ export default function Dashboard() {
     return 'Other';
   };
 
-  // Extract game date from expected_expiration_time (actual game end) or fall back to close_time - 15 days
+  // Extract game date from expected_expiration_time in Eastern Time
   const extractGameDate = (market: Market): string | null => {
-    // Prefer expected_expiration_time as it's the actual game time
+    // Prefer expected_expiration_time as it's the actual game END time
     if (market.expected_expiration_time) {
       const gameEnd = new Date(market.expected_expiration_time);
-      // Subtract 6 hours to convert from UTC to approximate US game date
-      // (Games ending at 4am UTC are actually late-night games on the previous US day)
-      gameEnd.setHours(gameEnd.getHours() - 6);
-      return gameEnd.toISOString().split('T')[0];
+      // Subtract 4 hours to get approximate game START time (games typically last 3-4 hours)
+      // Then convert to Eastern Time (UTC-5 in winter)
+      const gameStartApprox = new Date(gameEnd.getTime() - 4 * 60 * 60 * 1000);
+      const etOffset = 5; // hours behind UTC (EST)
+      const etTime = new Date(gameStartApprox.getTime() - etOffset * 60 * 60 * 1000);
+      // Get date in YYYY-MM-DD format
+      const year = etTime.getUTCFullYear();
+      const month = String(etTime.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(etTime.getUTCDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
     }
     // Fallback: close_time - 15 days
     if (market.close_time) {
