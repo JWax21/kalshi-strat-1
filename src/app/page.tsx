@@ -1321,6 +1321,100 @@ export default function Dashboard() {
         {/* Orders Tab (Live Trading) */}
         {activeTab === 'orders' && (
           <div className="py-8">
+            {/* Capital Deployment Table */}
+            <div className="bg-slate-900 rounded-xl p-4 mb-6">
+              <h3 className="text-sm text-slate-400 mb-3">Capital Deployment</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-slate-400 border-b border-slate-800">
+                    <th className="text-left py-2 font-medium">Day</th>
+                    <th className="text-right py-2 font-medium">Projected</th>
+                    <th className="text-right py-2 font-medium">Actual</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Generate 7 days centered on today
+                    const today = new Date();
+                    today.setHours(12, 0, 0, 0);
+                    const todayStr = today.toISOString().split('T')[0];
+                    
+                    const days: { date: string; label: string; isToday: boolean }[] = [];
+                    for (let i = -3; i <= 3; i++) {
+                      const d = new Date(today);
+                      d.setDate(d.getDate() + i);
+                      const dateStr = d.toISOString().split('T')[0];
+                      days.push({
+                        date: dateStr,
+                        label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                        isToday: i === 0
+                      });
+                    }
+                    
+                    return days.map(day => {
+                      const batch = orderBatches.find(b => b.batch_date === day.date);
+                      const orders = batch?.orders || [];
+                      
+                      // Actual = confirmed orders cost
+                      const actualCents = orders
+                        .filter(o => o.placement_status === 'confirmed')
+                        .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+                      
+                      // Projected = all orders cost (pending + placed + confirmed)
+                      const projectedCents = orders
+                        .reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+                      
+                      return (
+                        <tr 
+                          key={day.date} 
+                          className={`border-b border-slate-800/50 ${day.isToday ? 'bg-blue-500/10' : ''}`}
+                        >
+                          <td className={`py-2 ${day.isToday ? 'text-blue-400 font-medium' : 'text-white'}`}>
+                            {day.label} {day.isToday && <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2">TODAY</span>}
+                          </td>
+                          <td className="py-2 text-right text-slate-400 font-mono">
+                            ${(projectedCents / 100).toFixed(2)}
+                          </td>
+                          <td className="py-2 text-right text-emerald-400 font-mono">
+                            ${(actualCents / 100).toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+                <tfoot>
+                  {(() => {
+                    const today = new Date();
+                    today.setHours(12, 0, 0, 0);
+                    let totalProjected = 0;
+                    let totalActual = 0;
+                    
+                    for (let i = -3; i <= 3; i++) {
+                      const d = new Date(today);
+                      d.setDate(d.getDate() + i);
+                      const dateStr = d.toISOString().split('T')[0];
+                      const batch = orderBatches.find(b => b.batch_date === dateStr);
+                      const orders = batch?.orders || [];
+                      
+                      totalActual += orders
+                        .filter(o => o.placement_status === 'confirmed')
+                        .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+                      totalProjected += orders.reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+                    }
+                    
+                    return (
+                      <tr className="border-t-2 border-slate-700">
+                        <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
+                        <td className="py-2 text-right text-white font-mono font-bold">${(totalProjected / 100).toFixed(2)}</td>
+                        <td className="py-2 text-right text-emerald-400 font-mono font-bold">${(totalActual / 100).toFixed(2)}</td>
+                      </tr>
+                    );
+                  })()}
+                </tfoot>
+              </table>
+            </div>
+
             {/* Day Toggle Bar */}
             {/* Day Filter and Actions Bar */}
             <div className="bg-slate-900 rounded-xl p-4 mb-6">
