@@ -302,7 +302,7 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
   let allMarkets: KalshiMarket[] = [];
   for (const series of sportsSeries) {
     try {
-      const markets = await getMarkets(200, 16 * 24, 1, series); // 16 days max close
+      const markets = await getMarkets(200, 15 * 24, 1, series); // 15 days max close
       allMarkets.push(...markets);
     } catch (e) {
       console.log(`No markets for ${series}`);
