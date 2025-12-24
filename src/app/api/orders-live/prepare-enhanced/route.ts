@@ -265,13 +265,14 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXNCAAFBGAME',
     'KXNCAAFCSGAME', 'KXNCAAFGAME',
     'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
-    'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT'
+    'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT',
+    'KXCBAGAME'  // Chinese Basketball Association
   ];
 
   let allMarkets: KalshiMarket[] = [];
   for (const series of sportsSeries) {
     try {
-      const markets = await getMarkets(200, 17 * 24, 1, series);
+      const markets = await getMarkets(200, 16 * 24, 1, series); // 16 days max close
       allMarkets.push(...markets);
     } catch (e) {
       console.log(`No markets for ${series}`);
