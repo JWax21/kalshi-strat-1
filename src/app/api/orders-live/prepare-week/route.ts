@@ -383,29 +383,30 @@ export async function POST(request: Request) {
 
     // Prepare for each day
     const results: DayResult[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize to start of day
+    const todayStr = new Date().toISOString().split('T')[0]; // Just the date string
 
     for (let i = 0; i < days; i++) {
-      // Calculate the date for this batch
-      const batchDate = new Date(today);
+      // Calculate the date for this batch using simple string math
+      const batchDate = new Date(todayStr + 'T12:00:00Z'); // Noon UTC to avoid timezone issues
       batchDate.setDate(batchDate.getDate() + i);
       const batchDateStr = batchDate.toISOString().split('T')[0];
 
       // Calculate the eligible close window for this day:
-      // Markets must close between batchDate and batchDate + maxCloseWindowDays
-      const windowStart = new Date(batchDate);
-      const windowEnd = new Date(batchDate);
-      windowEnd.setDate(windowEnd.getDate() + maxCloseWindowDays);
+      // Markets must close between batchDate and batchDate + maxCloseWindowDays (inclusive)
+      const windowStartStr = batchDateStr;
+      const windowEndDate = new Date(batchDateStr + 'T12:00:00Z');
+      windowEndDate.setDate(windowEndDate.getDate() + maxCloseWindowDays);
+      const windowEndStr = windowEndDate.toISOString().split('T')[0];
 
       // Filter markets for this day's window, excluding already assigned
       const eligibleMarkets = allMarkets.filter(m => {
         // Skip if already assigned to a previous day
         if (assignedTickers.has(m.ticker)) return false;
         
-        const closeTime = new Date(m.close_time);
-        // Market must close within this day's window
-        return closeTime >= windowStart && closeTime < windowEnd;
+        // Get just the date part of close_time for comparison
+        const closeDate = m.close_time.split('T')[0];
+        // Market must close within this day's window (inclusive on both ends)
+        return closeDate >= windowStartStr && closeDate <= windowEndStr;
       });
 
       // Prepare this day's batch
@@ -420,12 +421,12 @@ export async function POST(request: Request) {
       
       // Add window dates to debug info
       if (result.debug) {
-        result.debug.window_start = windowStart.toISOString().split('T')[0];
-        result.debug.window_end = windowEnd.toISOString().split('T')[0];
+        result.debug.window_start = windowStartStr;
+        result.debug.window_end = windowEndStr;
       } else {
         result.debug = {
-          window_start: windowStart.toISOString().split('T')[0],
-          window_end: windowEnd.toISOString().split('T')[0],
+          window_start: windowStartStr,
+          window_end: windowEndStr,
         };
       }
       
@@ -472,7 +473,7 @@ export async function POST(request: Request) {
         markets_by_close_date: marketsByDay,
         total_assigned_tickers: assignedTickers.size,
         sample_markets: sampleMarkets,
-        today_str: today.toISOString().split('T')[0],
+        today_str: todayStr,
       },
       days: results,
     });
