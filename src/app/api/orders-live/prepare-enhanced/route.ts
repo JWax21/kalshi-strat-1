@@ -132,6 +132,7 @@ function calculateLiquidityScore(
 
 /**
  * Distribute capital based on liquidity scores
+ * If betting both sides of same event, use half the position limit per side
  */
 function distributeCapitalByLiquidity(
   analyses: LiquidityAnalysis[],
@@ -140,7 +141,30 @@ function distributeCapitalByLiquidity(
 ): LiquidityAnalysis[] {
   if (analyses.length === 0) return [];
   
-  const maxPositionCents = Math.floor(totalCapitalCents * maxPositionPercent);
+  const baseMaxPositionCents = Math.floor(totalCapitalCents * maxPositionPercent);
+  
+  // Group by event_ticker to detect when we're betting both sides
+  const eventGroups = new Map<string, LiquidityAnalysis[]>();
+  for (const analysis of analyses) {
+    const eventTicker = analysis.market.event_ticker;
+    if (!eventGroups.has(eventTicker)) {
+      eventGroups.set(eventTicker, []);
+    }
+    eventGroups.get(eventTicker)!.push(analysis);
+  }
+  
+  // Calculate position limits per market based on whether we're betting both sides
+  const positionLimits = new Map<string, number>();
+  for (const [eventTicker, eventMarkets] of eventGroups) {
+    // If betting multiple sides of same event, halve the limit per side
+    const limitPerSide = eventMarkets.length > 1 
+      ? Math.floor(baseMaxPositionCents / 2)  // 1.5% per side if both sides
+      : baseMaxPositionCents;                   // 3% if only one side
+    
+    for (const market of eventMarkets) {
+      positionLimits.set(market.market.ticker, limitPerSide);
+    }
+  }
   
   // Calculate total liquidity score for proportional allocation
   const totalScore = analyses.reduce((sum, a) => sum + a.liquidity_score, 0);
@@ -153,6 +177,9 @@ function distributeCapitalByLiquidity(
   
   for (const analysis of sortedAnalyses) {
     if (remainingCapital <= 0) break;
+    
+    // Get the position limit for this specific market
+    const maxPositionCents = positionLimits.get(analysis.market.ticker) || baseMaxPositionCents;
     
     // Proportional allocation based on liquidity score
     const proportionalAllocation = Math.floor(
@@ -191,6 +218,9 @@ function distributeCapitalByLiquidity(
     
     for (const result of results) {
       if (remainingCapital <= 0) break;
+      
+      // Get the position limit for this specific market
+      const maxPositionCents = positionLimits.get(result.market.ticker) || baseMaxPositionCents;
       
       const currentCost = result.recommended_cost_cents;
       const maxCost = Math.min(maxPositionCents, result.max_fillable_units * result.price_cents);
