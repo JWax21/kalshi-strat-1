@@ -49,6 +49,13 @@ interface DayResult {
   total_cost_dollars: string;
   error?: string;
   skipped?: boolean;
+  debug?: {
+    window_start?: string;
+    window_end?: string;
+    markets_before_odds_filter?: number;
+    markets_after_odds_filter?: number;
+    markets_after_oi_filter?: number;
+  };
 }
 
 async function prepareForDay(
@@ -85,6 +92,8 @@ async function prepareForDay(
     // 1. Within the eligible close window for this day
     // 2. Not already assigned to a previous day
     
+    const marketsBeforeOddsFilter = eligibleMarkets.length;
+    
     if (eligibleMarkets.length === 0) {
       return {
         date: targetDateStr,
@@ -93,14 +102,21 @@ async function prepareForDay(
         markets_after_filters: 0,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
+        debug: {
+          markets_before_odds_filter: 0,
+          markets_after_odds_filter: 0,
+          markets_after_oi_filter: 0,
+        },
       };
     }
 
     // Filter by odds
     let filteredMarkets = filterHighOddsMarkets(eligibleMarkets, minOdds, maxOdds);
+    const marketsAfterOddsFilter = filteredMarkets.length;
 
     // Filter by open interest
     filteredMarkets = filteredMarkets.filter(m => m.open_interest >= minOpenInterest);
+    const marketsAfterOiFilter = filteredMarkets.length;
 
     // Exclude blacklisted markets
     const { data: blacklistedMarkets } = await supabase
@@ -117,6 +133,11 @@ async function prepareForDay(
         markets_after_filters: 0,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
+        debug: {
+          markets_before_odds_filter: marketsBeforeOddsFilter,
+          markets_after_odds_filter: marketsAfterOddsFilter,
+          markets_after_oi_filter: marketsAfterOiFilter,
+        },
       };
     }
 
@@ -396,6 +417,18 @@ export async function POST(request: Request) {
         maxOdds,
         minOpenInterest
       );
+      
+      // Add window dates to debug info
+      if (result.debug) {
+        result.debug.window_start = windowStart.toISOString().split('T')[0];
+        result.debug.window_end = windowEnd.toISOString().split('T')[0];
+      } else {
+        result.debug = {
+          window_start: windowStart.toISOString().split('T')[0],
+          window_end: windowEnd.toISOString().split('T')[0],
+        };
+      }
+      
       results.push(result);
 
       // Mark these markets as assigned so they won't be used by later days
@@ -416,6 +449,14 @@ export async function POST(request: Request) {
       marketsByDay[closeDate] = (marketsByDay[closeDate] || 0) + 1;
     }
 
+    // Additional debug: sample of markets fetched
+    const sampleMarkets = allMarkets.slice(0, 5).map(m => ({
+      ticker: m.ticker,
+      close_time: m.close_time,
+      last_price: m.last_price_dollars,
+      open_interest: m.open_interest,
+    }));
+
     return NextResponse.json({
       success: true,
       summary: {
@@ -430,6 +471,8 @@ export async function POST(request: Request) {
       debug: {
         markets_by_close_date: marketsByDay,
         total_assigned_tickers: assignedTickers.size,
+        sample_markets: sampleMarkets,
+        today_str: today.toISOString().split('T')[0],
       },
       days: results,
     });
