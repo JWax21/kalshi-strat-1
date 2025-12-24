@@ -987,14 +987,19 @@ export default function Dashboard() {
             {/* Market Count Card */}
             <div className="bg-slate-900 rounded-xl p-6 mb-4">
               <div className="flex items-baseline gap-3">
-                <span className="text-5xl font-bold text-slate-400">{marketsData?.total_markets || 0}</span>
-                <span className="text-2xl text-slate-600">→</span>
-                <span className="text-5xl font-bold text-white">{marketsData?.high_odds_count || 0}</span>
-                <span className="text-2xl text-slate-600">→</span>
+                <span className="text-5xl font-bold text-white">{
+                  selectedGameDate === 'all' 
+                    ? (marketsData?.total_markets || 0)
+                    : (marketsData?.markets.filter(m => extractGameDate(m.close_time) === selectedGameDate).length || 0)
+                }</span>
+                <span className="text-2xl text-slate-500">|</span>
                 <span className="text-5xl font-bold text-emerald-400">{filteredMarkets.length}</span>
               </div>
               <p className="text-slate-400 mt-1">
-                Total Markets → High-Odds ({displayOddsMin}%+) → Filtered {selectedGameDate !== 'all' && `(${gameDateOptions.find(d => d.value === selectedGameDate)?.label})`}
+                {selectedGameDate === 'all' 
+                  ? 'Total Markets | Total High-Odds Markets'
+                  : `${gameDateOptions.find(d => d.value === selectedGameDate)?.label} Markets | High-Odds Markets`
+                }
               </p>
             </div>
 
