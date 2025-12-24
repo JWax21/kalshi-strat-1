@@ -76,13 +76,15 @@ async function prepareForDay(
     }
 
     // Filter markets that close on this date
-    const targetDate = new Date(targetDateStr);
-    const nextDate = new Date(targetDateStr);
-    nextDate.setDate(nextDate.getDate() + 1);
+    // Use noon UTC to avoid timezone issues at midnight boundaries
+    const targetDateStart = new Date(targetDateStr + 'T00:00:00Z');
+    const targetDateEnd = new Date(targetDateStr + 'T00:00:00Z');
+    targetDateEnd.setDate(targetDateEnd.getDate() + 1);
 
     const dayMarkets = allMarkets.filter(m => {
       const closeTime = new Date(m.close_time);
-      return closeTime >= targetDate && closeTime < nextDate;
+      // Check if the market closes on this calendar day (in UTC)
+      return closeTime >= targetDateStart && closeTime < targetDateEnd;
     });
 
     if (dayMarkets.length === 0) {
@@ -323,6 +325,13 @@ export async function POST(request: Request) {
     const totalOrders = results.reduce((sum, r) => sum + (r.orders_prepared || 0), 0);
     const totalCost = results.reduce((sum, r) => sum + parseFloat(r.total_cost_dollars || '0'), 0);
 
+    // Debug: Show market close time distribution
+    const marketsByDay: Record<string, number> = {};
+    for (const m of allMarkets) {
+      const closeDate = new Date(m.close_time).toISOString().split('T')[0];
+      marketsByDay[closeDate] = (marketsByDay[closeDate] || 0) + 1;
+    }
+
     return NextResponse.json({
       success: true,
       summary: {
@@ -330,6 +339,11 @@ export async function POST(request: Request) {
         total_orders: totalOrders,
         total_cost_dollars: totalCost.toFixed(2),
         available_capital_dollars: (availableCapitalCents / 100).toFixed(2),
+        total_markets_fetched: allMarkets.length,
+        fetch_window_hours: totalWindowHours,
+      },
+      debug: {
+        markets_by_close_date: marketsByDay,
       },
       days: results,
     });
