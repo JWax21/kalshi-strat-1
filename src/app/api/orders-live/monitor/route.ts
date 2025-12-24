@@ -368,58 +368,79 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const existingTickers = new Set((existingOrders || []).map(o => o.ticker));
   const existingEventTickers = new Set((existingOrders || []).map(o => o.event_ticker));
 
-  // Also check Kalshi positions directly (in case DB is out of sync)
-  const positionTickersList = Array.from(currentPositions.keys()) as string[];
-  const positionTickers = new Set(positionTickersList);
+  // Calculate TOTAL EXPOSURE per EVENT (not just if we've bet, but HOW MUCH)
+  // This allows us to add more to an event if we haven't hit 3% yet
+  const eventExposureCents: Map<string, number> = new Map();
   
-  // Extract event_tickers from Kalshi positions (ticker format: EVENT_TICKER-SIDE, e.g., KXNFLGAME-25DEC25DETMIN-DET)
-  // The event_ticker is everything except the last segment after the last hyphen
-  const positionEventTickers = new Set(
-    positionTickersList.map((ticker) => {
-      const parts = ticker.split('-');
-      // Remove the last segment (which is the team/side)
-      return parts.slice(0, -1).join('-');
-    })
-  );
+  // Add exposure from DB orders (confirmed/placed/pending)
+  for (const order of existingOrders || []) {
+    const existing = eventExposureCents.get(order.event_ticker) || 0;
+    // We need to get the cost from the order - fetch it if needed
+    eventExposureCents.set(order.event_ticker, existing);
+  }
   
-  // ALSO check resting orders on Kalshi (these are orders we've placed but not yet filled)
-  // We need to block the same event to prevent betting both sides
-  const restingOrderTickers = new Set(
-    (kalshiOrdersResponse.orders || []).map((o: any) => o.ticker)
-  );
-  const restingOrderEventTickers = new Set(
-    (kalshiOrdersResponse.orders || []).map((o: any) => {
-      const parts = (o.ticker as string).split('-');
-      return parts.slice(0, -1).join('-');
-    })
-  );
+  // Fetch full order details to get costs
+  const { data: ordersWithCosts } = await supabase
+    .from('orders')
+    .select('event_ticker, cost_cents, executed_cost_cents')
+    .in('placement_status', ['pending', 'placed', 'confirmed']);
   
-  console.log(`Existing event_tickers - DB: ${existingEventTickers.size}, Kalshi positions: ${positionEventTickers.size}, Kalshi resting: ${restingOrderEventTickers.size}`);
+  for (const order of ordersWithCosts || []) {
+    const cost = order.executed_cost_cents || order.cost_cents || 0;
+    const existing = eventExposureCents.get(order.event_ticker) || 0;
+    eventExposureCents.set(order.event_ticker, existing + cost);
+  }
   
-  // Find new markets we don't have orders for
-  // IMPORTANT: Check event_ticker from DB, Kalshi positions, AND Kalshi resting orders to prevent betting on same game twice
-  const newMarkets = filteredMarkets.filter(m => 
-    !existingTickers.has(m.ticker) && 
-    !existingEventTickers.has(m.event_ticker) &&
-    !positionTickers.has(m.ticker) &&
-    !positionEventTickers.has(m.event_ticker) &&
-    !restingOrderTickers.has(m.ticker) &&
-    !restingOrderEventTickers.has(m.event_ticker)
-  );
+  // Add exposure from Kalshi positions (in case DB is out of sync)
+  for (const [ticker, position] of currentPositions) {
+    const parts = (ticker as string).split('-');
+    const eventTicker = parts.slice(0, -1).join('-');
+    const positionCost = (position as any).position_cost || 0;
+    const existing = eventExposureCents.get(eventTicker) || 0;
+    // Only add if not already counted from DB (avoid double-counting)
+    if (!ordersWithCosts?.some(o => o.event_ticker === eventTicker)) {
+      eventExposureCents.set(eventTicker, existing + positionCost);
+    }
+  }
   
-  result.actions.new_markets_found = newMarkets.length;
-  console.log(`Found ${newMarkets.length} new markets (after excluding DB: ${existingEventTickers.size}, positions: ${positionEventTickers.size}, resting: ${restingOrderEventTickers.size})`);
-
-  // Step 6: Deploy remaining capital to new markets (if any)
-  if (newMarkets.length > 0 && availableBalance > 0) {
-    // Sort by open interest descending (prefer more liquid markets)
-    newMarkets.sort((a, b) => b.open_interest - a.open_interest);
-
-    // Calculate total portfolio for position limits
-    const totalPortfolio = availableBalance + totalExposure;
-    const maxPositionCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
+  // Add exposure from resting orders on Kalshi
+  for (const order of kalshiOrdersResponse.orders || []) {
+    const parts = (order.ticker as string).split('-');
+    const eventTicker = parts.slice(0, -1).join('-');
+    const orderCost = (order.yes_price || order.no_price || 0) * (order.count || 1);
+    const existing = eventExposureCents.get(eventTicker) || 0;
+    eventExposureCents.set(eventTicker, existing + orderCost);
+  }
+  
+  console.log(`Event exposures calculated: ${eventExposureCents.size} events`);
+  
+  // Calculate total portfolio for 3% limit
+  const totalPortfolio = availableBalance + totalExposure;
+  const maxEventExposureCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
+  
+  // Filter markets: exclude ones we've already bet on (same ticker) but ALLOW same event if under 3%
+  // Also exclude markets where the event is already at 3%
+  const eligibleMarkets = filteredMarkets.filter(m => {
+    // Never bet on the same ticker twice
+    if (existingTickers.has(m.ticker)) return false;
     
-    console.log(`Portfolio: ${totalPortfolio}¢, Max per position: ${maxPositionCents}¢, Available: ${availableBalance}¢`);
+    // Check if this event has remaining capacity
+    const currentExposure = eventExposureCents.get(m.event_ticker) || 0;
+    const remainingCapacity = maxEventExposureCents - currentExposure;
+    
+    // Need at least some capacity to bet
+    return remainingCapacity > 0;
+  });
+  
+  result.actions.new_markets_found = eligibleMarkets.length;
+  console.log(`Found ${eligibleMarkets.length} eligible markets (portfolio: ${totalPortfolio}¢, max per event: ${maxEventExposureCents}¢)`);
+
+  // Step 6: Deploy remaining capital to eligible markets (if any)
+  if (eligibleMarkets.length > 0 && availableBalance > 0) {
+    // Sort by open interest descending (prefer more liquid markets)
+    eligibleMarkets.sort((a, b) => b.open_interest - a.open_interest);
+    
+    console.log(`Deploying to ${eligibleMarkets.length} markets, max ${maxEventExposureCents}¢ per event, ${availableBalance}¢ available`);
 
     // Find or create today's batch
     let batchId: string;
@@ -454,32 +475,29 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       batchId = newBatch.id;
     }
 
-    // Track positions per event to enforce limits
-    const positionsPerEvent: Map<string, number> = new Map();
-    
-    // Initialize with existing positions
-    for (const order of existingOrders || []) {
-      const existing = positionsPerEvent.get(order.event_ticker) || 0;
-      positionsPerEvent.set(order.event_ticker, existing + 1);
-    }
+    // Track exposure per event during this session (to update as we place orders)
+    const sessionEventExposure: Map<string, number> = new Map(eventExposureCents);
 
-    // Place orders on new markets
-    for (const market of newMarkets) {
+    // Place orders on eligible markets
+    for (const market of eligibleMarkets) {
       if (availableBalance <= 0) break;
-
-      // Skip if we already have a position on this event (double-check)
-      if (positionsPerEvent.has(market.event_ticker)) {
-        console.log(`Skipping ${market.ticker} - already have position on event ${market.event_ticker}`);
-        continue;
-      }
 
       const odds = getMarketOdds(market);
       const favoriteSide = odds.yes >= odds.no ? 'YES' : 'NO';
       const priceCents = Math.round(Math.max(odds.yes, odds.no) * 100);
 
-      // Skip if single unit exceeds 3% limit
-      if (priceCents > maxPositionCents) {
-        console.log(`Skipping ${market.ticker} - price ${priceCents}¢ exceeds max ${maxPositionCents}¢`);
+      // Calculate REMAINING CAPACITY for this event (3% - existing exposure)
+      const currentExposure = sessionEventExposure.get(market.event_ticker) || 0;
+      const remainingCapacity = maxEventExposureCents - currentExposure;
+      
+      if (remainingCapacity <= 0) {
+        console.log(`Skipping ${market.ticker} - event ${market.event_ticker} already at 3% (${currentExposure}¢/${maxEventExposureCents}¢)`);
+        continue;
+      }
+
+      // Skip if single unit exceeds remaining capacity
+      if (priceCents > remainingCapacity) {
+        console.log(`Skipping ${market.ticker} - price ${priceCents}¢ exceeds remaining capacity ${remainingCapacity}¢`);
         continue;
       }
       
@@ -488,12 +506,14 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         continue;
       }
 
-      // Calculate units: fill up to 3% limit, respecting available balance
-      const maxUnits = Math.floor(maxPositionCents / priceCents);
+      // Calculate units: fill up to REMAINING CAPACITY (not full 3%), respecting available balance
+      const maxUnitsForEvent = Math.floor(remainingCapacity / priceCents);
       const affordableUnits = Math.floor(availableBalance / priceCents);
-      const units = Math.min(maxUnits, affordableUnits);
+      const units = Math.min(maxUnitsForEvent, affordableUnits);
 
       if (units <= 0) continue;
+      
+      const thisBetCost = units * priceCents;
 
       try {
         // Place order on Kalshi
@@ -542,16 +562,17 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             settlement_status: 'pending',
           });
 
-        // Track this event to prevent double-dipping
-        positionsPerEvent.set(market.event_ticker, 1);
+        // Track this event's new exposure to prevent exceeding 3%
+        const newExposure = (sessionEventExposure.get(market.event_ticker) || 0) + thisBetCost;
+        sessionEventExposure.set(market.event_ticker, newExposure);
         
-        availableBalance -= priceCents * units;
+        availableBalance -= thisBetCost;
         result.actions.new_orders_placed++;
         result.details.new_placements.push(
-          `${market.ticker}: ${units}u @ ${priceCents}¢ ${favoriteSide} (${status})`
+          `${market.ticker}: ${units}u @ ${priceCents}¢ ${favoriteSide} (${status}) [event: ${newExposure}¢/${maxEventExposureCents}¢]`
         );
 
-        console.log(`Placed: ${market.ticker} - ${units}u @ ${priceCents}¢ ${favoriteSide}`);
+        console.log(`Placed: ${market.ticker} - ${units}u @ ${priceCents}¢ ${favoriteSide} (event exposure: ${newExposure}¢/${maxEventExposureCents}¢)`);
         await new Promise(r => setTimeout(r, 300)); // Rate limit
       } catch (e) {
         result.details.errors.push(`Failed to place ${market.ticker}: ${e}`);
