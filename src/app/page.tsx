@@ -984,23 +984,49 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Market Count Card */}
-            <div className="bg-slate-900 rounded-xl p-6 mb-4">
-              <div className="flex items-baseline gap-3">
-                <span className="text-5xl font-bold text-white">{
-                  selectedGameDate === 'all' 
-                    ? (marketsData?.total_markets || 0)
-                    : (marketsData?.markets.filter(m => extractGameDate(m.close_time) === selectedGameDate).length || 0)
-                }</span>
-                <span className="text-2xl text-slate-500">|</span>
-                <span className="text-5xl font-bold text-emerald-400">{filteredMarkets.length}</span>
-              </div>
-              <p className="text-slate-400 mt-1">
-                {selectedGameDate === 'all' 
-                  ? 'Total Markets | Total High-Odds Markets'
-                  : `${gameDateOptions.find(d => d.value === selectedGameDate)?.label} Markets | High-Odds Markets`
-                }
-              </p>
+            {/* Daily Summary Table */}
+            <div className="bg-slate-900 rounded-xl p-4 mb-4">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-slate-400 border-b border-slate-800">
+                    <th className="text-left py-2 font-medium">Day</th>
+                    <th className="text-right py-2 font-medium">All Markets</th>
+                    <th className="text-right py-2 font-medium">High-Odds</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gameDateOptions.map(day => {
+                    const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m.close_time) === day.value) || [];
+                    const dayHighOdds = dayMarkets.filter(m => {
+                      const odds = m.favorite_odds * 100;
+                      return odds >= displayOddsMin && odds <= displayOddsMax;
+                    });
+                    return (
+                      <tr 
+                        key={day.value} 
+                        className={`border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/50 ${selectedGameDate === day.value ? 'bg-slate-800' : ''}`}
+                        onClick={() => setSelectedGameDate(day.value)}
+                      >
+                        <td className="py-2 text-white">{day.label}</td>
+                        <td className="py-2 text-right text-white font-mono">{dayMarkets.length}</td>
+                        <td className="py-2 text-right text-emerald-400 font-mono">{dayHighOdds.length}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-slate-700">
+                    <td className="py-2 text-slate-400 font-medium">Total</td>
+                    <td className="py-2 text-right text-white font-mono font-bold">{marketsData?.total_markets || 0}</td>
+                    <td className="py-2 text-right text-emerald-400 font-mono font-bold">{
+                      marketsData?.markets.filter(m => {
+                        const odds = m.favorite_odds * 100;
+                        return odds >= displayOddsMin && odds <= displayOddsMax;
+                      }).length || 0
+                    }</td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
 
             {/* Odds Range Slider with Tick Marks */}
