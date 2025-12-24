@@ -1056,6 +1056,67 @@ export default function Dashboard() {
               </table>
             </div>
 
+            {/* Sports/Series Summary Table */}
+            <div className="bg-slate-900 rounded-xl p-4 mb-4">
+              <h3 className="text-sm text-slate-400 mb-3">Markets by Sport</h3>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-slate-400 border-b border-slate-800">
+                    <th className="text-left py-2 font-medium">Sport</th>
+                    <th className="text-right py-2 font-medium">All Markets</th>
+                    <th className="text-right py-2 font-medium">High-Odds</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Get markets filtered by selected game date
+                    const dateFilteredMarkets = selectedGameDate === 'all'
+                      ? (marketsData?.markets || [])
+                      : (marketsData?.markets || []).filter(m => extractGameDate(m.close_time) === selectedGameDate);
+                    
+                    // Group by series
+                    const seriesData: Record<string, { all: number; highOdds: number }> = {};
+                    
+                    for (const m of dateFilteredMarkets) {
+                      const series = getSeriesTag(m.event_ticker);
+                      if (!seriesData[series]) {
+                        seriesData[series] = { all: 0, highOdds: 0 };
+                      }
+                      seriesData[series].all++;
+                      const odds = m.favorite_odds * 100;
+                      if (odds >= displayOddsMin && odds <= displayOddsMax) {
+                        seriesData[series].highOdds++;
+                      }
+                    }
+                    
+                    // Sort by total count descending
+                    const sortedSeries = Object.entries(seriesData)
+                      .sort(([, a], [, b]) => b.all - a.all);
+                    
+                    const totalAll = sortedSeries.reduce((sum, [, d]) => sum + d.all, 0);
+                    const totalHighOdds = sortedSeries.reduce((sum, [, d]) => sum + d.highOdds, 0);
+                    
+                    return (
+                      <>
+                        {sortedSeries.map(([series, data]) => (
+                          <tr key={series} className="border-b border-slate-800/50">
+                            <td className="py-2 text-white">{series}</td>
+                            <td className="py-2 text-right text-white font-mono">{data.all}</td>
+                            <td className="py-2 text-right text-emerald-400 font-mono">{data.highOdds}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t-2 border-slate-700">
+                          <td className="py-2 text-slate-400 font-medium">Total</td>
+                          <td className="py-2 text-right text-white font-mono font-bold">{totalAll}</td>
+                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">{totalHighOdds}</td>
+                        </tr>
+                      </>
+                    );
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
             {/* Odds Range Slider with Tick Marks */}
             <div className="bg-slate-900 rounded-xl p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
