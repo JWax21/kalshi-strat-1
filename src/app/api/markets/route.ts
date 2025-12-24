@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const minOdds = parseFloat(searchParams.get('minOdds') || '0.92');
     const maxOdds = parseFloat(searchParams.get('maxOdds') || '0.995');
     const limit = parseInt(searchParams.get('limit') || '1000');
-    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '336'); // 14 days
+    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '504'); // 21 days (games up to 7 days out)
 
     const pages = parseInt(searchParams.get('pages') || '15');
     const category = searchParams.get('category') || undefined;

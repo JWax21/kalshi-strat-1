@@ -15,7 +15,7 @@ function extractGameDate(closeTime: string): string | null {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '336'); // 14 days default
+    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '504'); // 21 days default (games up to 7 days out)
     
     const sportsSeries = [
       'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
@@ -35,6 +35,21 @@ export async function GET(request: Request) {
       } catch (e) {
         seriesResults[series] = 0;
       }
+    }
+    
+    // Also fetch ALL open markets (no series filter) to see what's available
+    let allOpenMarkets: any[] = [];
+    try {
+      allOpenMarkets = await getMarkets(200, maxCloseHours, 1);
+    } catch (e) {
+      console.error('Error fetching all markets:', e);
+    }
+    
+    // Count by category for all markets
+    const categoryCounts: Record<string, number> = {};
+    for (const m of allOpenMarkets) {
+      const cat = m.category || 'unknown';
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
     }
     
     // Group markets by game date
@@ -68,16 +83,25 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      total_markets: allMarkets.length,
+      total_sports_markets: allMarkets.length,
+      total_all_markets: allOpenMarkets.length,
       max_close_hours_used: maxCloseHours,
+      max_close_date: new Date(Date.now() + maxCloseHours * 60 * 60 * 1000).toISOString(),
       series_results: seriesResults,
+      category_counts: categoryCounts,
       markets_by_game_date: sortedGameDates,
       tickers_without_date: tickersWithoutDate,
-      sample_tickers: allMarkets.slice(0, 5).map(m => ({
+      sample_sports: allMarkets.slice(0, 5).map(m => ({
         ticker: m.ticker,
         title: m.title,
         close_time: m.close_time,
         extracted_game_date: extractGameDate(m.close_time)
+      })),
+      sample_all: allOpenMarkets.slice(0, 10).map(m => ({
+        ticker: m.ticker,
+        title: m.title,
+        category: m.category,
+        close_time: m.close_time
       }))
     });
   } catch (error) {
