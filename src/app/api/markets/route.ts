@@ -42,18 +42,25 @@ export async function GET(request: Request) {
     const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '720'); // 30 days
     const category = searchParams.get('category') || 'sports';
     
-    // Step 1: Fetch ALL open markets from Kalshi (no filters except max_close_ts)
-    // Use limit=1000 (Kalshi's max) and fetch multiple pages
-    const rawMarkets = await getMarkets(1000, maxCloseHours, 20);
+    // Step 1: Fetch sports markets BY SERIES (more reliable than bulk fetch)
+    // Bulk fetch misses some series like NBA
+    let sportsMarkets: KalshiMarket[] = [];
+    const seriesResults: Record<string, number> = {};
     
-    // Step 2: Filter to sports markets (client-side)
-    let sportsMarkets: KalshiMarket[];
     if (category?.toLowerCase() === 'sports') {
-      sportsMarkets = rawMarkets.filter(m => 
-        SPORTS_SERIES.some(series => m.event_ticker.startsWith(series))
-      );
+      // Fetch each sports series individually
+      for (const series of SPORTS_SERIES) {
+        try {
+          const markets = await getMarkets(500, maxCloseHours, 2, series);
+          seriesResults[series] = markets.length;
+          sportsMarkets.push(...markets);
+        } catch (e) {
+          seriesResults[series] = 0;
+        }
+      }
     } else {
-      sportsMarkets = rawMarkets;
+      // For non-sports, use bulk fetch
+      sportsMarkets = await getMarkets(1000, maxCloseHours, 20);
     }
     
     // Step 3: Enrich ALL sports markets with calculated odds
@@ -75,21 +82,13 @@ export async function GET(request: Request) {
     // Sort by open interest (most liquid first)
     highOddsMarkets.sort((a, b) => b.open_interest - a.open_interest);
 
-    // Debug: Find unique series prefixes from raw markets
-    const seriesPrefixes: Record<string, number> = {};
-    for (const m of rawMarkets) {
-      const prefix = m.event_ticker.split('-')[0];
-      seriesPrefixes[prefix] = (seriesPrefixes[prefix] || 0) + 1;
-    }
-
     return NextResponse.json({
       success: true,
-      raw_markets_fetched: rawMarkets.length,
       total_markets: sportsMarkets.length,  // All sports markets (before odds filter)
       high_odds_count: highOddsMarkets.length,
       min_odds_filter: minOdds,
       max_odds_filter: maxOdds,
-      series_in_raw_data: seriesPrefixes,  // Debug: show what series exist
+      series_results: seriesResults,  // Debug: show counts per series
       markets: enrichedAll,  // Return ALL enriched markets, let frontend filter by odds
     });
   } catch (error) {
