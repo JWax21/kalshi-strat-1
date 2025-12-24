@@ -52,7 +52,7 @@ interface DayResult {
 
 async function prepareForDay(
   targetDateStr: string,
-  allMarkets: KalshiMarket[],
+  eligibleMarkets: KalshiMarket[], // Already filtered to be within this day's close window
   availableCapitalCents: number,
   minOdds: number,
   maxOdds: number,
@@ -75,19 +75,11 @@ async function prepareForDay(
       };
     }
 
-    // Filter markets that close on this date
-    // Use noon UTC to avoid timezone issues at midnight boundaries
-    const targetDateStart = new Date(targetDateStr + 'T00:00:00Z');
-    const targetDateEnd = new Date(targetDateStr + 'T00:00:00Z');
-    targetDateEnd.setDate(targetDateEnd.getDate() + 1);
-
-    const dayMarkets = allMarkets.filter(m => {
-      const closeTime = new Date(m.close_time);
-      // Check if the market closes on this calendar day (in UTC)
-      return closeTime >= targetDateStart && closeTime < targetDateEnd;
-    });
-
-    if (dayMarkets.length === 0) {
+    // Markets are already pre-filtered by the caller to be:
+    // 1. Within the eligible close window for this day
+    // 2. Not already assigned to a previous day
+    
+    if (eligibleMarkets.length === 0) {
       return {
         date: targetDateStr,
         success: true,
@@ -98,7 +90,7 @@ async function prepareForDay(
     }
 
     // Filter by odds
-    let filteredMarkets = filterHighOddsMarkets(dayMarkets, minOdds, maxOdds);
+    let filteredMarkets = filterHighOddsMarkets(eligibleMarkets, minOdds, maxOdds);
 
     // Filter by open interest
     filteredMarkets = filteredMarkets.filter(m => m.open_interest >= minOpenInterest);
@@ -114,7 +106,7 @@ async function prepareForDay(
       return {
         date: targetDateStr,
         success: true,
-        markets_found: dayMarkets.length,
+        markets_found: eligibleMarkets.length,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
       };
@@ -194,7 +186,7 @@ async function prepareForDay(
       return {
         date: targetDateStr,
         success: true,
-        markets_found: dayMarkets.length,
+        markets_found: eligibleMarkets.length,
         orders_prepared: 0,
         total_cost_dollars: '0.00',
       };
@@ -248,7 +240,7 @@ async function prepareForDay(
     return {
       date: targetDateStr,
       success: true,
-      markets_found: dayMarkets.length,
+      markets_found: eligibleMarkets.length,
       orders_prepared: allocatedMarkets.length,
       total_cost_dollars: (totalCost / 100).toFixed(2),
     };
@@ -315,6 +307,7 @@ export async function POST(request: Request) {
     const minOdds = body.minOdds || 0.85;
     const maxOdds = body.maxOdds || 0.995;
     const minOpenInterest = body.minOpenInterest || 100;
+    const maxCloseWindowDays = body.maxCloseWindowDays || 15;
 
     // Get available balance
     let availableCapitalCents = 0;
@@ -326,9 +319,9 @@ export async function POST(request: Request) {
     }
 
     // Fetch markets with extended window to cover all future days
-    // Base window is 15 days, plus the number of days we're preparing for
-    const baseWindowDays = 15;
-    const totalWindowHours = (baseWindowDays + days) * 24;
+    // We need markets closing up to (days + maxCloseWindowDays) from now
+    // e.g., Day 6's window extends 15 days from Day 6 = 21 days from today
+    const totalWindowHours = (days + maxCloseWindowDays) * 24;
     
     const sportsSeries = [
       'KXNBAGAME', 'KXNFLGAME', 'KXMLBGAME', 'KXNHLGAME',
@@ -349,24 +342,68 @@ export async function POST(request: Request) {
       }
     }
 
+    // Track which tickers have been assigned to previous days
+    const assignedTickers = new Set<string>();
+    
+    // Get already existing orders from DB to exclude
+    const { data: existingOrders } = await supabase
+      .from('orders')
+      .select('ticker');
+    if (existingOrders) {
+      existingOrders.forEach(o => assignedTickers.add(o.ticker));
+    }
+
     // Prepare for each day
     const results: DayResult[] = [];
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize to start of day
 
     for (let i = 0; i < days; i++) {
-      const targetDate = new Date(today);
-      targetDate.setDate(targetDate.getDate() + i);
-      const targetDateStr = targetDate.toISOString().split('T')[0];
+      // Calculate the date for this batch
+      const batchDate = new Date(today);
+      batchDate.setDate(batchDate.getDate() + i);
+      const batchDateStr = batchDate.toISOString().split('T')[0];
 
+      // Calculate the eligible close window for this day:
+      // Markets must close between batchDate and batchDate + maxCloseWindowDays
+      const windowStart = new Date(batchDate);
+      const windowEnd = new Date(batchDate);
+      windowEnd.setDate(windowEnd.getDate() + maxCloseWindowDays);
+
+      // Filter markets for this day's window, excluding already assigned
+      const eligibleMarkets = allMarkets.filter(m => {
+        // Skip if already assigned to a previous day
+        if (assignedTickers.has(m.ticker)) return false;
+        
+        const closeTime = new Date(m.close_time);
+        // Market must close within this day's window
+        return closeTime >= windowStart && closeTime < windowEnd;
+      });
+
+      // Prepare this day's batch
       const result = await prepareForDay(
-        targetDateStr,
-        allMarkets,
+        batchDateStr,
+        eligibleMarkets, // Only pass eligible markets (not already assigned)
         availableCapitalCents,
         minOdds,
         maxOdds,
         minOpenInterest
       );
       results.push(result);
+
+      // Mark these markets as assigned (even if batch creation failed/skipped)
+      // We need to get the tickers that were actually used
+      if (result.success && !result.skipped && result.orders_prepared && result.orders_prepared > 0) {
+        // Fetch the orders we just created to get their tickers
+        const { data: newOrders } = await supabase
+          .from('orders')
+          .select('ticker')
+          .eq('batch_id', (await supabase.from('order_batches').select('id').eq('batch_date', batchDateStr).single()).data?.id);
+        
+        if (newOrders) {
+          newOrders.forEach(o => assignedTickers.add(o.ticker));
+        }
+      }
     }
 
     const totalOrders = results.reduce((sum, r) => sum + (r.orders_prepared || 0), 0);
@@ -388,9 +425,11 @@ export async function POST(request: Request) {
         available_capital_dollars: (availableCapitalCents / 100).toFixed(2),
         total_markets_fetched: allMarkets.length,
         fetch_window_hours: totalWindowHours,
+        max_close_window_days: maxCloseWindowDays,
       },
       debug: {
         markets_by_close_date: marketsByDay,
+        total_assigned_tickers: assignedTickers.size,
       },
       days: results,
     });
