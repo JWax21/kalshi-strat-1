@@ -344,19 +344,33 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     })
   );
   
-  console.log(`Existing event_tickers from DB: ${existingEventTickers.size}, from Kalshi positions: ${positionEventTickers.size}`);
+  // ALSO check resting orders on Kalshi (these are orders we've placed but not yet filled)
+  // We need to block the same event to prevent betting both sides
+  const restingOrderTickers = new Set(
+    (kalshiOrdersResponse.orders || []).map((o: any) => o.ticker)
+  );
+  const restingOrderEventTickers = new Set(
+    (kalshiOrdersResponse.orders || []).map((o: any) => {
+      const parts = (o.ticker as string).split('-');
+      return parts.slice(0, -1).join('-');
+    })
+  );
+  
+  console.log(`Existing event_tickers - DB: ${existingEventTickers.size}, Kalshi positions: ${positionEventTickers.size}, Kalshi resting: ${restingOrderEventTickers.size}`);
   
   // Find new markets we don't have orders for
-  // IMPORTANT: Check event_ticker from BOTH DB and Kalshi positions to prevent betting on same game twice
+  // IMPORTANT: Check event_ticker from DB, Kalshi positions, AND Kalshi resting orders to prevent betting on same game twice
   const newMarkets = filteredMarkets.filter(m => 
     !existingTickers.has(m.ticker) && 
     !existingEventTickers.has(m.event_ticker) &&
     !positionTickers.has(m.ticker) &&
-    !positionEventTickers.has(m.event_ticker)
+    !positionEventTickers.has(m.event_ticker) &&
+    !restingOrderTickers.has(m.ticker) &&
+    !restingOrderEventTickers.has(m.event_ticker)
   );
   
   result.actions.new_markets_found = newMarkets.length;
-  console.log(`Found ${newMarkets.length} new markets (after excluding ${existingEventTickers.size} DB + ${positionEventTickers.size} Kalshi event_tickers)`);
+  console.log(`Found ${newMarkets.length} new markets (after excluding DB: ${existingEventTickers.size}, positions: ${positionEventTickers.size}, resting: ${restingOrderEventTickers.size})`);
 
   // Step 6: Deploy remaining capital to new markets (if any)
   if (newMarkets.length > 0 && availableBalance > 0) {
