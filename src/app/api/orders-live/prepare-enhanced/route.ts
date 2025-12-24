@@ -296,7 +296,8 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     'KXNCAAFCSGAME', 'KXNCAAFGAME',
     'KXEUROLEAGUEGAME', 'KXNBLGAME', 'KXCRICKETTESTMATCH',
     'KXEFLCHAMPIONSHIPGAME', 'KXDOTA2GAME', 'KXUFCFIGHT',
-    'KXCBAGAME'  // Chinese Basketball Association
+    'KXCBAGAME',          // Chinese Basketball Association
+    'KXCRICKETT20IMATCH'  // Cricket T20 International
   ];
 
   let allMarkets: KalshiMarket[] = [];
