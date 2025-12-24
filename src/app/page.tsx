@@ -748,25 +748,12 @@ export default function Dashboard() {
     return 'Other';
   };
 
-  // Extract game date from ticker like "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26"
-  const extractGameDate = (ticker: string): string | null => {
-    const match = ticker.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i);
-    if (!match) return null;
-    
-    const year = parseInt(match[1]) + 2000;
-    const monthStr = match[2].toUpperCase();
-    const day = parseInt(match[3]);
-    
-    const months: Record<string, string> = {
-      'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
-      'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
-      'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
-    };
-    
-    const month = months[monthStr];
-    if (!month) return null;
-    
-    return `${year}-${month}-${day.toString().padStart(2, '0')}`;
+  // Game date = close_time - 14 days (markets close 14 days after game)
+  const extractGameDate = (closeTime: string): string | null => {
+    if (!closeTime) return null;
+    const closeDate = new Date(closeTime);
+    closeDate.setDate(closeDate.getDate() - 14);
+    return closeDate.toISOString().split('T')[0];
   };
 
   // Generate next 7 days for game date filter
@@ -833,7 +820,7 @@ export default function Dashboard() {
     const odds = m.favorite_odds * 100;
     const matchesOdds = odds >= displayOddsMin && odds <= displayOddsMax;
     const matchesSeries = selectedSeries === 'All' || getSeriesTag(m.event_ticker) === selectedSeries;
-    const gameDate = extractGameDate(m.ticker);
+    const gameDate = extractGameDate(m.close_time);
     const matchesGameDate = selectedGameDate === 'all' || gameDate === selectedGameDate;
     return matchesOdds && matchesSeries && matchesGameDate;
   }) || [];
@@ -1003,7 +990,7 @@ export default function Dashboard() {
                 <span className="text-5xl font-bold text-white">{
                   // All markets matching game date (before odds filter)
                   marketsData?.markets.filter(m => {
-                    const gameDate = extractGameDate(m.ticker);
+                    const gameDate = extractGameDate(m.close_time);
                     return selectedGameDate === 'all' || gameDate === selectedGameDate;
                   }).length || 0
                 }</span>

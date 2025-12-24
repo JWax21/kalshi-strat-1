@@ -40,26 +40,12 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
-// Extract game date from ticker like "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26"
-function extractGameDate(ticker: string): string | null {
-  // Pattern: look for YYMONDD in the ticker (e.g., 25DEC26 = Dec 26, 2025)
-  const match = ticker.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i);
-  if (!match) return null;
-  
-  const year = parseInt(match[1]) + 2000; // 25 -> 2025
-  const monthStr = match[2].toUpperCase();
-  const day = parseInt(match[3]);
-  
-  const months: Record<string, string> = {
-    'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
-    'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
-    'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
-  };
-  
-  const month = months[monthStr];
-  if (!month) return null;
-  
-  return `${year}-${month}-${day.toString().padStart(2, '0')}`;
+// Game date = close_time - 14 days (markets close 14 days after game)
+function extractGameDate(closeTime: string): string | null {
+  if (!closeTime) return null;
+  const closeDate = new Date(closeTime);
+  closeDate.setDate(closeDate.getDate() - 14);
+  return closeDate.toISOString().split('T')[0];
 }
 
 interface DayResult {
@@ -419,7 +405,7 @@ export async function POST(request: Request) {
         if (assignedTickers.has(m.ticker)) return false;
         
         // Extract game date from ticker (e.g., "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26")
-        const gameDate = extractGameDate(m.ticker);
+        const gameDate = extractGameDate(m.close_time);
         if (!gameDate) return false;
         
         // Market must be for a game on this batch date
@@ -461,7 +447,7 @@ export async function POST(request: Request) {
     // Debug: Show market distribution by GAME date (not close date)
     const marketsByGameDate: Record<string, number> = {};
     for (const m of allMarkets) {
-      const gameDate = extractGameDate(m.ticker) || 'unknown';
+      const gameDate = extractGameDate(m.close_time) || 'unknown';
       marketsByGameDate[gameDate] = (marketsByGameDate[gameDate] || 0) + 1;
     }
 

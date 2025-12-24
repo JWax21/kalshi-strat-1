@@ -4,25 +4,12 @@ import { getMarkets } from '@/lib/kalshi';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Extract game date from ticker like "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26"
-function extractGameDate(ticker: string): string | null {
-  const match = ticker.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i);
-  if (!match) return null;
-  
-  const year = parseInt(match[1]) + 2000;
-  const monthStr = match[2].toUpperCase();
-  const day = parseInt(match[3]);
-  
-  const months: Record<string, string> = {
-    'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
-    'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
-    'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
-  };
-  
-  const month = months[monthStr];
-  if (!month) return null;
-  
-  return `${year}-${month}-${day.toString().padStart(2, '0')}`;
+// Game date = close_time - 14 days (markets close 14 days after game)
+function extractGameDate(closeTime: string): string | null {
+  if (!closeTime) return null;
+  const closeDate = new Date(closeTime);
+  closeDate.setDate(closeDate.getDate() - 14);
+  return closeDate.toISOString().split('T')[0];
 }
 
 export async function GET(request: Request) {
@@ -55,7 +42,7 @@ export async function GET(request: Request) {
     const tickersWithoutDate: string[] = [];
     
     for (const m of allMarkets) {
-      const gameDate = extractGameDate(m.ticker);
+      const gameDate = extractGameDate(m.close_time);
       if (gameDate) {
         if (!marketsByGameDate[gameDate]) {
           marketsByGameDate[gameDate] = { count: 0, sampleTickers: [] };
@@ -90,7 +77,7 @@ export async function GET(request: Request) {
         ticker: m.ticker,
         title: m.title,
         close_time: m.close_time,
-        extracted_game_date: extractGameDate(m.ticker)
+        extracted_game_date: extractGameDate(m.close_time)
       }))
     });
   } catch (error) {
