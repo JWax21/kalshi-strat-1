@@ -45,6 +45,22 @@ function getTodayET(): string {
   return `${year}-${month}-${day}`;
 }
 
+// Check if it's after 6am ET (when orders can be executed)
+function isAfter6amET(): boolean {
+  const now = new Date();
+  // Convert to ET (UTC - 5 hours for EST)
+  const etTime = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  const hour = etTime.getUTCHours();
+  return hour >= 6; // 6am ET or later
+}
+
+// Get current time in ET for logging
+function getCurrentTimeET(): string {
+  const now = new Date();
+  const etTime = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  return etTime.toISOString().replace('T', ' ').substring(0, 19) + ' ET';
+}
+
 // Helper to make authenticated Kalshi API calls
 async function kalshiFetch(endpoint: string, method: string = 'GET', body?: any): Promise<any> {
   const timestampMs = Date.now().toString();
@@ -297,7 +313,73 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     }
   }
 
-  // Step 5: Look for new qualifying markets
+  // Step 5: Execute PENDING orders for today's games (from prepare-week)
+  // Only execute after 6am ET
+  if (isAfter6amET()) {
+    const todayForPending = getTodayET();
+    const { data: pendingOrders, error: pendingError } = await supabase
+      .from('orders')
+      .select('*, order_batches!inner(batch_date)')
+      .eq('placement_status', 'pending')
+      .eq('order_batches.batch_date', todayForPending);
+    
+    if (pendingError) {
+      result.details.errors.push(`Failed to fetch pending orders: ${pendingError.message}`);
+    } else if (pendingOrders && pendingOrders.length > 0) {
+      console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending orders for today (${todayForPending})`);
+      
+      for (const order of pendingOrders) {
+        try {
+          // Place order on Kalshi
+          const payload: any = {
+            ticker: order.ticker,
+            action: 'buy',
+            side: order.side.toLowerCase(),
+            count: order.units || 1,
+            type: 'limit',
+            client_order_id: `pending_${order.id}_${Date.now()}`,
+          };
+
+          if (order.side === 'YES') {
+            payload.yes_price = order.price_cents;
+          } else {
+            payload.no_price = order.price_cents;
+          }
+
+          const orderResult = await placeOrder(payload);
+          const kalshiOrderId = orderResult.order?.order_id;
+          const status = orderResult.order?.status;
+          const isExecuted = status === 'executed';
+          const filledCount = (orderResult.order as any)?.filled_count || order.units || 1;
+
+          // Update order in DB
+          await supabase
+            .from('orders')
+            .update({
+              kalshi_order_id: kalshiOrderId,
+              placement_status: isExecuted ? 'confirmed' : 'placed',
+              placement_status_at: new Date().toISOString(),
+              executed_price_cents: isExecuted ? order.price_cents : null,
+              executed_cost_cents: isExecuted ? order.price_cents * filledCount : null,
+            })
+            .eq('id', order.id);
+
+          result.actions.new_orders_placed++;
+          result.details.new_placements.push(
+            `[PENDING] ${order.ticker}: ${order.units}u @ ${order.price_cents}¢ ${order.side} (${status})`
+          );
+          console.log(`Executed pending: ${order.ticker} - ${order.units}u @ ${order.price_cents}¢ ${order.side} (${status})`);
+          
+          await new Promise(r => setTimeout(r, 300)); // Rate limit
+        } catch (e) {
+          result.details.errors.push(`Failed to execute pending ${order.ticker}: ${e}`);
+          console.error(`Failed to execute pending ${order.ticker}:`, e);
+        }
+      }
+    }
+  }
+
+  // Step 6: Look for NEW qualifying markets (85%+ odds, today's games)
   const sportsSeries = [
     // Football
     'KXNFLGAME', 'KXNCAAFBGAME', 'KXNCAAFCSGAME', 'KXNCAAFGAME',
@@ -435,12 +517,19 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   result.actions.new_markets_found = eligibleMarkets.length;
   console.log(`Found ${eligibleMarkets.length} eligible markets (portfolio: ${totalPortfolio}¢, max per event: ${maxEventExposureCents}¢)`);
 
-  // Step 6: Deploy remaining capital to eligible markets (if any)
+  // Step 7: Deploy remaining capital to eligible markets (if any)
+  // IMPORTANT: Only execute orders after 6am ET on the game day
+  if (!isAfter6amET()) {
+    console.log(`Skipping execution - before 6am ET (current: ${getCurrentTimeET()}). Found ${eligibleMarkets.length} eligible markets.`);
+    result.details.errors.push(`Before 6am ET - execution paused. ${eligibleMarkets.length} markets ready.`);
+    return result;
+  }
+  
   if (eligibleMarkets.length > 0 && availableBalance > 0) {
     // Sort by open interest descending (prefer more liquid markets)
     eligibleMarkets.sort((a, b) => b.open_interest - a.open_interest);
     
-    console.log(`Deploying to ${eligibleMarkets.length} markets, max ${maxEventExposureCents}¢ per event, ${availableBalance}¢ available`);
+    console.log(`[${getCurrentTimeET()}] Deploying to ${eligibleMarkets.length} markets, max ${maxEventExposureCents}¢ per event, ${availableBalance}¢ available`);
 
     // Find or create today's batch
     let batchId: string;
