@@ -364,8 +364,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const days = body.days || 7;
-    const minOdds = body.minOdds || 0.55;  // Lower to include more markets (55% favorite or higher)
-    const maxOdds = body.maxOdds || 0.95;  // Avoid markets with no volume (100% one side)
+    const minOdds = body.minOdds || 0.85;  // ONLY bet on 85%+ odds - NEVER below this
+    const maxOdds = body.maxOdds || 0.995;  // Avoid markets with no volume (100% one side)
     const minOpenInterest = body.minOpenInterest || 50;  // Lower to include more markets
     const maxCloseWindowDays = body.maxCloseWindowDays || 15;
 
