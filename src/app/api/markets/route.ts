@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const minOdds = parseFloat(searchParams.get('minOdds') || '0.85');
     const maxOdds = parseFloat(searchParams.get('maxOdds') || '0.995');
-    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '504'); // 21 days
+    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '720'); // 30 days
     const category = searchParams.get('category') || 'sports';
     
     // Step 1: Fetch ALL open markets from Kalshi (no filters except max_close_ts)
