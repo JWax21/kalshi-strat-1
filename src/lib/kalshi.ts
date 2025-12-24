@@ -13,6 +13,7 @@ export interface KalshiMarket {
   open_time: string;
   close_time: string;
   expiration_time: string;
+  expected_expiration_time?: string; // Actual expected settlement time
   status: string;
   yes_bid: number;
   yes_bid_dollars: string;
