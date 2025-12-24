@@ -436,6 +436,7 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     cost_cents: analysis.recommended_cost_cents,
     potential_payout_cents: analysis.recommended_units * 100,
     open_interest: analysis.open_interest,
+    volume_24h: analysis.volume_24h,
     market_close_time: analysis.market.close_time,
     placement_status: 'pending',
     placement_status_at: new Date().toISOString(),

@@ -96,6 +96,7 @@ interface LiveOrder {
   cost_cents: number;
   potential_payout_cents: number;
   open_interest: number;
+  volume_24h: number | null;
   market_close_time: string;
   placement_status: 'pending' | 'placed' | 'confirmed';
   placement_status_at: string | null;
@@ -1485,6 +1486,8 @@ export default function Dashboard() {
                                   <th className="text-right p-3 text-slate-400 font-medium">Est. Cost</th>
                                   <th className="text-right p-3 text-slate-400 font-medium">Actual Cost</th>
                                   <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Open Int</th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">Vol 24h</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Placement</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Result</th>
                                   <th className="text-center p-3 text-slate-400 font-medium">Settlement</th>
@@ -1495,7 +1498,6 @@ export default function Dashboard() {
                                   <tr key={order.id} className="border-t border-slate-800/50">
                                     <td className="p-3 text-white max-w-xs">
                                       <div className="truncate">{order.title}</div>
-                                      <div className="text-xs text-slate-500">OI: {order.open_interest.toLocaleString()}</div>
                                     </td>
                                     <td className="p-3 text-center">
                                       <span className={`px-2 py-0.5 rounded text-xs font-bold ${order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
@@ -1514,6 +1516,8 @@ export default function Dashboard() {
                                       )}
                                     </td>
                                     <td className="p-3 text-right text-emerald-400 font-mono">${(order.potential_payout_cents / 100).toFixed(2)}</td>
+                                    <td className="p-3 text-right text-slate-400 font-mono text-sm">{order.open_interest?.toLocaleString() || '-'}</td>
+                                    <td className="p-3 text-right text-slate-400 font-mono text-sm">{order.volume_24h?.toLocaleString() || '-'}</td>
                                     <td className="p-3 text-center">
                                       <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
                                         order.placement_status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400' :
