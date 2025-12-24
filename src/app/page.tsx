@@ -1881,10 +1881,10 @@ export default function Dashboard() {
               <div className="text-sm font-medium text-white mb-3">Investment Rules</div>
               <ul className="text-sm text-slate-400 space-y-1">
                 <li>— <span className="text-emerald-400">Only bet on games happening TODAY</span></li>
-                <li>— Target favorites with <span className="text-white">85-99.5% odds</span></li>
-                <li>— Minimum open interest of 50 contracts</li>
-                <li>— Maximum <span className="text-white">3% of portfolio</span> per market</li>
-                <li>— <span className="text-amber-400">Never bet on same event twice</span> (no double-dipping)</li>
+                <li>— <span className="text-red-400 font-bold">ONLY 85-99.5% odds</span> (NEVER below 85%)</li>
+                <li>— Execute orders starting at <span className="text-white">6am ET</span> on game day</li>
+                <li>— Maximum <span className="text-white">3% of portfolio per EVENT</span></li>
+                <li>— Can add to event if under 3% (tracks remaining capacity)</li>
                 <li>— Monitor every <span className="text-white">5 minutes</span> for new opportunities</li>
                 <li>— Improve resting order price by 1¢ after 1 hour</li>
                 <li>— Cancel unfilled orders after 4 hours</li>
