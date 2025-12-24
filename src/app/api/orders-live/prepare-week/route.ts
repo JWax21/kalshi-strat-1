@@ -40,10 +40,34 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
-// Game date = close_time - 15 days (markets close ~15 days after game)
-function extractGameDate(closeTime: string): string | null {
-  if (!closeTime) return null;
-  const closeDate = new Date(closeTime);
+// Extract game date from event_ticker (most reliable for sports)
+// Format: KXNBAGAME-25DEC25CLENYK = Dec 25, 2025
+function extractGameDateFromTicker(eventTicker: string): string | null {
+  const tickerMatch = eventTicker.match(/-(\d{2})([A-Z]{3})(\d{2})/);
+  if (tickerMatch) {
+    const [, dayStr, monthStr, yearStr] = tickerMatch;
+    const monthMap: Record<string, string> = {
+      'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+      'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+      'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+    };
+    const month = monthMap[monthStr];
+    if (month) {
+      return `20${yearStr}-${month}-${dayStr}`;
+    }
+  }
+  return null;
+}
+
+// Fallback: Game date = close_time - 15 days (markets close ~15 days after game)
+function extractGameDate(market: { event_ticker: string; close_time: string }): string | null {
+  // Try ticker first
+  const fromTicker = extractGameDateFromTicker(market.event_ticker);
+  if (fromTicker) return fromTicker;
+  
+  // Fallback to close_time - 15 days
+  if (!market.close_time) return null;
+  const closeDate = new Date(market.close_time);
   closeDate.setDate(closeDate.getDate() - 15);
   return closeDate.toISOString().split('T')[0];
 }
@@ -441,7 +465,7 @@ export async function POST(request: Request) {
         if (assignedTickers.has(m.ticker)) return false;
         
         // Extract game date from ticker (e.g., "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26")
-        const gameDate = extractGameDate(m.close_time);
+        const gameDate = extractGameDate(m);
         if (!gameDate) return false;
         
         // Market must be for a game on this batch date
@@ -483,7 +507,7 @@ export async function POST(request: Request) {
     // Debug: Show market distribution by GAME date (not close date)
     const marketsByGameDate: Record<string, number> = {};
     for (const m of allMarkets) {
-      const gameDate = extractGameDate(m.close_time) || 'unknown';
+      const gameDate = extractGameDate(m) || 'unknown';
       marketsByGameDate[gameDate] = (marketsByGameDate[gameDate] || 0) + 1;
     }
 

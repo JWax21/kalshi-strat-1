@@ -749,19 +749,28 @@ export default function Dashboard() {
     return 'Other';
   };
 
-  // Extract game date from expected_expiration_time in Eastern Time
+  // Extract game date from event_ticker (most reliable for sports)
+  // Format: KXNBAGAME-25DEC25CLENYK = Dec 25, 2025
   const extractGameDate = (market: Market): string | null => {
-    // Prefer expected_expiration_time as it's the market settlement time
-    // For sports, this is typically set to hours after the game ends (for settlement processing)
+    // Try to parse from event_ticker first (e.g., KXNBAGAME-25DEC25CLENYK)
+    const tickerMatch = market.event_ticker.match(/-(\d{2})([A-Z]{3})(\d{2})/);
+    if (tickerMatch) {
+      const [, dayStr, monthStr, yearStr] = tickerMatch;
+      const monthMap: Record<string, string> = {
+        'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+        'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+        'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+      };
+      const month = monthMap[monthStr];
+      if (month) {
+        return `20${yearStr}-${month}-${dayStr}`;
+      }
+    }
+    
+    // Fallback: use expected_expiration_time - 15 hours
     if (market.expected_expiration_time) {
       const expirationTime = new Date(market.expected_expiration_time);
-      // Subtract 15 hours total to account for:
-      // - 5 hours UTC to ET offset
-      // - 3-4 hours game duration  
-      // - 6-8 hours settlement buffer (expiration is often set to morning after game)
-      // This ensures late-night games (8pm ET ending at midnight) are correctly dated
       const gameDate = new Date(expirationTime.getTime() - 15 * 60 * 60 * 1000);
-      // Get date in YYYY-MM-DD format using UTC methods
       const year = gameDate.getUTCFullYear();
       const month = String(gameDate.getUTCMonth() + 1).padStart(2, '0');
       const day = String(gameDate.getUTCDate()).padStart(2, '0');

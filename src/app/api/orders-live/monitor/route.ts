@@ -18,7 +18,25 @@ const MIN_OPEN_INTEREST = 50; // Minimum open interest
 
 // Extract game date from expected_expiration_time (in ET)
 // Subtract 15 hours to account for: ET offset (5h) + game duration (4h) + settlement buffer (6h)
+// Extract game date from event_ticker (most reliable for sports)
+// Format: KXNBAGAME-25DEC25CLENYK = Dec 25, 2025
 function extractGameDate(market: KalshiMarket): string | null {
+  // Try to parse from event_ticker first
+  const tickerMatch = market.event_ticker.match(/-(\d{2})([A-Z]{3})(\d{2})/);
+  if (tickerMatch) {
+    const [, dayStr, monthStr, yearStr] = tickerMatch;
+    const monthMap: Record<string, string> = {
+      'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+      'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+      'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+    };
+    const month = monthMap[monthStr];
+    if (month) {
+      return `20${yearStr}-${month}-${dayStr}`;
+    }
+  }
+  
+  // Fallback: use expected_expiration_time - 15 hours
   if (market.expected_expiration_time) {
     const expirationTime = new Date(market.expected_expiration_time);
     const gameDate = new Date(expirationTime.getTime() - 15 * 60 * 60 * 1000);
