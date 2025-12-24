@@ -754,6 +754,9 @@ export default function Dashboard() {
     // Prefer expected_expiration_time as it's the actual game time
     if (market.expected_expiration_time) {
       const gameEnd = new Date(market.expected_expiration_time);
+      // Subtract 6 hours to convert from UTC to approximate US game date
+      // (Games ending at 4am UTC are actually late-night games on the previous US day)
+      gameEnd.setHours(gameEnd.getHours() - 6);
       return gameEnd.toISOString().split('T')[0];
     }
     // Fallback: close_time - 15 days
