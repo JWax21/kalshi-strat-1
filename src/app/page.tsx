@@ -222,6 +222,7 @@ export default function Dashboard() {
   const [displayOddsMin, setDisplayOddsMin] = useState(85);
   const [displayOddsMax, setDisplayOddsMax] = useState(99);
   const [selectedSeries, setSelectedSeries] = useState<string>('All');
+  const [selectedGameDate, setSelectedGameDate] = useState<string>('all');
   const [selectedMarkets, setSelectedMarkets] = useState<Map<string, SelectedMarket>>(new Map());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
@@ -747,6 +748,45 @@ export default function Dashboard() {
     return 'Other';
   };
 
+  // Extract game date from ticker like "KXNBAGAME-25DEC26CHAORL-ORL" -> "2025-12-26"
+  const extractGameDate = (ticker: string): string | null => {
+    const match = ticker.match(/(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})/i);
+    if (!match) return null;
+    
+    const year = parseInt(match[1]) + 2000;
+    const monthStr = match[2].toUpperCase();
+    const day = parseInt(match[3]);
+    
+    const months: Record<string, string> = {
+      'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+      'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+      'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+    };
+    
+    const month = months[monthStr];
+    if (!month) return null;
+    
+    return `${year}-${month}-${day.toString().padStart(2, '0')}`;
+  };
+
+  // Generate next 7 days for game date filter
+  const getNext7Days = (): { label: string; value: string }[] => {
+    const days: { label: string; value: string }[] = [];
+    const today = new Date();
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+      const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      days.push({ label, value: dateStr });
+    }
+    
+    return days;
+  };
+
+  const gameDateOptions = getNext7Days();
+
   // Extract both teams from title like "Fisher at UMass Lowell Winner?"
   const parseTeamsFromTitle = (title: string): { team1: string; team2: string } | null => {
     // Try different patterns: "at", "vs", "@"
@@ -788,12 +828,14 @@ export default function Dashboard() {
   )).sort()];
 
 
-  // Client-side filtered markets based on display odds slider and series filter
+  // Client-side filtered markets based on display odds slider, series filter, and game date
   const filteredMarkets = marketsData?.markets.filter(m => {
     const odds = m.favorite_odds * 100;
     const matchesOdds = odds >= displayOddsMin && odds <= displayOddsMax;
     const matchesSeries = selectedSeries === 'All' || getSeriesTag(m.event_ticker) === selectedSeries;
-    return matchesOdds && matchesSeries;
+    const gameDate = extractGameDate(m.ticker);
+    const matchesGameDate = selectedGameDate === 'all' || gameDate === selectedGameDate;
+    return matchesOdds && matchesSeries && matchesGameDate;
   }) || [];
 
   // Open interest summary counts
@@ -925,10 +967,40 @@ export default function Dashboard() {
 
         {activeTab === 'markets' && marketsData && (
           <div className="py-6 border-b border-slate-800">
+            {/* Game Date Toggle Bar */}
+            <div className="bg-slate-900 rounded-xl p-4 mb-4">
+              <div className="text-sm text-slate-400 mb-3">Filter by Game Date</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setSelectedGameDate('all')}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                    selectedGameDate === 'all'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                  }`}
+                >
+                  All
+                </button>
+                {gameDateOptions.map(day => (
+                  <button
+                    key={day.value}
+                    onClick={() => setSelectedGameDate(day.value)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                      selectedGameDate === day.value
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    }`}
+                  >
+                    {day.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Total Count Card */}
             <div className="bg-slate-900 rounded-xl p-6 mb-4">
               <span className="text-5xl font-bold text-white">{filteredMarkets.length}</span>
-              <p className="text-slate-400 mt-1">High-Odds Markets</p>
+              <p className="text-slate-400 mt-1">High-Odds Markets {selectedGameDate !== 'all' && `(${gameDateOptions.find(d => d.value === selectedGameDate)?.label})`}</p>
             </div>
 
             {/* Odds Range Slider with Tick Marks */}
