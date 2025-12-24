@@ -40,11 +40,11 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
-// Game date = close_time - 14 days (markets close 14 days after game)
+// Game date = close_time - 15 days (markets close ~15 days after game)
 function extractGameDate(closeTime: string): string | null {
   if (!closeTime) return null;
   const closeDate = new Date(closeTime);
-  closeDate.setDate(closeDate.getDate() - 14);
+  closeDate.setDate(closeDate.getDate() - 15);
   return closeDate.toISOString().split('T')[0];
 }
 

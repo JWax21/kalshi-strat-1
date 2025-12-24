@@ -748,11 +748,11 @@ export default function Dashboard() {
     return 'Other';
   };
 
-  // Game date = close_time - 14 days (markets close 14 days after game)
+  // Game date = close_time - 15 days (markets close ~15 days after game)
   const extractGameDate = (closeTime: string): string | null => {
     if (!closeTime) return null;
     const closeDate = new Date(closeTime);
-    closeDate.setDate(closeDate.getDate() - 14);
+    closeDate.setDate(closeDate.getDate() - 15);
     return closeDate.toISOString().split('T')[0];
   };
 
@@ -987,18 +987,14 @@ export default function Dashboard() {
             {/* Market Count Card */}
             <div className="bg-slate-900 rounded-xl p-6 mb-4">
               <div className="flex items-baseline gap-3">
-                <span className="text-5xl font-bold text-white">{
-                  // All markets matching game date (before odds filter)
-                  marketsData?.markets.filter(m => {
-                    const gameDate = extractGameDate(m.close_time);
-                    return selectedGameDate === 'all' || gameDate === selectedGameDate;
-                  }).length || 0
-                }</span>
-                <span className="text-2xl text-slate-500">|</span>
+                <span className="text-5xl font-bold text-slate-400">{marketsData?.total_markets || 0}</span>
+                <span className="text-2xl text-slate-600">→</span>
+                <span className="text-5xl font-bold text-white">{marketsData?.high_odds_count || 0}</span>
+                <span className="text-2xl text-slate-600">→</span>
                 <span className="text-5xl font-bold text-emerald-400">{filteredMarkets.length}</span>
               </div>
               <p className="text-slate-400 mt-1">
-                All Markets | High-Odds Markets {selectedGameDate !== 'all' && `(${gameDateOptions.find(d => d.value === selectedGameDate)?.label})`}
+                Total Markets → High-Odds ({displayOddsMin}%+) → Filtered {selectedGameDate !== 'all' && `(${gameDateOptions.find(d => d.value === selectedGameDate)?.label})`}
               </p>
             </div>
 
