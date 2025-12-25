@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/orders-live/monitor",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/snapshot",
