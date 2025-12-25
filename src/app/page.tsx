@@ -1322,9 +1322,9 @@ export default function Dashboard() {
         {activeTab === 'orders' && (
           <div className="py-8">
             {/* Capital Deployment Table */}
-            <div className="bg-slate-900 rounded-xl p-4 mb-6">
+            <div className="bg-slate-900 rounded-xl p-4 mb-6 overflow-x-auto">
               <h3 className="text-sm text-slate-400 mb-3">Capital Deployment</h3>
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[400px]">
                 <thead>
                   <tr className="text-slate-400 border-b border-slate-800">
                     <th className="text-left py-2 font-medium">Day</th>
@@ -1685,16 +1685,19 @@ export default function Dashboard() {
                     const lostOrders = batch.orders.filter(o => o.result_status === 'lost');
                     const pendingOrders = batch.orders.filter(o => o.result_status === 'undecided');
                     const batchCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
-                    const batchPayout = wonOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
-                    const batchLoss = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
-                    const batchPnl = batchPayout - batchLoss;
+                    const batchPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
+                    // P&L = Payout received - Cost paid for wins - Cost paid for losses - Fees
+                    const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
+                    const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
+                    const batchFees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+                    const batchPnl = batchPayout - wonCost - lostCost - batchFees;
 
                     return (
                       <div key={batch.id} className="bg-slate-900 rounded-xl overflow-hidden">
                         {/* Batch Header */}
                         <div
                           onClick={() => setExpandedBatch(expandedBatch === batch.id ? null : batch.id)}
-                          className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/50"
+                          className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/50 overflow-x-auto"
                         >
                           <div className="flex items-center gap-4">
                             <div>
@@ -1846,8 +1849,8 @@ export default function Dashboard() {
 
                         {/* Expanded Orders */}
                         {expandedBatch === batch.id && (
-                          <div className="border-t border-slate-800">
-                            <table className="w-full text-sm">
+                          <div className="border-t border-slate-800 overflow-x-auto">
+                            <table className="w-full text-sm min-w-[800px]">
                               <thead className="bg-slate-800/50">
                                 <tr>
                                   <th className="text-left p-3 text-slate-400 font-medium">Market</th>
@@ -1958,11 +1961,11 @@ export default function Dashboard() {
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Cash | Positions | Portfolio</div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-lg font-bold text-white">${((recordsData.current_balance_cents || 0) / 100).toFixed(2)}</span>
+                    <span className="text-lg font-bold text-white">${((recordsData.current_balance_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="text-slate-600">|</span>
-                    <span className="text-lg font-bold text-amber-400">${((recordsData.current_positions_cents || 0) / 100).toFixed(2)}</span>
+                    <span className="text-lg font-bold text-amber-400">${((recordsData.current_positions_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span className="text-slate-600">|</span>
-                    <span className="text-lg font-bold text-white">${(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toFixed(2)}</span>
+                    <span className="text-lg font-bold text-white">${(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
@@ -2019,8 +2022,8 @@ export default function Dashboard() {
             {recordsLoading && !recordsData ? (
               <div className="text-center py-12 text-slate-400">Loading records...</div>
             ) : recordsData?.records && recordsData.records.length > 0 ? (
-              <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                <table className="w-full">
+              <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+                <table className="w-full min-w-[700px]">
                   <thead className="bg-slate-800/50">
                     <tr>
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
