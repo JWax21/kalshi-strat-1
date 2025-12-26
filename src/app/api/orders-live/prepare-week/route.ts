@@ -189,32 +189,28 @@ async function prepareForDay(
       };
     });
 
-    // Group by event to handle both-sides logic
-    const eventGroups = new Map<string, typeof enrichedMarkets>();
+    // Group by event - ONLY KEEP ONE MARKET PER EVENT (highest odds favorite)
+    const eventGroups = new Map<string, typeof enrichedMarkets[0]>();
     for (const em of enrichedMarkets) {
       const eventTicker = em.market.event_ticker;
-      if (!eventGroups.has(eventTicker)) {
-        eventGroups.set(eventTicker, []);
+      const existing = eventGroups.get(eventTicker);
+      
+      // Only keep the market with the highest favorite odds
+      // This prevents betting on both sides of the same game
+      if (!existing || em.price_cents > existing.price_cents) {
+        eventGroups.set(eventTicker, em);
       }
-      eventGroups.get(eventTicker)!.push(em);
     }
+    
+    // Convert back to array - now we have only ONE market per event
+    const deduplicatedMarkets = Array.from(eventGroups.values());
+    console.log(`Deduplicated: ${enrichedMarkets.length} markets -> ${deduplicatedMarkets.length} unique events`);
 
-    // Calculate position limits
+    // Calculate position limits (3% of portfolio per event)
     const maxPositionPercent = 0.03;
     const baseMaxPositionCents = Math.floor(availableCapitalCents * maxPositionPercent);
-    
-    const positionLimits = new Map<string, number>();
-    for (const [, eventMarkets] of eventGroups) {
-      const limitPerSide = eventMarkets.length > 1 
-        ? Math.floor(baseMaxPositionCents / 2)
-        : baseMaxPositionCents;
-      
-      for (const em of eventMarkets) {
-        positionLimits.set(em.market.ticker, limitPerSide);
-      }
-    }
 
-    // Allocate capital
+    // Allocate capital - ONE position per event
     const allocatedMarkets: Array<{
       market: KalshiMarket;
       side: 'YES' | 'NO';
@@ -225,9 +221,8 @@ async function prepareForDay(
       volume_24h: number;
     }> = [];
 
-    for (const em of enrichedMarkets) {
-      const maxPositionCents = positionLimits.get(em.market.ticker) || baseMaxPositionCents;
-      const maxUnits = Math.floor(maxPositionCents / em.price_cents);
+    for (const em of deduplicatedMarkets) {
+      const maxUnits = Math.floor(baseMaxPositionCents / em.price_cents);
       const units = maxUnits; // Dynamic calculation based on 3% of portfolio
       
       if (units > 0) {

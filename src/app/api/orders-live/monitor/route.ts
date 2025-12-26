@@ -519,19 +519,39 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const totalPortfolio = availableBalance + totalExposure;
   const maxEventExposureCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
   
-  // Filter markets: exclude ones we've already bet on (same ticker) but ALLOW same event if under 3%
+  // Filter markets: exclude ones we've already bet on (same ticker or same event)
   // Also exclude markets where the event is already at 3%
-  const eligibleMarkets = filteredMarkets.filter(m => {
+  const preFilteredMarkets = filteredMarkets.filter(m => {
     // Never bet on the same ticker twice
     if (existingTickers.has(m.ticker)) return false;
     
-    // Check if this event has remaining capacity
-    const currentExposure = eventExposureCents.get(m.event_ticker) || 0;
-    const remainingCapacity = maxEventExposureCents - currentExposure;
+    // Never bet on an event we already have exposure to
+    if (eventExposureCents.has(m.event_ticker)) return false;
     
-    // Need at least some capacity to bet
-    return remainingCapacity > 0;
+    return true;
   });
+  
+  // DEDUPLICATE: Only keep ONE market per event (the one with highest favorite odds)
+  // This prevents betting on both NE-wins and NYJ-wins markets
+  const eventBestMarket = new Map<string, KalshiMarket>();
+  for (const m of preFilteredMarkets) {
+    const existing = eventBestMarket.get(m.event_ticker);
+    if (!existing) {
+      eventBestMarket.set(m.event_ticker, m);
+    } else {
+      // Keep the one with higher favorite odds
+      const existingOdds = getMarketOdds(existing);
+      const newOdds = getMarketOdds(m);
+      const existingFavorite = Math.max(existingOdds.yes, existingOdds.no);
+      const newFavorite = Math.max(newOdds.yes, newOdds.no);
+      if (newFavorite > existingFavorite) {
+        eventBestMarket.set(m.event_ticker, m);
+      }
+    }
+  }
+  
+  const eligibleMarkets = Array.from(eventBestMarket.values());
+  console.log(`Deduplicated: ${preFilteredMarkets.length} markets -> ${eligibleMarkets.length} unique events`);
   
   result.actions.new_markets_found = eligibleMarkets.length;
   console.log(`Found ${eligibleMarkets.length} eligible markets (portfolio: ${totalPortfolio}¢, max per event: ${maxEventExposureCents}¢)`);
