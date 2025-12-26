@@ -47,7 +47,7 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'records' | 'orders' | 'markets';
+type Tab = 'records' | 'orders' | 'markets' | 'positions';
 
 interface DailyRecord {
   date: string;
@@ -209,6 +209,7 @@ export default function Dashboard() {
 
   // All other state hooks (must come before any conditional returns)
   const [activeTab, setActiveTab] = useState<Tab>('records');
+  const [positionsSubTab, setPositionsSubTab] = useState<'active' | 'historical'>('active');
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
@@ -967,6 +968,7 @@ export default function Dashboard() {
         <div className="flex items-center justify-between mt-6">
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-purple-500 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
+            <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Positions</button>
             <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Events</button>
           </div>
@@ -1316,6 +1318,175 @@ export default function Dashboard() {
                 </div>
               )}
         </div>
+        )}
+
+        {/* Positions Tab */}
+        {activeTab === 'positions' && (
+          <div className="py-8">
+            {/* Sub-tabs: Active / Historical */}
+            <div className="flex gap-2 mb-6">
+              <button
+                onClick={() => setPositionsSubTab('active')}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  positionsSubTab === 'active'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setPositionsSubTab('historical')}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  positionsSubTab === 'historical'
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                }`}
+              >
+                Historical
+              </button>
+            </div>
+
+            {/* Positions Table */}
+            <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+              <table className="w-full text-sm min-w-[900px]">
+                <thead className="bg-slate-800/50">
+                  <tr>
+                    <th className="text-left p-3 text-slate-400 font-medium">Market</th>
+                    <th className="text-center p-3 text-slate-400 font-medium">Side</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Units</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Avg Price</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Current Price</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Cost</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
+                    <th className="text-center p-3 text-slate-400 font-medium">Result</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Get all orders from all batches
+                    const allOrders = orderBatches.flatMap(b => b.orders || []);
+                    
+                    // Filter by sub-tab
+                    const filteredOrders = positionsSubTab === 'active'
+                      ? allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided')
+                      : allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+                    
+                    // Helper to extract team abbreviation from title
+                    const getTeamAbbrev = (title: string, side: string): string => {
+                      // Format: "Denver at Kansas City Winner?" or "Cleveland vs New York Winner?"
+                      const match = title.match(/^(.+?)\s+(?:at|vs)\s+(.+?)\s+Winner\?$/i);
+                      if (match) {
+                        const [, team1, team2] = match;
+                        // YES typically means first team (away/first listed), NO means second team (home/second listed)
+                        const selectedTeam = side === 'YES' ? team1 : team2;
+                        // Get first 3 chars as abbreviation, or first word if short
+                        const words = selectedTeam.trim().split(' ');
+                        if (words.length === 1 && words[0].length <= 4) {
+                          return words[0].toUpperCase();
+                        }
+                        // Use first 3 letters of first significant word
+                        return words[0].substring(0, 3).toUpperCase();
+                      }
+                      return side;
+                    };
+                    
+                    if (filteredOrders.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={8} className="p-8 text-center text-slate-500">
+                            No {positionsSubTab} positions
+                          </td>
+                        </tr>
+                      );
+                    }
+                    
+                    return filteredOrders.map(order => {
+                      const avgPrice = order.executed_cost_cents 
+                        ? Math.round(order.executed_cost_cents / order.units) 
+                        : order.price_cents;
+                      const currentPrice = order.price_cents; // TODO: fetch live price
+                      
+                      return (
+                        <tr key={order.id} className="border-t border-slate-800 hover:bg-slate-800/30">
+                          <td className="p-3 text-white">{order.title}</td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${
+                              order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                            }`}>
+                              {getTeamAbbrev(order.title, order.side)}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right text-white font-mono">{order.units.toLocaleString()}</td>
+                          <td className="p-3 text-right text-slate-400 font-mono">{avgPrice}¢</td>
+                          <td className="p-3 text-right text-white font-mono">{currentPrice}¢</td>
+                          <td className="p-3 text-right text-amber-400 font-mono">
+                            ${((order.executed_cost_cents || order.cost_cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right text-emerald-400 font-mono">
+                            ${(order.potential_payout_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              order.result_status === 'won' ? 'bg-emerald-500/20 text-emerald-400' :
+                              order.result_status === 'lost' ? 'bg-red-500/20 text-red-400' :
+                              'bg-slate-700 text-slate-400'
+                            }`}>
+                              {order.result_status.toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Summary Stats */}
+            {(() => {
+              const allOrders = orderBatches.flatMap(b => b.orders || []);
+              const activeOrders = allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
+              const historicalOrders = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+              
+              const activeCost = activeOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const activePayout = activeOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
+              
+              const wonOrders = historicalOrders.filter(o => o.result_status === 'won');
+              const lostOrders = historicalOrders.filter(o => o.result_status === 'lost');
+              const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
+              const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const historicalPnl = wonPayout - wonCost - lostCost;
+              
+              return (
+                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Active Positions</div>
+                    <div className="text-2xl font-bold text-white">{activeOrders.length}</div>
+                  </div>
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Active Exposure</div>
+                    <div className="text-2xl font-bold text-amber-400">${(activeCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                  </div>
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Historical W/L</div>
+                    <div className="text-2xl font-bold">
+                      <span className="text-emerald-400">{wonOrders.length}W</span>
+                      <span className="text-slate-500 mx-1">/</span>
+                      <span className="text-red-400">{lostOrders.length}L</span>
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Historical P&L</div>
+                    <div className={`text-2xl font-bold ${historicalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {historicalPnl >= 0 ? '+' : ''}${(historicalPnl / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         )}
 
         {/* Orders Tab (Live Trading) */}
