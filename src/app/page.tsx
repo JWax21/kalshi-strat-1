@@ -2345,7 +2345,7 @@ export default function Dashboard() {
                             <span className="text-slate-500 mx-1">|</span>
                             <span className="text-white">${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}</span>
                           </td>
-                          <td className="p-4 text-center text-sm">
+                          <td className="p-4 text-center">
                             <span className="text-emerald-400">{record.wins}</span>
                             <span className="text-slate-500">/</span>
                             <span className="text-red-400">{record.losses}</span>
@@ -2354,7 +2354,7 @@ export default function Dashboard() {
                           </td>
                           <td className="p-4 text-right font-mono text-emerald-400">
                             {deployedCents > 0 ? (
-                              <><span className="text-emerald-600">{numEvents}</span> | ${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
+                              <><span className="text-emerald-600">{numEvents}</span>|${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
                             ) : '—'}
                           </td>
                           <td className="p-4 text-right font-mono text-slate-300">
