@@ -1324,12 +1324,13 @@ export default function Dashboard() {
             {/* Capital Deployment Table */}
             <div className="bg-slate-900 rounded-xl p-4 mb-6 overflow-x-auto">
               <h3 className="text-sm text-slate-400 mb-3">Capital Deployment</h3>
-              <table className="w-full text-sm min-w-[400px]">
+              <table className="w-full text-sm min-w-[500px]">
                 <thead>
                   <tr className="text-slate-400 border-b border-slate-800">
                     <th className="text-left py-2 font-medium">Day</th>
                     <th className="text-right py-2 font-medium">Projected</th>
                     <th className="text-right py-2 font-medium">Actual</th>
+                    <th className="text-right py-2 font-medium">%</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1337,7 +1338,7 @@ export default function Dashboard() {
                     // Generate 7 days centered on today
                     const today = new Date();
                     today.setHours(12, 0, 0, 0);
-                    const todayStr = today.toISOString().split('T')[0];
+                    const portfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
                     
                     const days: { date: string; label: string; isToday: boolean }[] = [];
                     for (let i = -3; i <= 3; i++) {
@@ -1364,6 +1365,9 @@ export default function Dashboard() {
                       const projectedCents = orders
                         .reduce((sum, o) => sum + (o.cost_cents || 0), 0);
                       
+                      // Percentage of portfolio
+                      const pctOfPortfolio = (actualCents / portfolioValue) * 100;
+                      
                       return (
                         <tr 
                           key={day.date} 
@@ -1373,10 +1377,13 @@ export default function Dashboard() {
                             {day.label} {day.isToday && <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2">TODAY</span>}
                           </td>
                           <td className="py-2 text-right text-slate-400 font-mono">
-                            ${(projectedCents / 100).toFixed(2)}
+                            ${(projectedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-2 text-right text-emerald-400 font-mono">
-                            ${(actualCents / 100).toFixed(2)}
+                            ${(actualCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="py-2 text-right text-amber-400 font-mono">
+                            {pctOfPortfolio.toFixed(1)}%
                           </td>
                         </tr>
                       );
@@ -1387,6 +1394,7 @@ export default function Dashboard() {
                   {(() => {
                     const today = new Date();
                     today.setHours(12, 0, 0, 0);
+                    const portfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
                     let totalProjected = 0;
                     let totalActual = 0;
                     
@@ -1403,11 +1411,14 @@ export default function Dashboard() {
                       totalProjected += orders.reduce((sum, o) => sum + (o.cost_cents || 0), 0);
                     }
                     
+                    const totalPct = (totalActual / portfolioValue) * 100;
+                    
                     return (
                       <tr className="border-t-2 border-slate-700">
                         <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
-                        <td className="py-2 text-right text-white font-mono font-bold">${(totalProjected / 100).toFixed(2)}</td>
-                        <td className="py-2 text-right text-emerald-400 font-mono font-bold">${(totalActual / 100).toFixed(2)}</td>
+                        <td className="py-2 text-right text-white font-mono font-bold">${(totalProjected / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="py-2 text-right text-emerald-400 font-mono font-bold">${(totalActual / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="py-2 text-right text-amber-400 font-mono font-bold">{totalPct.toFixed(1)}%</td>
                       </tr>
                     );
                   })()}
@@ -1471,20 +1482,31 @@ export default function Dashboard() {
               const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
               const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
               const undecidedExposure = undecidedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const estimatedWon = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+              // Won profit = payout - cost paid (profit before fees)
+              const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+              const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const wonProfit = wonPayout - wonCost;
               const estimatedLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const estimatedPnl = estimatedWon - estimatedLost;
+              const estimatedPnl = wonProfit - estimatedLost;
               
               // Calculate settlement breakdown
               const settledOrders = [...wonOrders, ...lostOrders];
               const pendingSettlement = settledOrders.filter(o => o.settlement_status === 'pending');
               const successOrders = settledOrders.filter(o => o.settlement_status === 'success');
               const closedOrders = settledOrders.filter(o => o.settlement_status === 'closed');
-              const projectedPayout = pendingSettlement.filter(o => o.result_status === 'won').reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
-              const actualPayout = successOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+              // Pending profit = projected payout - cost
+              const pendingWonOrders = pendingSettlement.filter(o => o.result_status === 'won');
+              const pendingPayout = pendingWonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+              const pendingCost = pendingWonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const projectedProfit = pendingPayout - pendingCost;
+              // Success profit = actual payout - cost
+              const successWonOrders = successOrders.filter(o => o.result_status === 'won');
+              const actualPayout = successWonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+              const successCost = successWonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const successProfit = actualPayout - successCost;
               const actualLost = closedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
               const feesPaid = settledOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-              const netProfit = actualPayout - actualLost - feesPaid;
+              const netProfit = successProfit - actualLost - feesPaid;
 
               if (allOrders.length === 0) return null;
 
@@ -1551,7 +1573,7 @@ export default function Dashboard() {
                           <tr>
                             <td className="py-1.5 text-slate-400">Won</td>
                             <td className="py-1.5 text-right text-emerald-400">{wonOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-emerald-400">${(estimatedWon / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right font-mono text-emerald-400">+${(wonProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Lost</td>
@@ -1584,12 +1606,12 @@ export default function Dashboard() {
                           <tr>
                             <td className="py-1.5 text-slate-400">Pending</td>
                             <td className="py-1.5 text-right text-white">{pendingSettlement.length}</td>
-                            <td className="py-1.5 text-right font-mono text-white">${(projectedPayout / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right font-mono text-white">+${(projectedProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Success</td>
                             <td className="py-1.5 text-right text-emerald-400">{successOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-emerald-400">+${(actualPayout / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right font-mono text-emerald-400">+${(successProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Closed</td>
