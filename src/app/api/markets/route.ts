@@ -28,8 +28,6 @@ const SPORTS_SERIES = [
   'KXCHESSMATCH',
   // Motorsport
   'KXF1RACE', 'KXNASCARRACE', 'KXINDYCARRACE',
-  // Soccer (EFL only)
-  'KXEFLCHAMPIONSHIPGAME',
   // Esports
   'KXDOTA2GAME'
 ];

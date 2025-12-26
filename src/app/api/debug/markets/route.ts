@@ -30,8 +30,6 @@ export async function GET(request: Request) {
       'KXCHESSMATCH',
       // Motorsport
       'KXF1RACE', 'KXNASCARRACE', 'KXINDYCARRACE',
-      // Soccer (EFL only)
-      'KXEFLCHAMPIONSHIPGAME',
       // Esports
       'KXDOTA2GAME'
     ];
