@@ -82,8 +82,9 @@ export async function GET(request: Request) {
         const marketData = await kalshiFetch(`/markets/${ticker}`);
         if (marketData?.market) {
           // Get current price based on the order's side
-          const yesPrice = Math.round((marketData.market.yes_bid + marketData.market.yes_ask) / 2 * 100) || 0;
-          const noPrice = Math.round((marketData.market.no_bid + marketData.market.no_ask) / 2 * 100) || 0;
+          // Kalshi returns prices in cents already (0-100)
+          const yesPrice = Math.round((marketData.market.yes_bid + marketData.market.yes_ask) / 2) || 0;
+          const noPrice = Math.round((marketData.market.no_bid + marketData.market.no_ask) / 2) || 0;
           currentPrices[ticker] = { yes: yesPrice, no: noPrice } as any;
         }
       } catch (e) {
