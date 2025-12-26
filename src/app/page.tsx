@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Container from "@/app/_components/container";
+import { IoInformationCircleSharp } from "react-icons/io5";
 
 interface Market {
   ticker: string;
@@ -213,6 +214,7 @@ export default function Dashboard() {
   // All other state hooks (must come before any conditional returns)
   const [activeTab, setActiveTab] = useState<Tab>('records');
   const [positionsSubTab, setPositionsSubTab] = useState<'active' | 'historical'>('active');
+  const [historicalDays, setHistoricalDays] = useState<7 | 30 | 90>(7);
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
@@ -1351,11 +1353,42 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* Historical Timespan Filters */}
+            {positionsSubTab === 'historical' && (
+              <div className="flex gap-2 mb-4">
+                <span className="text-sm text-slate-500 py-1">Timespan:</span>
+                {([7, 30, 90] as const).map(days => (
+                  <button
+                    key={days}
+                    onClick={() => setHistoricalDays(days)}
+                    className={`px-3 py-1 text-sm rounded-lg transition-colors ${
+                      historicalDays === days
+                        ? 'bg-slate-700 text-white'
+                        : 'bg-slate-800/50 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {days}D
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Summary Stats - Above Table */}
             {(() => {
               const allOrders = orderBatches.flatMap(b => b.orders || []);
               const activeOrders = allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
-              const historicalOrders = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+              
+              // Filter historical orders by timespan
+              const cutoffDate = new Date();
+              cutoffDate.setDate(cutoffDate.getDate() - historicalDays);
+              const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+              
+              const historicalOrders = allOrders.filter(o => {
+                if (o.result_status !== 'won' && o.result_status !== 'lost') return false;
+                // Find the batch date for this order
+                const batch = orderBatches.find(b => b.orders?.some(bo => bo.id === o.id));
+                return batch ? batch.batch_date >= cutoffDateStr : false;
+              });
               
               const activeCost = activeOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
               const activePayout = activeOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
@@ -1364,8 +1397,10 @@ export default function Dashboard() {
               const lostOrders = historicalOrders.filter(o => o.result_status === 'lost');
               const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
               const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const wonProfit = wonPayout - wonCost;
               const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const historicalPnl = wonPayout - wonCost - lostCost;
+              const totalFees = historicalOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const historicalPnl = wonPayout - wonCost - lostCost - totalFees;
               
               // Show different cards based on which sub-tab is active
               if (positionsSubTab === 'active') {
@@ -1391,9 +1426,9 @@ export default function Dashboard() {
                 );
               } else {
                 return (
-                  <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Historical W/L</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">W/L ({historicalDays}D)</div>
                       <div className="text-2xl font-bold">
                         <span className="text-emerald-400">{wonOrders.length}W</span>
                         <span className="text-slate-500 mx-1">/</span>
@@ -1401,15 +1436,19 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Won Payout</div>
-                      <div className="text-2xl font-bold text-emerald-400">${(wonPayout / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">Won Profit</div>
+                      <div className="text-2xl font-bold text-emerald-400">+${(wonProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                       <div className="text-xs text-slate-500 uppercase mb-1">Lost Cost</div>
                       <div className="text-2xl font-bold text-red-400">-${(lostCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Historical P&L</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">Total Fees</div>
+                      <div className="text-2xl font-bold text-amber-400">-${(totalFees / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Net P&L</div>
                       <div className={`text-2xl font-bold ${historicalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {historicalPnl >= 0 ? '+' : ''}${(historicalPnl / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
@@ -1439,10 +1478,19 @@ export default function Dashboard() {
                     // Get all orders from all batches
                     const allOrders = orderBatches.flatMap(b => b.orders || []);
                     
-                    // Filter by sub-tab
+                    // Calculate cutoff date for historical filter
+                    const cutoffDate = new Date();
+                    cutoffDate.setDate(cutoffDate.getDate() - historicalDays);
+                    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+                    
+                    // Filter by sub-tab (with timespan for historical)
                     const filteredOrders = positionsSubTab === 'active'
                       ? allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided')
-                      : allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+                      : allOrders.filter(o => {
+                          if (o.result_status !== 'won' && o.result_status !== 'lost') return false;
+                          const batch = orderBatches.find(b => b.orders?.some(bo => bo.id === o.id));
+                          return batch ? batch.batch_date >= cutoffDateStr : false;
+                        });
                     
                     // Helper to extract team abbreviation from title
                     const getTeamAbbrev = (title: string, side: string): string => {
@@ -2247,10 +2295,8 @@ export default function Dashboard() {
                   onClick={() => setShowRulesModal(true)}
                   className="bg-slate-900 rounded-xl p-4 border border-slate-800 hover:border-slate-600 transition-colors flex items-center gap-2"
                 >
-                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
                   <span className="text-sm text-slate-300">Rules</span>
+                  <IoInformationCircleSharp className="w-5 h-5 text-blue-400" />
                 </button>
               </div>
             )}
@@ -2263,21 +2309,15 @@ export default function Dashboard() {
                 <table className="w-full min-w-[700px]">
                   <thead className="bg-slate-800/50">
                     <tr>
-                      <th rowSpan={2} className="text-left p-4 text-slate-400 font-medium text-sm align-bottom">Date</th>
-                      <th colSpan={2} className="text-center px-4 pt-3 pb-1 text-slate-300 font-medium text-sm border-b border-slate-700">Start</th>
-                      <th colSpan={2} className="text-center px-4 pt-3 pb-1 text-slate-300 font-medium text-sm border-b border-slate-700">End</th>
-                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-bottom">W/L/P</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">Deployed</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">Avg ¢</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">P&L</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">ROIC</th>
-                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-bottom">Source</th>
-                    </tr>
-                    <tr>
-                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Cash</th>
-                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Portfolio</th>
-                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Cash</th>
-                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Portfolio</th>
+                      <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Avg ¢</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2295,17 +2335,15 @@ export default function Dashboard() {
                           <td className="p-4 text-white font-medium">
                             {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                           </td>
-                          <td className="p-4 text-right font-mono text-slate-300">
-                            ${Math.round(record.start_cash_cents / 100).toLocaleString('en-US')}
+                          <td className="p-4 text-right font-mono">
+                            <span className="text-slate-300">${Math.round(record.start_cash_cents / 100).toLocaleString('en-US')}</span>
+                            <span className="text-slate-500 mx-1">|</span>
+                            <span className="text-slate-400">${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}</span>
                           </td>
-                          <td className="p-4 text-right font-mono text-slate-400">
-                            ${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}
-                          </td>
-                          <td className="p-4 text-right font-mono text-slate-300">
-                            ${Math.round(record.end_cash_cents / 100).toLocaleString('en-US')}
-                          </td>
-                          <td className="p-4 text-right font-mono text-white">
-                            ${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}
+                          <td className="p-4 text-right font-mono">
+                            <span className="text-slate-300">${Math.round(record.end_cash_cents / 100).toLocaleString('en-US')}</span>
+                            <span className="text-slate-500 mx-1">|</span>
+                            <span className="text-white">${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}</span>
                           </td>
                           <td className="p-4 text-center text-sm">
                             <span className="text-emerald-400">{record.wins}</span>
