@@ -237,6 +237,7 @@ export default function Dashboard() {
   const [orderBatches, setOrderBatches] = useState<OrderBatch[]>([]);
   const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
   const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
+  const [dailySnapshots, setDailySnapshots] = useState<Record<string, number>>({});
   const [preparingOrders, setPreparingOrders] = useState(false);
   
   // Records state
@@ -511,6 +512,17 @@ export default function Dashboard() {
       if (data.success) {
         setOrderBatches(data.batches || []);
         setLiveOrdersStats(data.stats || null);
+      }
+      
+      // Also fetch daily snapshots for portfolio values
+      const snapshotRes = await fetch('/api/snapshot?days=90');
+      const snapshotData = await snapshotRes.json();
+      if (snapshotData.success && snapshotData.snapshots) {
+        const snapshotMap: Record<string, number> = {};
+        snapshotData.snapshots.forEach((s: any) => {
+          snapshotMap[s.snapshot_date] = s.portfolio_value_cents;
+        });
+        setDailySnapshots(snapshotMap);
       }
     } catch (err) {
       console.error('Error fetching live orders:', err);
@@ -1618,11 +1630,8 @@ export default function Dashboard() {
                       const projectedEvents = new Set(orders.map(o => o.event_ticker)).size;
                       const actualEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
                       
-                      // Get portfolio value for that day from records, or use current for today/future
-                      const dayRecord = recordsData?.records?.find(r => r.date === day.date);
-                      const portfolioValueForDay = dayRecord 
-                        ? (dayRecord.start_cash_cents + dayRecord.start_portfolio_cents)
-                        : currentPortfolioValue;
+                      // Get portfolio value for that day from daily snapshots
+                      const portfolioValueForDay = dailySnapshots[day.date] || currentPortfolioValue;
                       
                       // Percentage of portfolio (no decimals)
                       const pctOfPortfolio = portfolioValueForDay > 0 
