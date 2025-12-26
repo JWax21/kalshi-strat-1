@@ -90,6 +90,7 @@ interface OrderBatch {
 interface LiveOrder {
   id: string;
   ticker: string;
+  event_ticker: string;
   title: string;
   side: 'YES' | 'NO';
   price_cents: number;
@@ -2177,23 +2178,23 @@ export default function Dashboard() {
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Cash | Positions | Portfolio</div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-lg font-bold text-white">${((recordsData.current_balance_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-lg text-white">${Math.round((recordsData.current_balance_cents || 0) / 100).toLocaleString('en-US')}</span>
                     <span className="text-slate-600">|</span>
-                    <span className="text-lg font-bold text-amber-400">${((recordsData.current_positions_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-lg text-amber-400">${Math.round((recordsData.current_positions_cents || 0) / 100).toLocaleString('en-US')}</span>
                     <span className="text-slate-600">|</span>
-                    <span className="text-lg font-bold text-white">${(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="text-lg text-white">${Math.round(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toLocaleString('en-US')}</span>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Total W-L</div>
-                  <div className="text-lg font-bold text-white">
+                  <div className="text-lg text-white">
                     {recordsData.totals?.wins || 0}W / {recordsData.totals?.losses || 0}L
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Total P&L</div>
-                  <div className={`text-lg font-bold ${(recordsData.totals?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {(recordsData.totals?.pnl_cents || 0) >= 0 ? '+' : ''}${((recordsData.totals?.pnl_cents || 0) / 100).toFixed(2)}
+                  <div className={`text-lg ${(recordsData.totals?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {(recordsData.totals?.pnl_cents || 0) >= 0 ? '+' : ''}${Math.round((recordsData.totals?.pnl_cents || 0) / 100).toLocaleString('en-US')}
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
@@ -2248,6 +2249,7 @@ export default function Dashboard() {
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">End Cash</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">End Portfolio</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Avg ¢</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
