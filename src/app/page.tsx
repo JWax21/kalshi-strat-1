@@ -240,6 +240,7 @@ export default function Dashboard() {
   // Records state
   const [recordsData, setRecordsData] = useState<RecordsData | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
+  const [showRulesModal, setShowRulesModal] = useState(false);
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
@@ -1350,6 +1351,74 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* Summary Stats - Above Table */}
+            {(() => {
+              const allOrders = orderBatches.flatMap(b => b.orders || []);
+              const activeOrders = allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
+              const historicalOrders = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+              
+              const activeCost = activeOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const activePayout = activeOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
+              
+              const wonOrders = historicalOrders.filter(o => o.result_status === 'won');
+              const lostOrders = historicalOrders.filter(o => o.result_status === 'lost');
+              const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
+              const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const historicalPnl = wonPayout - wonCost - lostCost;
+              
+              // Show different cards based on which sub-tab is active
+              if (positionsSubTab === 'active') {
+                return (
+                  <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Active Positions</div>
+                      <div className="text-2xl font-bold text-white">{activeOrders.length}</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Active Exposure</div>
+                      <div className="text-2xl font-bold text-amber-400">${(activeCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Potential Payout</div>
+                      <div className="text-2xl font-bold text-emerald-400">${(activePayout / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Potential Profit</div>
+                      <div className="text-2xl font-bold text-emerald-400">+${((activePayout - activeCost) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                  </div>
+                );
+              } else {
+                return (
+                  <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Historical W/L</div>
+                      <div className="text-2xl font-bold">
+                        <span className="text-emerald-400">{wonOrders.length}W</span>
+                        <span className="text-slate-500 mx-1">/</span>
+                        <span className="text-red-400">{lostOrders.length}L</span>
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Won Payout</div>
+                      <div className="text-2xl font-bold text-emerald-400">${(wonPayout / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Lost Cost</div>
+                      <div className="text-2xl font-bold text-red-400">-${(lostCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Historical P&L</div>
+                      <div className={`text-2xl font-bold ${historicalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {historicalPnl >= 0 ? '+' : ''}${(historicalPnl / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+            })()}
+
             {/* Positions Table */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
               <table className="w-full text-sm min-w-[900px]">
@@ -1445,50 +1514,6 @@ export default function Dashboard() {
                 </tbody>
               </table>
             </div>
-
-            {/* Summary Stats */}
-            {(() => {
-              const allOrders = orderBatches.flatMap(b => b.orders || []);
-              const activeOrders = allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
-              const historicalOrders = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
-              
-              const activeCost = activeOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const activePayout = activeOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
-              
-              const wonOrders = historicalOrders.filter(o => o.result_status === 'won');
-              const lostOrders = historicalOrders.filter(o => o.result_status === 'lost');
-              const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
-              const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const historicalPnl = wonPayout - wonCost - lostCost;
-              
-              return (
-                <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Active Positions</div>
-                    <div className="text-2xl font-bold text-white">{activeOrders.length}</div>
-                  </div>
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Active Exposure</div>
-                    <div className="text-2xl font-bold text-amber-400">${(activeCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                  </div>
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Historical W/L</div>
-                    <div className="text-2xl font-bold">
-                      <span className="text-emerald-400">{wonOrders.length}W</span>
-                      <span className="text-slate-500 mx-1">/</span>
-                      <span className="text-red-400">{lostOrders.length}L</span>
-                    </div>
-                  </div>
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Historical P&L</div>
-                    <div className={`text-2xl font-bold ${historicalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                      {historicalPnl >= 0 ? '+' : ''}${(historicalPnl / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         )}
 
@@ -2189,7 +2214,7 @@ export default function Dashboard() {
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Total W-L</div>
-                  <div className="text-lg text-white">
+                  <div className="text-lg font-bold text-white">
                     {recordsData.totals?.wins || 0}W / {recordsData.totals?.losses || 0}L
                   </div>
                 </div>
@@ -2218,24 +2243,17 @@ export default function Dashboard() {
                     );
                   })()}
                 </div>
+                <button
+                  onClick={() => setShowRulesModal(true)}
+                  className="bg-slate-900 rounded-xl p-4 border border-slate-800 hover:border-slate-600 transition-colors flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-slate-300">Rules</span>
+                </button>
               </div>
             )}
-
-            {/* Investment Rules */}
-            <div className="bg-slate-900 rounded-xl p-4 mb-6 border border-slate-800">
-              <div className="text-sm font-medium text-white mb-3">Investment Rules</div>
-              <ul className="text-sm text-slate-400 space-y-1">
-                <li>— <span className="text-emerald-400">Only bet on games happening TODAY</span></li>
-                <li>— <span className="text-red-400 font-bold">ONLY 85-99.5% odds</span> (NEVER below 85%)</li>
-                <li>— Execute orders starting at <span className="text-white">6am ET</span> on game day</li>
-                <li>— Maximum <span className="text-white">3% of portfolio per EVENT</span></li>
-                <li>— Can add to event if under 3% (tracks remaining capacity)</li>
-                <li>— Monitor every <span className="text-white">5 minutes</span> for new opportunities</li>
-                <li>— Improve resting order price by 1¢ after 1 hour</li>
-                <li>— Cancel unfilled orders after 4 hours</li>
-                <li>— Blacklist illiquid markets that fail to fill</li>
-              </ul>
-            </div>
 
             {/* Records Table */}
             {recordsLoading && !recordsData ? (
@@ -2245,59 +2263,79 @@ export default function Dashboard() {
                 <table className="w-full min-w-[700px]">
                   <thead className="bg-slate-800/50">
                     <tr>
-                      <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Cash</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Start Portfolio</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Cash</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">End Portfolio</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Avg ¢</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
+                      <th rowSpan={2} className="text-left p-4 text-slate-400 font-medium text-sm align-bottom">Date</th>
+                      <th colSpan={2} className="text-center px-4 pt-3 pb-1 text-slate-300 font-medium text-sm border-b border-slate-700">Start</th>
+                      <th colSpan={2} className="text-center px-4 pt-3 pb-1 text-slate-300 font-medium text-sm border-b border-slate-700">End</th>
+                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-bottom">W/L/P</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">Deployed</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">Avg ¢</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">P&L</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-bottom">ROIC</th>
+                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-bottom">Source</th>
+                    </tr>
+                    <tr>
+                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Cash</th>
+                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Portfolio</th>
+                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Cash</th>
+                      <th className="text-right px-4 py-2 text-slate-500 font-normal text-xs">Portfolio</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {recordsData.records.map((record, idx) => (
-                      <tr key={record.date} className={`border-t border-slate-800 ${idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/50'}`}>
-                        <td className="p-4 text-white font-medium">
-                          {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                        </td>
-                        <td className="p-4 text-right font-mono text-slate-300">
-                          ${Math.round(record.start_cash_cents / 100).toLocaleString('en-US')}
-                        </td>
-                        <td className="p-4 text-right font-mono text-slate-400">
-                          ${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}
-                        </td>
-                        <td className="p-4 text-right font-mono text-slate-300">
-                          ${Math.round(record.end_cash_cents / 100).toLocaleString('en-US')}
-                        </td>
-                        <td className="p-4 text-right font-mono text-white">
-                          ${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}
-                        </td>
-                        <td className="p-4 text-center text-sm">
-                          <span className="text-emerald-400">{record.wins}</span>
-                          <span className="text-slate-500">/</span>
-                          <span className="text-red-400">{record.losses}</span>
-                          <span className="text-slate-500">/</span>
-                          <span className="text-amber-400">{record.pending}</span>
-                        </td>
-                        <td className="p-4 text-right font-mono text-slate-300">
-                          {record.avg_price_cents > 0 ? `${record.avg_price_cents}¢` : '—'}
-                        </td>
-                        <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
-                        </td>
-                        <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
-                        </td>
-                        <td className="p-4 text-center">
-                          <span className={`px-2 py-0.5 rounded text-xs ${record.source === 'snapshot' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-400'}`}>
-                            {record.source === 'snapshot' ? '📸' : '~'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {recordsData.records
+                      .filter(record => record.date <= new Date().toISOString().split('T')[0])
+                      .map((record, idx) => {
+                      // Get deployed amount for this day from orderBatches
+                      const batch = orderBatches.find(b => b.batch_date === record.date);
+                      const confirmedOrders = batch?.orders?.filter(o => o.placement_status === 'confirmed') || [];
+                      const deployedCents = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+                      const numEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
+                      
+                      return (
+                        <tr key={record.date} className={`border-t border-slate-800 ${idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/50'}`}>
+                          <td className="p-4 text-white font-medium">
+                            {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className="p-4 text-right font-mono text-slate-300">
+                            ${Math.round(record.start_cash_cents / 100).toLocaleString('en-US')}
+                          </td>
+                          <td className="p-4 text-right font-mono text-slate-400">
+                            ${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}
+                          </td>
+                          <td className="p-4 text-right font-mono text-slate-300">
+                            ${Math.round(record.end_cash_cents / 100).toLocaleString('en-US')}
+                          </td>
+                          <td className="p-4 text-right font-mono text-white">
+                            ${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}
+                          </td>
+                          <td className="p-4 text-center text-sm">
+                            <span className="text-emerald-400">{record.wins}</span>
+                            <span className="text-slate-500">/</span>
+                            <span className="text-red-400">{record.losses}</span>
+                            <span className="text-slate-500">/</span>
+                            <span className="text-amber-400">{record.pending}</span>
+                          </td>
+                          <td className="p-4 text-right font-mono text-emerald-400">
+                            {deployedCents > 0 ? (
+                              <><span className="text-emerald-600">{numEvents}</span> | ${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
+                            ) : '—'}
+                          </td>
+                          <td className="p-4 text-right font-mono text-slate-300">
+                            {record.avg_price_cents > 0 ? `${record.avg_price_cents}¢` : '—'}
+                          </td>
+                          <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
+                          </td>
+                          <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
+                          </td>
+                          <td className="p-4 text-center">
+                            <span className={`px-2 py-0.5 rounded text-xs ${record.source === 'snapshot' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-400'}`}>
+                              {record.source === 'snapshot' ? '📸' : '~'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2566,6 +2604,39 @@ export default function Dashboard() {
             >
               Clear All
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rules Modal */}
+      {showRulesModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setShowRulesModal(false)}>
+          <div 
+            className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-white">Investment Rules</h3>
+              <button 
+                onClick={() => setShowRulesModal(false)}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <ul className="text-sm text-slate-400 space-y-2">
+              <li>— <span className="text-emerald-400">Only bet on games happening TODAY</span></li>
+              <li>— <span className="text-red-400 font-bold">ONLY 85-99.5% odds</span> (NEVER below 85%)</li>
+              <li>— Execute orders starting at <span className="text-white">6am ET</span> on game day</li>
+              <li>— Maximum <span className="text-white">3% of portfolio per EVENT</span></li>
+              <li>— Can add to event if under 3% (tracks remaining capacity)</li>
+              <li>— Monitor every <span className="text-white">5 minutes</span> for new opportunities</li>
+              <li>— Improve resting order price by 1¢ after 1 hour</li>
+              <li>— Cancel unfilled orders after 4 hours</li>
+              <li>— Blacklist illiquid markets that fail to fill</li>
+            </ul>
           </div>
         </div>
       )}
