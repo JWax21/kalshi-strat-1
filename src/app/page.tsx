@@ -677,7 +677,7 @@ export default function Dashboard() {
 
   // Fetch data when tab changes
   useEffect(() => {
-    if (activeTab === 'orders') {
+    if (activeTab === 'orders' || activeTab === 'positions') {
       fetchLiveOrders();
     } else if (activeTab === 'records') {
       fetchRecords();
