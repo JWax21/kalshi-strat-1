@@ -500,7 +500,7 @@ export default function Dashboard() {
   const fetchLiveOrders = async () => {
     setLiveOrdersLoading(true);
     try {
-      const res = await fetch('/api/orders-live?days=30');
+      const res = await fetch('/api/orders-live?days=90');
       const data = await res.json();
       if (data.success) {
         setOrderBatches(data.batches || []);
@@ -1509,7 +1509,7 @@ export default function Dashboard() {
                     // Generate 7 days centered on today
                     const today = new Date();
                     today.setHours(12, 0, 0, 0);
-                    const portfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
+                    const currentPortfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
                     
                     const days: { date: string; label: string; isToday: boolean }[] = [];
                     for (let i = -3; i <= 3; i++) {
@@ -1527,17 +1527,31 @@ export default function Dashboard() {
                       const batch = orderBatches.find(b => b.batch_date === day.date);
                       const orders = batch?.orders || [];
                       
+                      // Confirmed orders
+                      const confirmedOrders = orders.filter(o => o.placement_status === 'confirmed');
+                      
                       // Actual = confirmed orders cost
-                      const actualCents = orders
-                        .filter(o => o.placement_status === 'confirmed')
+                      const actualCents = confirmedOrders
                         .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
                       
                       // Projected = all orders cost (pending + placed + confirmed)
                       const projectedCents = orders
                         .reduce((sum, o) => sum + (o.cost_cents || 0), 0);
                       
-                      // Percentage of portfolio
-                      const pctOfPortfolio = (actualCents / portfolioValue) * 100;
+                      // Count unique events (by event_ticker)
+                      const projectedEvents = new Set(orders.map(o => o.event_ticker)).size;
+                      const actualEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
+                      
+                      // Get portfolio value for that day from records, or use current for today/future
+                      const dayRecord = recordsData?.records?.find(r => r.date === day.date);
+                      const portfolioValueForDay = dayRecord 
+                        ? (dayRecord.start_cash_cents + dayRecord.start_portfolio_cents)
+                        : currentPortfolioValue;
+                      
+                      // Percentage of portfolio (no decimals)
+                      const pctOfPortfolio = portfolioValueForDay > 0 
+                        ? Math.round((actualCents / portfolioValueForDay) * 100)
+                        : 0;
                       
                       return (
                         <tr 
@@ -1548,13 +1562,13 @@ export default function Dashboard() {
                             {day.label} {day.isToday && <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2">TODAY</span>}
                           </td>
                           <td className="py-2 text-right text-slate-400 font-mono">
-                            ${(projectedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className="text-slate-500">{projectedEvents}</span> | ${(projectedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-2 text-right text-emerald-400 font-mono">
-                            ${(actualCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className="text-emerald-600">{actualEvents}</span> | ${(actualCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-2 text-right text-amber-400 font-mono">
-                            {pctOfPortfolio.toFixed(1)}%
+                            {pctOfPortfolio}%
                           </td>
                         </tr>
                       );
@@ -1565,9 +1579,11 @@ export default function Dashboard() {
                   {(() => {
                     const today = new Date();
                     today.setHours(12, 0, 0, 0);
-                    const portfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
+                    const currentPortfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
                     let totalProjected = 0;
                     let totalActual = 0;
+                    const allProjectedEvents = new Set<string>();
+                    const allActualEvents = new Set<string>();
                     
                     for (let i = -3; i <= 3; i++) {
                       const d = new Date(today);
@@ -1575,21 +1591,28 @@ export default function Dashboard() {
                       const dateStr = d.toISOString().split('T')[0];
                       const batch = orderBatches.find(b => b.batch_date === dateStr);
                       const orders = batch?.orders || [];
+                      const confirmedOrders = orders.filter(o => o.placement_status === 'confirmed');
                       
-                      totalActual += orders
-                        .filter(o => o.placement_status === 'confirmed')
+                      totalActual += confirmedOrders
                         .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
                       totalProjected += orders.reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+                      
+                      // Track unique events
+                      orders.forEach(o => allProjectedEvents.add(o.event_ticker));
+                      confirmedOrders.forEach(o => allActualEvents.add(o.event_ticker));
                     }
                     
-                    const totalPct = (totalActual / portfolioValue) * 100;
+                    // Use current portfolio value for total percentage
+                    const totalPct = currentPortfolioValue > 0 
+                      ? Math.round((totalActual / currentPortfolioValue) * 100)
+                      : 0;
                     
                     return (
                       <tr className="border-t-2 border-slate-700">
                         <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
-                        <td className="py-2 text-right text-white font-mono font-bold">${(totalProjected / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="py-2 text-right text-emerald-400 font-mono font-bold">${(totalActual / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="py-2 text-right text-amber-400 font-mono font-bold">{totalPct.toFixed(1)}%</td>
+                        <td className="py-2 text-right text-white font-mono font-bold"><span className="text-slate-400">{allProjectedEvents.size}</span> | ${(totalProjected / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="py-2 text-right text-emerald-400 font-mono font-bold"><span className="text-emerald-600">{allActualEvents.size}</span> | ${(totalActual / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td className="py-2 text-right text-amber-400 font-mono font-bold">{totalPct}%</td>
                       </tr>
                     );
                   })()}
