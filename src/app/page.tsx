@@ -973,10 +973,10 @@ export default function Dashboard() {
         {/* Main Tabs */}
         <div className="flex items-center justify-between mt-6">
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-            <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-purple-500 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
-            <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Positions</button>
-            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-blue-500 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
-            <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:text-white'}`}>Events</button>
+            <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
+            <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
+            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
+            <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Events</button>
           </div>
           
           {activeTab === 'markets' && filteredMarkets.length > 0 && (
@@ -2296,7 +2296,7 @@ export default function Dashboard() {
                   className="bg-slate-900 rounded-xl p-4 border border-slate-800 hover:border-slate-600 transition-colors flex items-center gap-2"
                 >
                   <span className="text-sm text-slate-300">Rules</span>
-                  <IoInformationCircleSharp className="w-5 h-5 text-blue-400" />
+                  <IoInformationCircleSharp className="w-5 h-5 text-slate-400" />
                 </button>
               </div>
             )}
