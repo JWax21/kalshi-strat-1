@@ -189,10 +189,39 @@ async function prepareForDay(
       };
     });
 
+    // Check database for existing exposure on each event_ticker
+    const { data: existingOrders } = await supabase
+      .from('orders')
+      .select('event_ticker, cost_cents, executed_cost_cents, placement_status')
+      .in('placement_status', ['pending', 'placed', 'confirmed']);
+    
+    // Calculate existing exposure per event from database
+    const existingEventExposure = new Map<string, number>();
+    for (const order of existingOrders || []) {
+      const cost = order.executed_cost_cents || order.cost_cents || 0;
+      const existing = existingEventExposure.get(order.event_ticker) || 0;
+      existingEventExposure.set(order.event_ticker, existing + cost);
+    }
+    console.log(`Found existing exposure on ${existingEventExposure.size} events in database`);
+
+    // Calculate position limits (3% of portfolio per event)
+    const maxPositionPercent = 0.03;
+    const baseMaxPositionCents = Math.floor(availableCapitalCents * maxPositionPercent);
+
     // Group by event - ONLY KEEP ONE MARKET PER EVENT (highest odds favorite)
+    // Also exclude events that are already at 3% exposure
     const eventGroups = new Map<string, typeof enrichedMarkets[0]>();
     for (const em of enrichedMarkets) {
       const eventTicker = em.market.event_ticker;
+      
+      // Check if this event already has full exposure in database
+      const existingExposure = existingEventExposure.get(eventTicker) || 0;
+      const remainingCapacity = baseMaxPositionCents - existingExposure;
+      if (remainingCapacity <= 0) {
+        console.log(`Skipping ${eventTicker} - already at max exposure (${existingExposure}¢)`);
+        continue;
+      }
+      
       const existing = eventGroups.get(eventTicker);
       
       // Only keep the market with the highest favorite odds
@@ -204,13 +233,9 @@ async function prepareForDay(
     
     // Convert back to array - now we have only ONE market per event
     const deduplicatedMarkets = Array.from(eventGroups.values());
-    console.log(`Deduplicated: ${enrichedMarkets.length} markets -> ${deduplicatedMarkets.length} unique events`);
+    console.log(`Deduplicated: ${enrichedMarkets.length} markets -> ${deduplicatedMarkets.length} unique events (after exposure check)`);
 
-    // Calculate position limits (3% of portfolio per event)
-    const maxPositionPercent = 0.03;
-    const baseMaxPositionCents = Math.floor(availableCapitalCents * maxPositionPercent);
-
-    // Allocate capital - ONE position per event
+    // Allocate capital - ONE position per event, respecting remaining capacity
     const allocatedMarkets: Array<{
       market: KalshiMarket;
       side: 'YES' | 'NO';
@@ -222,8 +247,13 @@ async function prepareForDay(
     }> = [];
 
     for (const em of deduplicatedMarkets) {
-      const maxUnits = Math.floor(baseMaxPositionCents / em.price_cents);
-      const units = maxUnits; // Dynamic calculation based on 3% of portfolio
+      // Calculate remaining capacity for this event (3% - existing exposure)
+      const existingExposure = existingEventExposure.get(em.market.event_ticker) || 0;
+      const remainingCapacity = baseMaxPositionCents - existingExposure;
+      
+      // Calculate units based on remaining capacity
+      const maxUnits = Math.floor(remainingCapacity / em.price_cents);
+      const units = maxUnits;
       
       if (units > 0) {
         allocatedMarkets.push({

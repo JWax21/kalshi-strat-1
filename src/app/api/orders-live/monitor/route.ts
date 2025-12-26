@@ -519,16 +519,18 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const totalPortfolio = availableBalance + totalExposure;
   const maxEventExposureCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
   
-  // Filter markets: exclude ones we've already bet on (same ticker or same event)
-  // Also exclude markets where the event is already at 3%
+  // Filter markets: exclude ones we've already bet on (same ticker)
+  // Check event exposure to ensure we don't exceed 3% per event
   const preFilteredMarkets = filteredMarkets.filter(m => {
     // Never bet on the same ticker twice
     if (existingTickers.has(m.ticker)) return false;
     
-    // Never bet on an event we already have exposure to
-    if (eventExposureCents.has(m.event_ticker)) return false;
+    // Check remaining capacity for this event (allow partial fills up to 3%)
+    const currentExposure = eventExposureCents.get(m.event_ticker) || 0;
+    const remainingCapacity = maxEventExposureCents - currentExposure;
     
-    return true;
+    // Need at least some capacity to bet
+    return remainingCapacity > 0;
   });
   
   // DEDUPLICATE: Only keep ONE market per event (the one with highest favorite odds)
