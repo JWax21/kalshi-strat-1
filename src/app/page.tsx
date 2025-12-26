@@ -60,6 +60,7 @@ interface DailyRecord {
   pending: number;
   pnl_cents: number;
   roic_percent: number;
+  avg_price_cents: number;
   source: 'snapshot' | 'calculated';
 }
 
@@ -111,6 +112,7 @@ interface LiveOrder {
   actual_payout_cents: number | null;
   fee_cents: number | null;
   kalshi_order_id: string | null;
+  current_price_cents: number | null;
 }
 
 interface LiveOrdersStats {
@@ -1402,11 +1404,11 @@ export default function Dashboard() {
                       );
                     }
                     
-                    return filteredOrders.map(order => {
+                      return filteredOrders.map(order => {
                       const avgPrice = order.executed_cost_cents 
                         ? Math.round(order.executed_cost_cents / order.units) 
                         : order.price_cents;
-                      const currentPrice = order.price_cents; // TODO: fetch live price
+                      const currentPrice = order.current_price_cents || order.price_cents;
                       
                       return (
                         <tr key={order.id} className="border-t border-slate-800 hover:bg-slate-800/30">
@@ -2262,16 +2264,16 @@ export default function Dashboard() {
                           {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                         </td>
                         <td className="p-4 text-right font-mono text-slate-300">
-                          ${(record.start_cash_cents / 100).toFixed(2)}
+                          ${Math.round(record.start_cash_cents / 100).toLocaleString('en-US')}
                         </td>
                         <td className="p-4 text-right font-mono text-slate-400">
-                          ${(record.start_portfolio_cents / 100).toFixed(2)}
+                          ${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}
                         </td>
                         <td className="p-4 text-right font-mono text-slate-300">
-                          ${(record.end_cash_cents / 100).toFixed(2)}
+                          ${Math.round(record.end_cash_cents / 100).toLocaleString('en-US')}
                         </td>
-                        <td className="p-4 text-right font-mono text-white font-medium">
-                          ${(record.end_portfolio_cents / 100).toFixed(2)}
+                        <td className="p-4 text-right font-mono text-white">
+                          ${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}
                         </td>
                         <td className="p-4 text-center text-sm">
                           <span className="text-emerald-400">{record.wins}</span>
@@ -2280,8 +2282,11 @@ export default function Dashboard() {
                           <span className="text-slate-500">/</span>
                           <span className="text-amber-400">{record.pending}</span>
                         </td>
-                        <td className={`p-4 text-right font-mono font-bold ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                          {record.pnl_cents >= 0 ? '+' : ''}${(record.pnl_cents / 100).toFixed(2)}
+                        <td className="p-4 text-right font-mono text-slate-300">
+                          {record.avg_price_cents > 0 ? `${record.avg_price_cents}¢` : '—'}
+                        </td>
+                        <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                          {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
                         </td>
                         <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                           {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%

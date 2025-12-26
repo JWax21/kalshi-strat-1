@@ -49,6 +49,7 @@ interface DailyRecord {
   pending: number;
   pnl_cents: number;
   roic_percent: number;
+  avg_price_cents: number;
   source: 'snapshot' | 'calculated';
 }
 
@@ -196,6 +197,11 @@ export async function GET(request: Request) {
       // Calculate ROIC
       const roic = startPortfolio > 0 ? (dayPnl / startPortfolio) * 100 : 0;
       
+      // Calculate average price of contracts bet on that day
+      const avgPrice = confirmedOrders.length > 0
+        ? confirmedOrders.reduce((sum, o) => sum + (o.price_cents || 0), 0) / confirmedOrders.length
+        : 0;
+      
       records.push({
         date,
         start_cash_cents: Math.round(startCash),
@@ -207,6 +213,7 @@ export async function GET(request: Request) {
         pending: pendingOrders.length,
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
+        avg_price_cents: Math.round(avgPrice),
         source: snapshot ? 'snapshot' : 'calculated',
       });
       

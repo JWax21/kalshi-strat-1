@@ -71,6 +71,36 @@ export async function GET(request: Request) {
       orders = ordersData || [];
     }
 
+    // Fetch current prices for active positions from Kalshi
+    const activeOrders = orders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
+    const currentPrices: Record<string, number> = {};
+    
+    // Batch fetch market data for active positions (limit to avoid rate limits)
+    const uniqueTickers = [...new Set(activeOrders.map(o => o.ticker))];
+    for (const ticker of uniqueTickers.slice(0, 20)) { // Limit to 20 to avoid rate limits
+      try {
+        const marketData = await kalshiFetch(`/markets/${ticker}`);
+        if (marketData?.market) {
+          // Get current price based on the order's side
+          const yesPrice = Math.round((marketData.market.yes_bid + marketData.market.yes_ask) / 2 * 100) || 0;
+          const noPrice = Math.round((marketData.market.no_bid + marketData.market.no_ask) / 2 * 100) || 0;
+          currentPrices[ticker] = { yes: yesPrice, no: noPrice } as any;
+        }
+      } catch (e) {
+        // Skip if market not found
+      }
+    }
+    
+    // Enrich orders with current prices
+    orders = orders.map(order => {
+      const priceData = currentPrices[order.ticker] as any;
+      if (priceData) {
+        const currentPrice = order.side === 'YES' ? priceData.yes : priceData.no;
+        return { ...order, current_price_cents: currentPrice };
+      }
+      return { ...order, current_price_cents: null };
+    });
+
     // Group orders by batch
     const ordersByBatch: Record<string, any[]> = {};
     orders.forEach(order => {
