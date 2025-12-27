@@ -2391,7 +2391,7 @@ export default function Dashboard() {
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">End</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds | Win%</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds(¢) | Win%</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
@@ -2449,11 +2449,11 @@ export default function Dashboard() {
                               return (
                                 <>
                                   <span className={oddsHigher ? 'text-red-400' : 'text-slate-300'}>
-                                    {odds > 0 ? `${odds}¢` : '—'}
+                                    {odds > 0 ? odds : '—'}
                                   </span>
                                   <span className="text-slate-500 mx-1">|</span>
                                   <span className={winHigher ? 'text-emerald-400' : 'text-slate-300'}>
-                                    {winPct !== null ? `${winPct}%` : '—'}
+                                    {winPct !== null ? winPct : '—'}
                                   </span>
                                 </>
                               );
