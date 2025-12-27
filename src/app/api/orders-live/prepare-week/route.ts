@@ -472,12 +472,13 @@ export async function POST(request: Request) {
 
     // Prepare for each day
     const results: DayResult[] = [];
-    const todayStr = new Date().toISOString().split('T')[0]; // Just the date string
+    // Get today's date in ET timezone
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 
     for (let i = 0; i < days; i++) {
-      // Calculate the date for this batch using simple string math
+      // Calculate the date for this batch using simple date math
       const batchDate = new Date(todayStr + 'T12:00:00Z'); // Noon UTC to avoid timezone issues
-      batchDate.setDate(batchDate.getDate() + i);
+      batchDate.setUTCDate(batchDate.getUTCDate() + i);
       const batchDateStr = batchDate.toISOString().split('T')[0];
 
       // Filter markets by GAME date (extracted from ticker), not close date

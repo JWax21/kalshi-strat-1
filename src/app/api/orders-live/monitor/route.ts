@@ -52,25 +52,37 @@ function extractGameDate(market: KalshiMarket): string | null {
 // Get today's date in ET (day changes at 4 AM ET)
 function getTodayET(): string {
   const now = new Date();
-  // Convert to ET (UTC - 5 hours for EST)
-  const etTime = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+  // Get current hour in ET to check if before 4am
+  const etTimeStr = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York', 
+    hour: 'numeric', 
+    hour12: false 
+  });
+  const etHours = parseInt(etTimeStr);
+  
+  // Get today's date in ET
+  const todayET = now.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  
   // If before 4 AM ET, consider it "yesterday"
-  if (etTime.getUTCHours() < 4) {
-    etTime.setUTCDate(etTime.getUTCDate() - 1);
+  if (etHours < 4) {
+    const d = new Date(todayET + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().split('T')[0];
   }
-  const year = etTime.getUTCFullYear();
-  const month = String(etTime.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(etTime.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return todayET;
 }
 
 // Check if it's after 6am ET (when orders can be executed)
 function isAfter6amET(): boolean {
   const now = new Date();
-  // Convert to ET (UTC - 5 hours for EST)
-  const etTime = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-  const hour = etTime.getUTCHours();
-  return hour >= 6; // 6am ET or later
+  // Get current hour in ET
+  const etTimeStr = now.toLocaleString('en-US', { 
+    timeZone: 'America/New_York', 
+    hour: 'numeric', 
+    hour12: false 
+  });
+  const etHours = parseInt(etTimeStr);
+  return etHours >= 6; // 6am ET or later
 }
 
 // Get current time in ET for logging
