@@ -2383,18 +2383,22 @@ export default function Dashboard() {
               <div className="text-center py-12 text-slate-400">Loading records...</div>
             ) : recordsData?.records && recordsData.records.length > 0 ? (
               <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-                <table className="w-full min-w-[700px]">
+                <table className="w-full min-w-[800px]">
                   <thead className="bg-slate-800/50">
                     <tr>
-                      <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Start</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">End</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Avg ¢</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
+                      <th rowSpan={2} className="text-left p-4 text-slate-400 font-medium text-sm align-middle">Date</th>
+                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">Start</th>
+                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">End</th>
+                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">W/L/P</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-middle">Deployed</th>
+                      <th colSpan={2} className="text-center px-4 pt-3 pb-1 text-slate-500 font-medium text-xs border-b border-slate-700">Performance</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-middle">P&L</th>
+                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-middle">ROIC</th>
+                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">Source</th>
+                    </tr>
+                    <tr>
+                      <th className="text-right px-4 pt-1 pb-3 text-slate-400 font-medium text-xs">Avg Odds</th>
+                      <th className="text-right px-4 pt-1 pb-3 text-slate-400 font-medium text-xs">Win %</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2440,6 +2444,11 @@ export default function Dashboard() {
                           </td>
                           <td className="p-4 text-right font-mono text-slate-300">
                             {record.avg_price_cents > 0 ? `${record.avg_price_cents}¢` : '—'}
+                          </td>
+                          <td className="p-4 text-right font-mono text-slate-300">
+                            {record.wins + record.losses > 0 
+                              ? `${Math.round((record.wins / (record.wins + record.losses)) * 100)}%` 
+                              : '—'}
                           </td>
                           <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
