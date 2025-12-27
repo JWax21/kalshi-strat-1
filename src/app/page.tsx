@@ -728,6 +728,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab === 'orders' || activeTab === 'positions') {
       fetchLiveOrders();
+      fetchRecords(); // Also fetch records for Capital Deployment table
     } else if (activeTab === 'records') {
       fetchRecords();
     }
@@ -1665,12 +1666,13 @@ export default function Dashboard() {
                       const projectedEvents = new Set([...pendingOrders, ...confirmedOrders].map(o => o.event_ticker)).size;
                       const actualEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
                       
-                      // Get portfolio value for that day from daily snapshots
-                      const portfolioValueForDay = dailySnapshots[day.date] || currentPortfolioValue;
+                      // Get starting portfolio value for that day from records data
+                      const dayRecord = recordsData?.records?.find(r => r.date === day.date);
+                      const startPortfolioForDay = dayRecord?.start_portfolio_cents || currentPortfolioValue;
                       
-                      // Percentage of portfolio (no decimals)
-                      const pctOfPortfolio = portfolioValueForDay > 0 
-                        ? Math.round((actualCents / portfolioValueForDay) * 100)
+                      // Percentage = actual capital deployed / starting portfolio value
+                      const pctOfPortfolio = startPortfolioForDay > 0 
+                        ? Math.round((actualCents / startPortfolioForDay) * 100)
                         : 0;
                       
                       return (
