@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     }
 
     // Apply filters step by step
-    const oddsFiltered = filterHighOddsMarkets(allMarkets, 0.85, 0.995);
+    const oddsFiltered = filterHighOddsMarkets(allMarkets, 0.90, 0.995);
     const oiFiltered = oddsFiltered.filter(m => m.open_interest >= 1000);
     const oiFilteredLow = oddsFiltered.filter(m => m.open_interest >= 100);
 

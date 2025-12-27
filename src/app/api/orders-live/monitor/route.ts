@@ -12,7 +12,7 @@ const MAX_POSITION_PERCENT_SPLIT = 0.015; // 1.5% max when betting both YES and 
 const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
-const MIN_ODDS = 0.85; // Minimum favorite odds (85%)
+const MIN_ODDS = 0.90; // Minimum favorite odds (90%)
 const MAX_ODDS = 0.995; // Maximum favorite odds (99.5%)
 const MIN_OPEN_INTEREST = 50; // Minimum open interest
 
@@ -410,7 +410,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     }
   }
 
-  // Step 6: Look for NEW qualifying markets (85%+ odds, today's games)
+  // Step 6: Look for NEW qualifying markets (90%+ odds, today's games)
   const sportsSeries = [
     // Football
     'KXNFLGAME', 'KXNCAAFBGAME', 'KXNCAAFCSGAME', 'KXNCAAFGAME',
@@ -461,7 +461,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     const gameDate = extractGameDate(m);
     return gameDate === todayET;
   });
-  console.log(`Today (ET): ${todayET}, Games today with 85%+ odds: ${filteredMarkets.length}`);
+  console.log(`Today (ET): ${todayET}, Games today with 90%+ odds: ${filteredMarkets.length}`);
 
   // Exclude blacklisted markets
   const { data: blacklistedMarkets } = await supabase

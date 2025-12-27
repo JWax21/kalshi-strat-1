@@ -245,7 +245,7 @@ export default function Dashboard() {
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
   const [loadingSeconds, setLoadingSeconds] = useState(0.0);
-  const [minOdds] = useState(0.85);
+  const [minOdds] = useState(0.90);
   const sportsOnlyMarkets = true;
   const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -585,7 +585,7 @@ export default function Dashboard() {
       const res = await fetch('/api/orders-live/prepare', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 1000, forToday }),
+        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.90, maxOdds: 0.995, minOpenInterest: 1000, forToday }),
       });
       const data = await res.json();
       if (data.success) {
@@ -609,7 +609,7 @@ export default function Dashboard() {
       const res = await fetch('/api/orders-live/prepare-week', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days: 7, minOdds: 0.85, maxOdds: 0.995, minOpenInterest: 100 }),
+        body: JSON.stringify({ days: 7, minOdds: 0.90, maxOdds: 0.995, minOpenInterest: 100 }),
       });
       const data = await res.json();
       if (data.success) {
@@ -2765,7 +2765,7 @@ export default function Dashboard() {
             </div>
             <ul className="text-sm text-slate-400 space-y-2">
               <li>— <span className="text-emerald-400">Only bet on games happening TODAY</span></li>
-              <li>— <span className="text-red-400 font-bold">ONLY 85-99.5% odds</span> (NEVER below 85%)</li>
+              <li>— <span className="text-red-400 font-bold">ONLY 90-99.5% odds</span> (NEVER below 90%)</li>
               <li>— Execute orders starting at <span className="text-white">6am ET</span> on game day</li>
               <li>— Maximum <span className="text-white">3% of portfolio per EVENT</span></li>
               <li>— Can add to event if under 3% (tracks remaining capacity)</li>
