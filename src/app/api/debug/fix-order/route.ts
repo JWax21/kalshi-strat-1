@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     const results: any[] = [];
 
     for (const fix of fixes) {
-      const { order_id, batch_date, result_status, actual_payout_cents } = fix;
+      const { order_id, batch_date, result_status, actual_payout_cents, ticker, side, title } = fix;
 
       if (!order_id) {
         results.push({ error: 'order_id is required', fix });
@@ -71,6 +71,11 @@ export async function POST(request: Request) {
       }
 
       const updateData: any = {};
+
+      // Direct field updates
+      if (ticker) updateData.ticker = ticker;
+      if (side) updateData.side = side.toUpperCase();
+      if (title) updateData.title = title;
 
       // If batch_date provided, find or create the batch
       if (batch_date) {
