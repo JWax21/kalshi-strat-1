@@ -1582,13 +1582,13 @@ export default function Dashboard() {
                           <td className="p-3 text-right text-white font-mono">{order.units.toLocaleString()}</td>
                           <td className="p-3 text-right text-slate-400 font-mono">{avgPrice}¢</td>
                           <td className="p-3 text-right text-white font-mono">{currentPrice}¢</td>
-                          <td className="p-3 text-right text-amber-400 font-mono">
+                          <td className="p-3 text-right text-white font-mono">
                             ${((order.executed_cost_cents || order.cost_cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="p-3 text-right text-emerald-400 font-mono">
+                          <td className="p-3 text-right text-white font-mono">
                             ${(order.potential_payout_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td className="p-3 text-right text-amber-400 font-mono">
+                          <td className="p-3 text-right text-white font-mono">
                             ${((order.fee_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="p-3 text-right font-mono">
