@@ -2386,19 +2386,15 @@ export default function Dashboard() {
                 <table className="w-full min-w-[800px]">
                   <thead className="bg-slate-800/50">
                     <tr>
-                      <th rowSpan={2} className="text-left p-4 text-slate-400 font-medium text-sm align-middle">Date</th>
-                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">Start</th>
-                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">End</th>
-                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">W/L/P</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-middle">Deployed</th>
-                      <th colSpan={2} className="text-center px-4 pt-3 pb-1 text-slate-500 font-medium text-xs border-b border-slate-700">Performance</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-middle">P&L</th>
-                      <th rowSpan={2} className="text-right p-4 text-slate-400 font-medium text-sm align-middle">ROIC</th>
-                      <th rowSpan={2} className="text-center p-4 text-slate-400 font-medium text-sm align-middle">Source</th>
-                    </tr>
-                    <tr>
-                      <th className="text-right px-4 pt-1 pb-3 text-slate-400 font-medium text-xs">Avg Odds</th>
-                      <th className="text-right px-4 pt-1 pb-3 text-slate-400 font-medium text-xs">Win %</th>
+                      <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Start</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">End</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds | Win%</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2442,13 +2438,26 @@ export default function Dashboard() {
                               <><span className="text-emerald-600">{numEvents}</span>|${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
                             ) : '—'}
                           </td>
-                          <td className="p-4 text-right font-mono text-slate-300">
-                            {record.avg_price_cents > 0 ? `${record.avg_price_cents}¢` : '—'}
-                          </td>
-                          <td className="p-4 text-right font-mono text-slate-300">
-                            {record.wins + record.losses > 0 
-                              ? `${Math.round((record.wins / (record.wins + record.losses)) * 100)}%` 
-                              : '—'}
+                          <td className="p-4 text-center font-mono">
+                            {(() => {
+                              const odds = record.avg_price_cents;
+                              const winPct = record.wins + record.losses > 0 
+                                ? Math.round((record.wins / (record.wins + record.losses)) * 100) 
+                                : null;
+                              const oddsHigher = winPct !== null && odds > winPct;
+                              const winHigher = winPct !== null && winPct > odds;
+                              return (
+                                <>
+                                  <span className={oddsHigher ? 'text-red-400' : 'text-slate-300'}>
+                                    {odds > 0 ? `${odds}¢` : '—'}
+                                  </span>
+                                  <span className="text-slate-500 mx-1">|</span>
+                                  <span className={winHigher ? 'text-emerald-400' : 'text-slate-300'}>
+                                    {winPct !== null ? `${winPct}%` : '—'}
+                                  </span>
+                                </>
+                              );
+                            })()}
                           </td>
                           <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
