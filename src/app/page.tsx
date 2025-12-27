@@ -1611,23 +1611,34 @@ export default function Dashboard() {
                       });
                     }
                     
+                    // Get all orders from all batches
+                    const allOrders = orderBatches.flatMap(b => b.orders || []);
+                    
                     return days.map(day => {
-                      const batch = orderBatches.find(b => b.batch_date === day.date);
-                      const orders = batch?.orders || [];
+                      // Filter orders by placement_status_at date (when they were actually placed)
+                      const ordersForDay = allOrders.filter(o => {
+                        if (!o.placement_status_at) return false;
+                        const placedDate = o.placement_status_at.split('T')[0];
+                        return placedDate === day.date;
+                      });
                       
-                      // Confirmed orders
-                      const confirmedOrders = orders.filter(o => o.placement_status === 'confirmed');
+                      // Also get pending orders from batches for this day (for projected)
+                      const batch = orderBatches.find(b => b.batch_date === day.date);
+                      const pendingOrders = (batch?.orders || []).filter(o => o.placement_status === 'pending' || o.placement_status === 'placed');
+                      
+                      // Confirmed orders (placed on this day)
+                      const confirmedOrders = ordersForDay.filter(o => o.placement_status === 'confirmed');
                       
                       // Actual = confirmed orders cost
                       const actualCents = confirmedOrders
                         .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
                       
-                      // Projected = all orders cost (pending + placed + confirmed)
-                      const projectedCents = orders
+                      // Projected = pending orders for this batch + confirmed orders placed this day
+                      const projectedCents = [...pendingOrders, ...confirmedOrders]
                         .reduce((sum, o) => sum + (o.cost_cents || 0), 0);
                       
                       // Count unique events (by event_ticker)
-                      const projectedEvents = new Set(orders.map(o => o.event_ticker)).size;
+                      const projectedEvents = new Set([...pendingOrders, ...confirmedOrders].map(o => o.event_ticker)).size;
                       const actualEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
                       
                       // Get portfolio value for that day from daily snapshots
@@ -1670,20 +1681,33 @@ export default function Dashboard() {
                     const allProjectedEvents = new Set<string>();
                     const allActualEvents = new Set<string>();
                     
+                    // Get all orders from all batches
+                    const allOrders = orderBatches.flatMap(b => b.orders || []);
+                    
                     for (let i = -3; i <= 3; i++) {
                       const d = new Date(today);
                       d.setDate(d.getDate() + i);
                       const dateStr = d.toISOString().split('T')[0];
+                      
+                      // Filter orders by placement_status_at date
+                      const ordersForDay = allOrders.filter(o => {
+                        if (!o.placement_status_at) return false;
+                        const placedDate = o.placement_status_at.split('T')[0];
+                        return placedDate === dateStr;
+                      });
+                      
+                      // Also get pending orders from batches for this day
                       const batch = orderBatches.find(b => b.batch_date === dateStr);
-                      const orders = batch?.orders || [];
-                      const confirmedOrders = orders.filter(o => o.placement_status === 'confirmed');
+                      const pendingOrders = (batch?.orders || []).filter(o => o.placement_status === 'pending' || o.placement_status === 'placed');
+                      
+                      const confirmedOrders = ordersForDay.filter(o => o.placement_status === 'confirmed');
                       
                       totalActual += confirmedOrders
                         .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-                      totalProjected += orders.reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+                      totalProjected += [...pendingOrders, ...confirmedOrders].reduce((sum, o) => sum + (o.cost_cents || 0), 0);
                       
                       // Track unique events
-                      orders.forEach(o => allProjectedEvents.add(o.event_ticker));
+                      [...pendingOrders, ...confirmedOrders].forEach(o => allProjectedEvents.add(o.event_ticker));
                       confirmedOrders.forEach(o => allActualEvents.add(o.event_ticker));
                     }
                     
@@ -2333,9 +2357,13 @@ export default function Dashboard() {
                     {recordsData.records
                       .filter(record => record.date <= new Date().toISOString().split('T')[0])
                       .map((record, idx) => {
-                      // Get deployed amount for this day from orderBatches
-                      const batch = orderBatches.find(b => b.batch_date === record.date);
-                      const confirmedOrders = batch?.orders?.filter(o => o.placement_status === 'confirmed') || [];
+                      // Get deployed amount for this day based on placement_status_at timestamp
+                      const allOrders = orderBatches.flatMap(b => b.orders || []);
+                      const confirmedOrders = allOrders.filter(o => {
+                        if (o.placement_status !== 'confirmed' || !o.placement_status_at) return false;
+                        const placedDate = o.placement_status_at.split('T')[0];
+                        return placedDate === record.date;
+                      });
                       const deployedCents = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
                       const numEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
                       
