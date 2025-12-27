@@ -203,6 +203,16 @@ interface SelectedMarket {
   orderbookLoading?: boolean;
 }
 
+// Helper to get current date in Eastern Time (YYYY-MM-DD format)
+function getTodayET(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
+// Helper to convert a UTC ISO timestamp to ET date (YYYY-MM-DD format)
+function getDateFromTimestampET(isoTimestamp: string): string {
+  return new Date(isoTimestamp).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
 export default function Dashboard() {
   // Auth state (must be first)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -805,16 +815,16 @@ export default function Dashboard() {
     return null;
   };
 
-  // Generate next 7 days for game date filter
+  // Generate next 7 days for game date filter (in ET)
   const getNext7Days = (): { label: string; value: string }[] => {
     const days: { label: string; value: string }[] = [];
-    const today = new Date();
+    const todayET = getTodayET();
     
     for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
+      const date = new Date(todayET + 'T12:00:00');
       date.setDate(date.getDate() + i);
       const dateStr = date.toISOString().split('T')[0];
-      const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
       days.push({ label, value: dateStr });
     }
     
@@ -1390,8 +1400,9 @@ export default function Dashboard() {
               const allOrders = orderBatches.flatMap(b => b.orders || []);
               const activeOrders = allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
               
-              // Filter historical orders by timespan
-              const cutoffDate = new Date();
+              // Filter historical orders by timespan (in ET)
+              const todayET = getTodayET();
+              const cutoffDate = new Date(todayET + 'T12:00:00');
               cutoffDate.setDate(cutoffDate.getDate() - historicalDays);
               const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
               
@@ -1490,8 +1501,9 @@ export default function Dashboard() {
                     // Get all orders from all batches
                     const allOrders = orderBatches.flatMap(b => b.orders || []);
                     
-                    // Calculate cutoff date for historical filter
-                    const cutoffDate = new Date();
+                    // Calculate cutoff date for historical filter (in ET)
+                    const todayET = getTodayET();
+                    const cutoffDate = new Date(todayET + 'T12:00:00');
                     cutoffDate.setDate(cutoffDate.getDate() - historicalDays);
                     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
                     
@@ -1594,19 +1606,18 @@ export default function Dashboard() {
                 </thead>
                 <tbody>
                   {(() => {
-                    // Generate 7 days centered on today
-                    const today = new Date();
-                    today.setHours(12, 0, 0, 0);
+                    // Generate 7 days centered on today (in ET)
+                    const todayET = getTodayET();
                     const currentPortfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
                     
                     const days: { date: string; label: string; isToday: boolean }[] = [];
                     for (let i = -3; i <= 3; i++) {
-                      const d = new Date(today);
+                      const d = new Date(todayET + 'T12:00:00');
                       d.setDate(d.getDate() + i);
                       const dateStr = d.toISOString().split('T')[0];
                       days.push({
                         date: dateStr,
-                        label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+                        label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
                         isToday: i === 0
                       });
                     }
@@ -1618,7 +1629,7 @@ export default function Dashboard() {
                       // Filter orders by placement_status_at date (when they were actually placed)
                       const ordersForDay = allOrders.filter(o => {
                         if (!o.placement_status_at) return false;
-                        const placedDate = o.placement_status_at.split('T')[0];
+                        const placedDate = getDateFromTimestampET(o.placement_status_at);
                         return placedDate === day.date;
                       });
                       
@@ -1673,8 +1684,7 @@ export default function Dashboard() {
                 </tbody>
                 <tfoot>
                   {(() => {
-                    const today = new Date();
-                    today.setHours(12, 0, 0, 0);
+                    const todayET = getTodayET();
                     const currentPortfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
                     let totalProjected = 0;
                     let totalActual = 0;
@@ -1685,14 +1695,14 @@ export default function Dashboard() {
                     const allOrders = orderBatches.flatMap(b => b.orders || []);
                     
                     for (let i = -3; i <= 3; i++) {
-                      const d = new Date(today);
+                      const d = new Date(todayET + 'T12:00:00');
                       d.setDate(d.getDate() + i);
                       const dateStr = d.toISOString().split('T')[0];
                       
                       // Filter orders by placement_status_at date
                       const ordersForDay = allOrders.filter(o => {
                         if (!o.placement_status_at) return false;
-                        const placedDate = o.placement_status_at.split('T')[0];
+                        const placedDate = getDateFromTimestampET(o.placement_status_at);
                         return placedDate === dateStr;
                       });
                       
@@ -1945,7 +1955,7 @@ export default function Dashboard() {
             {/* Quick Prepare Buttons for missing batches */}
             {!liveOrdersLoading && orderBatches.length > 0 && (
               <div className="flex gap-2 mb-4">
-                {!orderBatches.some(b => b.batch_date === new Date().toISOString().split('T')[0]) && (
+                {!orderBatches.some(b => b.batch_date === getTodayET()) && (
                   <button
                     onClick={() => prepareOrders(true)}
                     disabled={preparingOrders}
@@ -1999,7 +2009,7 @@ export default function Dashboard() {
                   .map((batch) => {
                     // Add T12:00:00 to avoid timezone shift issues
                     const batchDate = new Date(batch.batch_date + 'T12:00:00');
-                    const todayStr = new Date().toISOString().split('T')[0];
+                    const todayStr = getTodayET();
                     const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
                     const isToday = batch.batch_date === todayStr;
                     const isTomorrow = batch.batch_date === tomorrowStr;
@@ -2308,7 +2318,7 @@ export default function Dashboard() {
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                   <div className="text-xs text-slate-500 uppercase mb-2">Avg Daily ROIC</div>
                   {(() => {
-                    const today = new Date().toISOString().split('T')[0];
+                    const today = getTodayET();
                     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
                     // Only include past days (not today or tomorrow)
                     const pastRecords = (recordsData.records || []).filter(r => 
@@ -2355,13 +2365,13 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {recordsData.records
-                      .filter(record => record.date <= new Date().toISOString().split('T')[0])
+                      .filter(record => record.date <= getTodayET())
                       .map((record, idx) => {
                       // Get deployed amount for this day based on placement_status_at timestamp
                       const allOrders = orderBatches.flatMap(b => b.orders || []);
                       const confirmedOrders = allOrders.filter(o => {
                         if (o.placement_status !== 'confirmed' || !o.placement_status_at) return false;
-                        const placedDate = o.placement_status_at.split('T')[0];
+                        const placedDate = getDateFromTimestampET(o.placement_status_at);
                         return placedDate === record.date;
                       });
                       const deployedCents = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
