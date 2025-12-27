@@ -1501,7 +1501,7 @@ export default function Dashboard() {
 
             {/* Positions Table */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-              <table className="w-full text-sm min-w-[900px]">
+              <table className="w-full text-sm min-w-[1100px]">
                 <thead className="bg-slate-800/50">
                   <tr>
                     <th className="text-left p-3 text-slate-400 font-medium">Market</th>
@@ -1511,6 +1511,8 @@ export default function Dashboard() {
                     <th className="text-right p-3 text-slate-400 font-medium">Current Price</th>
                     <th className="text-right p-3 text-slate-400 font-medium">Cost</th>
                     <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Fees</th>
+                    <th className="text-right p-3 text-slate-400 font-medium">Profit</th>
                     <th className="text-center p-3 text-slate-400 font-medium">Result</th>
                   </tr>
                 </thead>
@@ -1554,7 +1556,7 @@ export default function Dashboard() {
                     if (filteredOrders.length === 0) {
                       return (
                         <tr>
-                          <td colSpan={8} className="p-8 text-center text-slate-500">
+                          <td colSpan={10} className="p-8 text-center text-slate-500">
                             No {positionsSubTab} positions
                           </td>
                         </tr>
@@ -1585,6 +1587,26 @@ export default function Dashboard() {
                           </td>
                           <td className="p-3 text-right text-emerald-400 font-mono">
                             ${(order.potential_payout_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right text-amber-400 font-mono">
+                            ${((order.fee_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className="p-3 text-right font-mono">
+                            {(() => {
+                              const cost = order.executed_cost_cents || order.cost_cents;
+                              const fees = order.fee_cents || 0;
+                              const payout = order.potential_payout_cents;
+                              const profit = order.result_status === 'won' 
+                                ? payout - cost - fees 
+                                : order.result_status === 'lost' 
+                                  ? -cost 
+                                  : 0;
+                              return (
+                                <span className={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                                  {profit >= 0 ? '+' : ''}${(profit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="p-3 text-center">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${
