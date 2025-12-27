@@ -213,6 +213,22 @@ function getDateFromTimestampET(isoTimestamp: string): string {
   return new Date(isoTimestamp).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
+// Helper to add days to an ET date string and return ET date string
+function addDaysToDateET(dateStr: string, days: number): string {
+  // Parse the date as UTC noon to avoid timezone issues
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  // Return as YYYY-MM-DD
+  return d.toISOString().split('T')[0];
+}
+
+// Helper to format an ET date string for display
+function formatDateForDisplay(dateStr: string): string {
+  // Parse as UTC noon to avoid timezone issues
+  const d = new Date(dateStr + 'T12:00:00Z');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
 export default function Dashboard() {
   // Auth state (must be first)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -266,17 +282,22 @@ export default function Dashboard() {
   const getDefaultDay = () => {
     const now = new Date();
     // Convert to ET (UTC-5 or UTC-4 depending on DST)
-    const etOffset = -5; // EST (adjust for EDT if needed)
-    const utcHours = now.getUTCHours();
-    const etHours = (utcHours + etOffset + 24) % 24;
+    // Get current hour in ET to check if before 4am
+    const etTimeStr = now.toLocaleString('en-US', { 
+      timeZone: 'America/New_York', 
+      hour: 'numeric', 
+      hour12: false 
+    });
+    const etHours = parseInt(etTimeStr);
+    
+    // Get today's date in ET
+    const todayET = getTodayET();
     
     // If before 4am ET, use yesterday
     if (etHours < 4) {
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      return yesterday.toISOString().split('T')[0];
+      return addDaysToDateET(todayET, -1);
     }
-    return now.toISOString().split('T')[0];
+    return todayET;
   };
   
   const [selectedDay, setSelectedDay] = useState<string | null>(getDefaultDay());
@@ -821,10 +842,8 @@ export default function Dashboard() {
     const todayET = getTodayET();
     
     for (let i = 0; i < 7; i++) {
-      const date = new Date(todayET + 'T12:00:00');
-      date.setDate(date.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
-      const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+      const dateStr = addDaysToDateET(todayET, i);
+      const label = formatDateForDisplay(dateStr);
       days.push({ label, value: dateStr });
     }
     
@@ -997,7 +1016,7 @@ export default function Dashboard() {
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
             <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
-            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Orders</button>
+            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Schedule</button>
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Events</button>
           </div>
           
@@ -1402,9 +1421,7 @@ export default function Dashboard() {
               
               // Filter historical orders by timespan (in ET)
               const todayET = getTodayET();
-              const cutoffDate = new Date(todayET + 'T12:00:00');
-              cutoffDate.setDate(cutoffDate.getDate() - historicalDays);
-              const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+              const cutoffDateStr = addDaysToDateET(todayET, -historicalDays);
               
               const historicalOrders = allOrders.filter(o => {
                 if (o.result_status !== 'won' && o.result_status !== 'lost') return false;
@@ -1503,9 +1520,7 @@ export default function Dashboard() {
                     
                     // Calculate cutoff date for historical filter (in ET)
                     const todayET = getTodayET();
-                    const cutoffDate = new Date(todayET + 'T12:00:00');
-                    cutoffDate.setDate(cutoffDate.getDate() - historicalDays);
-                    const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
+                    const cutoffDateStr = addDaysToDateET(todayET, -historicalDays);
                     
                     // Filter by sub-tab (with timespan for historical)
                     const filteredOrders = positionsSubTab === 'active'
@@ -1612,12 +1627,10 @@ export default function Dashboard() {
                     
                     const days: { date: string; label: string; isToday: boolean }[] = [];
                     for (let i = -3; i <= 3; i++) {
-                      const d = new Date(todayET + 'T12:00:00');
-                      d.setDate(d.getDate() + i);
-                      const dateStr = d.toISOString().split('T')[0];
+                      const dateStr = addDaysToDateET(todayET, i);
                       days.push({
                         date: dateStr,
-                        label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }),
+                        label: formatDateForDisplay(dateStr),
                         isToday: i === 0
                       });
                     }
@@ -1695,9 +1708,7 @@ export default function Dashboard() {
                     const allOrders = orderBatches.flatMap(b => b.orders || []);
                     
                     for (let i = -3; i <= 3; i++) {
-                      const d = new Date(todayET + 'T12:00:00');
-                      d.setDate(d.getDate() + i);
-                      const dateStr = d.toISOString().split('T')[0];
+                      const dateStr = addDaysToDateET(todayET, i);
                       
                       // Filter orders by placement_status_at date
                       const ordersForDay = allOrders.filter(o => {
@@ -1964,7 +1975,7 @@ export default function Dashboard() {
                     {preparingOrders ? '...' : '+ Prepare Today'}
                   </button>
                 )}
-                {!orderBatches.some(b => b.batch_date === new Date(Date.now() + 86400000).toISOString().split('T')[0]) && (
+                {!orderBatches.some(b => b.batch_date === addDaysToDateET(getTodayET(), 1)) && (
                   <button
                     onClick={() => prepareOrders(false)}
                     disabled={preparingOrders}
@@ -2008,9 +2019,9 @@ export default function Dashboard() {
                   .filter(batch => batch.batch_date === selectedDay)
                   .map((batch) => {
                     // Add T12:00:00 to avoid timezone shift issues
-                    const batchDate = new Date(batch.batch_date + 'T12:00:00');
+                    const batchDate = new Date(batch.batch_date + 'T12:00:00Z');
                     const todayStr = getTodayET();
-                    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                    const tomorrowStr = addDaysToDateET(todayStr, 1);
                     const isToday = batch.batch_date === todayStr;
                     const isTomorrow = batch.batch_date === tomorrowStr;
                     
@@ -2319,7 +2330,6 @@ export default function Dashboard() {
                   <div className="text-xs text-slate-500 uppercase mb-2">Avg Daily ROIC</div>
                   {(() => {
                     const today = getTodayET();
-                    const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
                     // Only include past days (not today or tomorrow)
                     const pastRecords = (recordsData.records || []).filter(r => 
                       r.date < today

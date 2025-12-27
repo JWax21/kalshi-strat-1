@@ -95,37 +95,34 @@ export async function GET(request: Request) {
       console.error('Failed to fetch positions:', e);
     }
 
-    // Get all batches and orders for calculations
-    const { data: batches } = await supabase
-      .from('order_batches')
+    // Helper function to convert UTC timestamp to ET date (YYYY-MM-DD)
+    const getDateFromTimestampET = (isoTimestamp: string): string => {
+      const date = new Date(isoTimestamp);
+      // Format in ET timezone
+      return date.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    };
+
+    // Get all orders with confirmed placement status
+    const { data: allOrders } = await supabase
+      .from('orders')
       .select('*')
-      .gte('batch_date', startDateStr)
-      .order('batch_date', { ascending: true });
+      .eq('placement_status', 'confirmed')
+      .not('placement_status_at', 'is', null);
 
-    let allOrders: any[] = [];
     const ordersByDate: Record<string, any[]> = {};
-    const batchDateMap: Record<string, string> = {};
 
-    if (batches && batches.length > 0) {
-      const batchIds = batches.map(b => b.id);
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('*')
-        .in('batch_id', batchIds);
-      
-      allOrders = orders || [];
-      
-      batches.forEach(batch => {
-        batchDateMap[batch.id] = batch.batch_date;
-      });
-
+    // Group orders by PLACEMENT DATE (in ET), not by batch/game date
+    if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
-        const date = batchDateMap[order.batch_id];
-        if (date) {
-          if (!ordersByDate[date]) {
-            ordersByDate[date] = [];
+        if (order.placement_status_at) {
+          const placementDateET = getDateFromTimestampET(order.placement_status_at);
+          // Only include orders within our date range
+          if (placementDateET >= startDateStr) {
+            if (!ordersByDate[placementDateET]) {
+              ordersByDate[placementDateET] = [];
+            }
+            ordersByDate[placementDateET].push(order);
           }
-          ordersByDate[date].push(order);
         }
       });
     }
