@@ -172,7 +172,12 @@ export async function POST(request: Request) {
         .single();
 
       if (batchError) throw batchError;
+      if (!newBatch) throw new Error('Failed to create batch');
       batch = newBatch;
+    }
+
+    if (!batch) {
+      throw new Error('Failed to get or create batch');
     }
 
     const results: any[] = [];
