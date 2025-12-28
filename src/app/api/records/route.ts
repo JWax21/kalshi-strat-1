@@ -59,9 +59,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '90');
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    const startDateStr = startDate.toISOString().split('T')[0];
+    // Start from Dec 24, 2025
+    const startDateStr = '2025-12-24';
 
     // First, try to get snapshots from the database
     const { data: snapshots, error: snapshotsError } = await supabase
