@@ -455,7 +455,11 @@ export default function Dashboard() {
       roi: number;
       breakdown: EventBreakdown[];
     }>;
-    summary: { total_orders: number; days_analyzed: number; stop_loss_value: number };
+    summary: { total_orders: number; days_analyzed: number };
+    matrix: Record<number, Record<number, number>>;
+    stopLossValues: number[];
+    thresholds: number[];
+    optimal: { threshold: number; stopLoss: number; pnl: number };
   } | null>(null);
   
   const [selectedThreshold, setSelectedThreshold] = useState<number | null>(null);
@@ -3601,12 +3605,90 @@ export default function Dashboard() {
                   </div>
                 )}
 
+                {/* P&L Matrix: Threshold x Stop-Loss */}
+                <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
+                  <div className="mb-4">
+                    <h3 className="text-lg font-medium text-white">🎯 P&L Matrix: Threshold × Stop-Loss</h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                      Find the optimal combination. Green = profit, Red = loss. Highlighted = best result.
+                    </p>
+                  </div>
+                  
+                  {scenariosLoading ? (
+                    <div className="text-center py-8 text-slate-400">Loading scenarios...</div>
+                  ) : scenariosData?.matrix ? (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-slate-700">
+                              <th className="text-left py-3 px-2 font-medium">Threshold</th>
+                              <th className="text-right py-3 px-2 font-medium">No SL</th>
+                              {scenariosData.stopLossValues.map(sl => (
+                                <th key={sl} className="text-right py-3 px-2 font-medium">{sl}¢ SL</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {scenariosData.thresholds.map((threshold, idx) => (
+                              <tr 
+                                key={threshold} 
+                                className={`border-b border-slate-800 ${idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
+                              >
+                                <td className="py-2 px-2 font-mono font-bold text-white">{threshold}¢</td>
+                                <td className={`py-2 px-2 text-right font-mono ${
+                                  scenariosData.matrix[threshold][0] >= 0 ? 'text-emerald-400' : 'text-red-400'
+                                }`}>
+                                  {scenariosData.matrix[threshold][0] >= 0 ? '+' : ''}${(scenariosData.matrix[threshold][0] / 100).toFixed(0)}
+                                </td>
+                                {scenariosData.stopLossValues.map(sl => {
+                                  const pnl = scenariosData.matrix[threshold][sl];
+                                  const isOptimal = threshold === scenariosData.optimal.threshold && sl === scenariosData.optimal.stopLoss;
+                                  return (
+                                    <td 
+                                      key={sl} 
+                                      className={`py-2 px-2 text-right font-mono ${
+                                        isOptimal 
+                                          ? 'bg-emerald-500/30 text-emerald-300 font-bold rounded' 
+                                          : pnl >= 0 
+                                            ? 'text-emerald-400' 
+                                            : 'text-red-400'
+                                      }`}
+                                    >
+                                      {pnl >= 0 ? '+' : ''}${(pnl / 100).toFixed(0)}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      {/* Optimal highlight */}
+                      <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400 text-lg">🏆</span>
+                          <span className="text-emerald-300 font-medium">
+                            Optimal: {scenariosData.optimal.threshold}¢ threshold + {scenariosData.optimal.stopLoss}¢ stop-loss = 
+                            <span className="font-bold ml-1">
+                              {scenariosData.optimal.pnl >= 0 ? '+' : ''}${(scenariosData.optimal.pnl / 100).toFixed(2)}
+                            </span>
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-slate-500">No data available</div>
+                  )}
+                </div>
+
                 {/* Threshold Scenarios Analysis */}
                 <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
                   <div className="mb-4">
-                    <h3 className="text-lg font-medium text-white">📊 Threshold Scenarios Analysis</h3>
+                    <h3 className="text-lg font-medium text-white">📊 Detailed Breakdown by Threshold</h3>
                     <p className="text-sm text-slate-400 mt-1">
-                      What if we changed our investment threshold? Comparing thresholds 85¢-95¢ with a 75¢ stop-loss.
+                      Click a row to see game-by-game breakdown for that threshold.
                     </p>
                   </div>
                   
