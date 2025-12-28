@@ -42,60 +42,72 @@ async function kalshiFetch(endpoint: string): Promise<any> {
 
 // Fetch min AND max price for an order from candlestick data
 // Returns { minPrice, maxPrice } for the user's side
+// Matches the losses API approach exactly
 async function getPriceRangeForOrder(
   order: any
 ): Promise<{ minPrice: number | null; maxPrice: number | null }> {
   try {
+    // Extract series_ticker from event_ticker (e.g., KXNBAGAME-25DEC26BOSIND -> KXNBAGAME)
     const seriesTicker = order.event_ticker?.split("-")[0] || "";
-    const marketTicker = order.ticker;
-    const userSide = order.side;
+    const marketTicker = order.ticker; // The full market ticker
+    const userSide = order.side; // 'YES' or 'NO'
 
-    if (!seriesTicker || !marketTicker)
+    if (!seriesTicker || !marketTicker) {
+      console.log(`[PriceRange] Missing ticker for order ${order.id}: series=${seriesTicker}, market=${marketTicker}`);
       return { minPrice: null, maxPrice: null };
+    }
 
-    // Get FULL time range for the market (not just from placement)
-    // We need the high to determine if we would have triggered at a given threshold
+    // Calculate time range based on when the order was placed and when market closed
+    const placementTime = order.placement_status_at
+      ? Math.floor(new Date(order.placement_status_at).getTime() / 1000)
+      : null;
     const closeTime = order.market_close_time
       ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
       : Math.floor(Date.now() / 1000);
 
-    // Start from 48 hours before close to capture full price range
-    const startTs = closeTime - 48 * 60 * 60;
+    // Get data from 2 hours before placement to market close (same as losses API)
+    const startTs = placementTime ? placementTime - (2 * 60 * 60) : closeTime - (48 * 60 * 60);
     const endTs = closeTime;
 
     const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+    
     const response = await kalshiFetch(url);
 
     if (!response?.candlesticks || response.candlesticks.length === 0) {
+      console.log(`[PriceRange] No candlesticks for ${marketTicker}`);
       return { minPrice: null, maxPrice: null };
     }
 
-    // Calculate min and max price for user's side
+    // Calculate min and max price for user's side (matching losses API logic exactly)
     let minPrice = 100;
     let maxPrice = 0;
 
     for (const c of response.candlesticks) {
-      const yesLow = c.price?.low ?? c.yes_bid?.low ?? 100;
-      const yesHigh = c.price?.high ?? c.yes_bid?.high ?? 0;
+      const yesHigh = c.price?.high ?? c.price?.max ?? c.yes_bid?.high ?? 0;
+      const yesLow = c.price?.low ?? c.price?.min ?? c.yes_bid?.low ?? 0;
 
-      // User's min/max depends on their side
       if (userSide === "YES") {
-        if (yesLow > 0 && yesLow < minPrice) minPrice = yesLow;
         if (yesHigh > maxPrice) maxPrice = yesHigh;
+        if (yesLow > 0 && yesLow < minPrice) minPrice = yesLow;
       } else {
-        // For NO side, min = 100 - yesHigh, max = 100 - yesLow
-        const noLow = yesHigh > 0 ? 100 - yesHigh : 100;
+        // For NO side: our price = 100 - YES price
+        // Our high = 100 - YES low (when YES is lowest, NO is highest)
+        // Our low = 100 - YES high (when YES is highest, NO is lowest)
         const noHigh = yesLow > 0 ? 100 - yesLow : 0;
-        if (noLow > 0 && noLow < minPrice) minPrice = noLow;
+        const noLow = yesHigh > 0 ? 100 - yesHigh : 0;
         if (noHigh > maxPrice) maxPrice = noHigh;
+        if (noLow > 0 && noLow < minPrice) minPrice = noLow;
       }
     }
+
+    console.log(`[PriceRange] ${marketTicker} (${userSide}): max=${maxPrice}, min=${minPrice}, candles=${response.candlesticks.length}`);
 
     return {
       minPrice: minPrice < 100 ? minPrice : null,
       maxPrice: maxPrice > 0 ? maxPrice : null,
     };
   } catch (e) {
+    console.error(`[PriceRange] Error for ${order.ticker}:`, e);
     return { minPrice: null, maxPrice: null };
   }
 }
@@ -183,38 +195,30 @@ function calculateScenario(
   for (const [eventTicker, result] of Object.entries(eventResults)) {
     const eventOrders = result.orders;
 
-    // Get the max price for this event (across all orders)
+    // Get the max price for this event (across all orders) from CANDLESTICK DATA ONLY
     // This determines if we would have triggered at the threshold
     let eventMaxPrice = 0;
     let eventMinPrice = 100;
-    let hasRealPriceData = false;
+    let hasCandlestickData = false;
     
     for (const order of eventOrders) {
       const range = orderPriceRanges.get(order.id);
-      if (range?.maxPrice && range.maxPrice > eventMaxPrice) {
-        eventMaxPrice = range.maxPrice;
-        hasRealPriceData = true;
+      if (range?.maxPrice !== null && range?.maxPrice !== undefined) {
+        if (range.maxPrice > eventMaxPrice) {
+          eventMaxPrice = range.maxPrice;
+        }
+        hasCandlestickData = true;
       }
-      if (range?.minPrice && range.minPrice < eventMinPrice) {
-        eventMinPrice = range.minPrice;
-      }
-      
-      // FALLBACK: If no candlestick data, use actual entry price as max
-      // This ensures we don't skip orders just because API didn't return data
-      if (!hasRealPriceData) {
-        const entryPrice = order.executed_price_cents || order.price_cents || 0;
-        if (entryPrice > eventMaxPrice) {
-          eventMaxPrice = entryPrice;
+      if (range?.minPrice !== null && range?.minPrice !== undefined) {
+        if (range.minPrice < eventMinPrice) {
+          eventMinPrice = range.minPrice;
         }
       }
     }
     
-    // If no price data at all, use entry price as max (fallback)
-    if (eventMaxPrice === 0) {
-      for (const order of eventOrders) {
-        const entryPrice = order.executed_price_cents || order.price_cents || 0;
-        if (entryPrice > eventMaxPrice) eventMaxPrice = entryPrice;
-      }
+    // Skip events without candlestick data - we can't accurately simulate
+    if (!hasCandlestickData) {
+      continue;
     }
 
     // CRITICAL: Would we have triggered at this threshold?
@@ -427,32 +431,23 @@ function calculateScenarioNoStopLoss(
   for (const [eventTicker, result] of Object.entries(eventResults)) {
     const eventOrders = result.orders;
 
-    // Get max price for this event
+    // Get max price for this event from CANDLESTICK DATA ONLY
     let eventMaxPrice = 0;
-    let hasRealPriceData = false;
+    let hasCandlestickData = false;
     
     for (const order of eventOrders) {
       const range = orderPriceRanges.get(order.id);
-      if (range?.maxPrice && range.maxPrice > eventMaxPrice) {
-        eventMaxPrice = range.maxPrice;
-        hasRealPriceData = true;
-      }
-      
-      // FALLBACK: If no candlestick data, use actual entry price as max
-      if (!hasRealPriceData) {
-        const entryPrice = order.executed_price_cents || order.price_cents || 0;
-        if (entryPrice > eventMaxPrice) {
-          eventMaxPrice = entryPrice;
+      if (range?.maxPrice !== null && range?.maxPrice !== undefined) {
+        if (range.maxPrice > eventMaxPrice) {
+          eventMaxPrice = range.maxPrice;
         }
+        hasCandlestickData = true;
       }
     }
     
-    // If no price data at all, use entry price as max
-    if (eventMaxPrice === 0) {
-      for (const order of eventOrders) {
-        const entryPrice = order.executed_price_cents || order.price_cents || 0;
-        if (entryPrice > eventMaxPrice) eventMaxPrice = entryPrice;
-      }
+    // Skip events without candlestick data
+    if (!hasCandlestickData) {
+      continue;
     }
 
     // Would we have triggered at this threshold?
@@ -606,15 +601,22 @@ export async function GET(request: Request) {
       }
     }
 
-    const ordersWithMaxPrice = [...orderPriceRanges.values()].filter((v) => v.maxPrice !== null).length;
-    const ordersWithMinPrice = [...orderPriceRanges.values()].filter((v) => v.minPrice !== null).length;
+    const ordersWithMaxPrice = [...orderPriceRanges.values()].filter(
+      (v) => v.maxPrice !== null
+    ).length;
+    const ordersWithMinPrice = [...orderPriceRanges.values()].filter(
+      (v) => v.minPrice !== null
+    ).length;
     console.log(
       `[Scenarios] Fetched price ranges. Orders: ${orders.length}, With maxPrice: ${ordersWithMaxPrice}, With minPrice: ${ordersWithMinPrice}`
     );
-    
+
     // Debug: log sample of price ranges
     const sampleRanges = [...orderPriceRanges.entries()].slice(0, 3);
-    console.log(`[Scenarios] Sample price ranges:`, sampleRanges.map(([id, r]) => ({ id: id.slice(0, 8), ...r })));
+    console.log(
+      `[Scenarios] Sample price ranges:`,
+      sampleRanges.map(([id, r]) => ({ id: id.slice(0, 8), ...r }))
+    );
 
     // Analyze scenarios for thresholds 85-95 across all stop-loss values
     const thresholds = [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95];
