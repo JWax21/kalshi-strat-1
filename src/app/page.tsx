@@ -103,7 +103,7 @@ interface LossesSummary {
   total_losses: number;
   total_lost_cents: number;
   avg_odds: number;
-  by_league: Record<string, { count: number; lost_cents: number; avg_odds: number }>;
+  by_league: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number }>;
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
   by_odds_range: Record<string, { count: number; lost_cents: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
@@ -360,6 +360,27 @@ export default function Dashboard() {
   const [stopLossPrice, setStopLossPrice] = useState(50); // Default 50 cents
   const [whatIfData, setWhatIfData] = useState<WhatIfData | null>(null);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
+  
+  // Stop-loss monitoring state
+  const [stopLossStatus, setStopLossStatus] = useState<{
+    timestamp: string;
+    positions_checked: number;
+    positions_sold: number;
+    positions_held: number;
+    data_errors: number;
+    alerts: string[];
+    details: {
+      ticker: string;
+      title: string;
+      side: 'yes' | 'no';
+      currentOdds: number | null;
+      validation: { isValid: boolean; confidence: string; issues: string[] };
+      action: 'sell' | 'hold' | 'error';
+      reason: string;
+    }[];
+  } | null>(null);
+  const [stopLossLoading, setStopLossLoading] = useState(false);
+  const [stopLossError, setStopLossError] = useState<string | null>(null);
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
@@ -2660,7 +2681,7 @@ export default function Dashboard() {
                             <span className="text-white font-medium">{league}</span>
                             <div className="text-right">
                               <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
-                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
+                              <span className="text-slate-500 text-xs ml-2">({data.count}/{data.total_bets})</span>
                               <span className="text-slate-400 text-xs ml-2">{data.avg_odds}¢</span>
                             </div>
                           </div>

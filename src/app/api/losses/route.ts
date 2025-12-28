@@ -102,13 +102,13 @@ function getBetTiming(placementTime: string | null, marketCloseTime: string | nu
   // UFC fights: ~0.5 hours per fight
   // Tennis: varies widely
   
-  // If placed more than 4 hours before close, definitely pre-game
-  // If placed less than 3 hours before close, likely during game (live)
+  // If placed more than 6 hours before close, definitely pre-game
+  // If placed less than 5 hours before close, likely during game (live)
   // In between is ambiguous
   
-  if (hoursBeforeClose > 4) {
+  if (hoursBeforeClose > 6) {
     return 'pre-game';
-  } else if (hoursBeforeClose < 3 && hoursBeforeClose > 0) {
+  } else if (hoursBeforeClose < 5 && hoursBeforeClose > 0) {
     return 'live';
   } else if (hoursBeforeClose <= 0) {
     // Placed after close time means something is off, but likely was live
@@ -142,6 +142,22 @@ export async function GET(request: Request) {
       .order('created_at', { ascending: false });
 
     if (error) throw error;
+
+    // Get all decided orders (won + lost) to calculate total bets per league
+    const { data: allDecidedOrders, error: allError } = await supabase
+      .from('orders')
+      .select('event_ticker, result_status')
+      .in('result_status', ['won', 'lost'])
+      .gte('created_at', startDate.toISOString());
+
+    if (allError) throw allError;
+
+    // Pre-calculate total bets per league from all decided orders
+    const totalBetsByLeague: Record<string, number> = {};
+    for (const order of allDecidedOrders || []) {
+      const league = getLeagueFromTicker(order.event_ticker || '');
+      totalBetsByLeague[league] = (totalBetsByLeague[league] || 0) + 1;
+    }
 
     if (!lostOrders || lostOrders.length === 0) {
       return NextResponse.json({
@@ -257,10 +273,10 @@ export async function GET(request: Request) {
     const avgOdds = enrichedLosses.reduce((sum, l) => sum + l.implied_odds_percent, 0) / enrichedLosses.length;
 
     // Group by league
-    const byLeague: Record<string, { count: number; lost_cents: number; avg_odds: number }> = {};
+    const byLeague: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number }> = {};
     for (const loss of enrichedLosses) {
       if (!byLeague[loss.league]) {
-        byLeague[loss.league] = { count: 0, lost_cents: 0, avg_odds: 0 };
+        byLeague[loss.league] = { count: 0, total_bets: totalBetsByLeague[loss.league] || 0, lost_cents: 0, avg_odds: 0 };
       }
       byLeague[loss.league].count++;
       byLeague[loss.league].lost_cents += loss.cost_cents;
