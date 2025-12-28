@@ -97,6 +97,7 @@ interface LossEntry {
   bet_timing: 'pre-game' | 'live' | 'unknown';
   implied_odds_percent: number;
   fills: { price: number; count: number; created_time: string; side: string }[];
+  candlesticks: { ts: string; open: number; high: number; low: number; close: number }[];
 }
 
 interface LossesSummary {
