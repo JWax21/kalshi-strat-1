@@ -273,21 +273,23 @@ async function reconcileOrders() {
           results.updated++;
           detail.action = 'upgraded_to_placed';
         }
-      } else if (kalshiStatus === 'cancelled' || kalshiStatus === 'expired') {
+      } else if (kalshiStatus === 'cancelled' || kalshiStatus === 'canceled' || kalshiStatus === 'expired') {
         results.cancelled++;
         detail.action = `cancelled (${kalshiStatus})`;
         
-        // Mark as closed
+        // Mark as cancelled - NOT placed! This frees up the capital in our tracking
         await supabase
           .from('orders')
           .update({
-            placement_status: 'placed', // It was placed but cancelled
-            settlement_status: 'closed',
-            settlement_status_at: new Date().toISOString(),
+            placement_status: 'cancelled',
+            placement_status_at: new Date().toISOString(),
+            cancelled_at: new Date().toISOString(),
+            cancel_reason: `Cancelled on Kalshi (${kalshiStatus})`,
           })
           .eq('id', dbOrder.id);
         
         results.updated++;
+        console.log(`Marked ${dbOrder.ticker} as cancelled (was ${dbOrder.placement_status}, Kalshi says ${kalshiStatus})`);
       } else if (kalshiStatus === 'executed') {
         // Executed but no fills yet? Check filled_count
         if (kalshiOrder.filled_count > 0) {
