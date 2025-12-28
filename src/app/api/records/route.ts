@@ -114,16 +114,22 @@ export async function GET(request: Request) {
     const ordersByDate: Record<string, any[]> = {};
 
     // Group orders by PLACEMENT DATE (in ET), not by batch/game date
+    const allDatesRaw: string[] = [];
+    const excludedDates: string[] = [];
+    
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
         if (order.placement_status_at) {
           const placementDateET = getDateFromTimestampET(order.placement_status_at);
+          allDatesRaw.push(placementDateET);
           // Only include orders within our date range
           if (placementDateET >= startDateStr) {
             if (!ordersByDate[placementDateET]) {
               ordersByDate[placementDateET] = [];
             }
             ordersByDate[placementDateET].push(order);
+          } else {
+            excludedDates.push(placementDateET);
           }
         }
       });
@@ -284,6 +290,8 @@ export async function GET(request: Request) {
         dates_with_orders: Object.keys(ordersByDate).sort(),
         dec28_orders: ordersByDate['2025-12-28']?.length || 0,
         start_date_filter: startDateStr,
+        all_dates_raw: [...new Set(allDatesRaw)].sort(),
+        excluded_sample: excludedDates.slice(0, 10),
       },
     });
   } catch (error) {
