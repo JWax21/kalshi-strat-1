@@ -103,40 +103,30 @@ export async function GET(request: Request) {
     };
 
     // Get all orders with confirmed placement status
-    const { data: allOrders, error: ordersError } = await supabase
+    const { data: allOrders } = await supabase
       .from('orders')
       .select('*')
       .eq('placement_status', 'confirmed')
       .not('placement_status_at', 'is', null);
 
-    console.log(`[Records API] Total orders fetched: ${allOrders?.length || 0}, error: ${ordersError?.message || 'none'}`);
 
     const ordersByDate: Record<string, any[]> = {};
 
     // Group orders by PLACEMENT DATE (in ET), not by batch/game date
-    const allDatesRaw: string[] = [];
-    const excludedDates: string[] = [];
-    
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
         if (order.placement_status_at) {
           const placementDateET = getDateFromTimestampET(order.placement_status_at);
-          allDatesRaw.push(placementDateET);
           // Only include orders within our date range
           if (placementDateET >= startDateStr) {
             if (!ordersByDate[placementDateET]) {
               ordersByDate[placementDateET] = [];
             }
             ordersByDate[placementDateET].push(order);
-          } else {
-            excludedDates.push(placementDateET);
           }
         }
       });
     }
-    
-    console.log(`[Records API] Orders grouped into ${Object.keys(ordersByDate).length} dates: ${Object.keys(ordersByDate).sort().join(', ')}`);
-    console.log(`[Records API] Dec 28 orders: ${ordersByDate['2025-12-28']?.length || 0}`);
 
     // Build snapshot map for quick lookup
     const snapshotMap: Record<string, any> = {};
@@ -284,16 +274,6 @@ export async function GET(request: Request) {
         losses: totalLosses,
         pending: totalPending,
         pnl_cents: totalPnl,
-      },
-      debug: {
-        deployment_time: '2025-12-28T23:15:00Z',
-        total_orders_fetched: allOrders?.length || 0,
-        dates_with_orders: Object.keys(ordersByDate).sort(),
-        dec28_orders: ordersByDate['2025-12-28']?.length || 0,
-        start_date_filter: startDateStr,
-        all_dates_raw: [...new Set(allDatesRaw)].sort(),
-        excluded_sample: excludedDates.slice(0, 10),
-        sample_placement_dates: allOrders?.slice(0, 5).map((o: any) => ({ ticker: o.ticker, placement_status_at: o.placement_status_at })),
       },
     });
   } catch (error) {
