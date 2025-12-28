@@ -128,26 +128,29 @@ export async function GET(request: Request) {
       return null;
     };
 
-    // Group orders by GAME DATE (extracted from ticker)
-    // Only include orders that settled on Dec 24 or later (or are still pending)
+    // Group orders by SETTLEMENT DATE for P&L calculations
+    // Only include orders that settled on Dec 24 or later
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
-        const gameDate = order.ticker ? getGameDateFromTicker(order.ticker) : null;
-        if (!gameDate) return;
-        
-        // For settled orders, check settlement date
-        if (order.result_status === 'won' || order.result_status === 'lost') {
-          if (order.settlement_status_at) {
-            const settlementDate = getDateFromTimestampET(order.settlement_status_at);
-            if (settlementDate < startDateStr) return; // Skip if settled before Dec 24
+        // For settled orders, group by settlement date
+        if ((order.result_status === 'won' || order.result_status === 'lost') && order.settlement_status_at) {
+          const settlementDate = getDateFromTimestampET(order.settlement_status_at);
+          if (settlementDate >= startDateStr) {
+            if (!ordersByDate[settlementDate]) {
+              ordersByDate[settlementDate] = [];
+            }
+            ordersByDate[settlementDate].push(order);
           }
         }
-        
-        if (gameDate >= startDateStr) {
-          if (!ordersByDate[gameDate]) {
-            ordersByDate[gameDate] = [];
+        // For pending orders, group by game date from ticker
+        else if (order.result_status === 'undecided') {
+          const gameDate = order.ticker ? getGameDateFromTicker(order.ticker) : null;
+          if (gameDate && gameDate >= startDateStr) {
+            if (!ordersByDate[gameDate]) {
+              ordersByDate[gameDate] = [];
+            }
+            ordersByDate[gameDate].push(order);
           }
-          ordersByDate[gameDate].push(order);
         }
       });
     }
