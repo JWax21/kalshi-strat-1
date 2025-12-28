@@ -99,7 +99,7 @@ async function prepareForDay(
   minOpenInterest: number
 ): Promise<DayResult> {
   try {
-    // Delete existing batch and orders for this date (override mode)
+    // Check existing batch - DON'T delete if it has confirmed/won/lost orders!
     const { data: existing } = await supabase
       .from('order_batches')
       .select('id')
@@ -107,17 +107,46 @@ async function prepareForDay(
       .single();
 
     if (existing) {
-      // Delete orders first (foreign key constraint)
+      // Check if batch has any non-pending orders (confirmed, won, lost, etc.)
+      const { data: confirmedOrders } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('batch_id', existing.id)
+        .in('placement_status', ['confirmed', 'placed']);
+      
+      const { data: decidedOrders } = await supabase
+        .from('orders')
+        .select('id')
+        .eq('batch_id', existing.id)
+        .in('result_status', ['won', 'lost']);
+      
+      if ((confirmedOrders && confirmedOrders.length > 0) || (decidedOrders && decidedOrders.length > 0)) {
+        // DON'T delete - batch has real orders
+        console.log(`Skipping ${targetDateStr} - batch has ${confirmedOrders?.length || 0} confirmed and ${decidedOrders?.length || 0} decided orders`);
+        return {
+          date: targetDateStr,
+          success: true,
+          markets_in_window: 0,
+          markets_after_filters: 0,
+          orders_prepared: 0,
+          total_cost_dollars: '0.00',
+          skipped: true,
+          reason: `Batch has ${confirmedOrders?.length || 0} confirmed orders - not overwriting`,
+        };
+      }
+      
+      // Only delete if batch has only pending/cancelled orders
       await supabase
         .from('orders')
         .delete()
         .eq('batch_id', existing.id);
       
-      // Then delete the batch
       await supabase
         .from('order_batches')
         .delete()
         .eq('id', existing.id);
+      
+      console.log(`Deleted empty batch for ${targetDateStr}`);
     }
 
     // Markets are already pre-filtered by the caller to be:
