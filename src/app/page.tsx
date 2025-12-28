@@ -92,6 +92,7 @@ interface LossEntry {
   result_status_at: string;
   sport: string;
   day_of_week: string;
+  venue: 'home' | 'away' | 'neutral';
   implied_odds_percent: number;
   fills: { price: number; count: number; created_time: string; side: string }[];
 }
@@ -104,6 +105,7 @@ interface LossesSummary {
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
   by_odds_range: Record<string, { count: number; lost_cents: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
+  by_venue: Record<string, { count: number; lost_cents: number }>;
   top_losing_teams: { team: string; count: number }[];
 }
 
@@ -2584,7 +2586,7 @@ export default function Dashboard() {
                 </div>
 
                 {/* Pattern Analysis */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
                   {/* By Sport */}
                   <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                     <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Sport</h3>
@@ -2595,7 +2597,7 @@ export default function Dashboard() {
                           <div key={sport} className="flex justify-between items-center">
                             <span className="text-white">{sport}</span>
                             <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</span>
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
                               <span className="text-slate-500 text-xs ml-2">({data.count})</span>
                               <span className="text-slate-400 text-xs ml-2">{data.avg_odds}¢</span>
                             </div>
@@ -2615,7 +2617,7 @@ export default function Dashboard() {
                           <div key={range} className="flex justify-between items-center">
                             <span className="text-white">{range}</span>
                             <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</span>
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
                               <span className="text-slate-500 text-xs ml-2">({data.count})</span>
                             </div>
                           </div>
@@ -2633,7 +2635,31 @@ export default function Dashboard() {
                           <div key={day} className="flex justify-between items-center">
                             <span className="text-white">{day}</span>
                             <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</span>
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
+                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* By Venue (Home/Away) */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Venue</h3>
+                    <div className="space-y-2">
+                      {lossesData.summary.by_venue && Object.entries(lossesData.summary.by_venue)
+                        .filter(([, data]) => data.count > 0)
+                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                        .map(([venue, data]) => (
+                          <div key={venue} className="flex justify-between items-center">
+                            <span className="text-white capitalize flex items-center gap-2">
+                              {venue === 'home' && '🏠'}
+                              {venue === 'away' && '✈️'}
+                              {venue === 'neutral' && '⚖️'}
+                              {venue}
+                            </span>
+                            <div className="text-right">
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
                               <span className="text-slate-500 text-xs ml-2">({data.count})</span>
                             </div>
                           </div>
@@ -2666,7 +2692,7 @@ export default function Dashboard() {
                         .map(([month, data]) => (
                           <div key={month} className="text-center">
                             <div className="text-slate-400 text-xs">{month}</div>
-                            <div className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</div>
+                            <div className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</div>
                             <div className="text-slate-500 text-xs">{data.count} losses</div>
                           </div>
                         ))}
@@ -2676,12 +2702,13 @@ export default function Dashboard() {
 
                 {/* Detailed Losses Table */}
                 <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1000px]">
+                  <table className="w-full text-sm min-w-[1100px]">
                     <thead className="bg-slate-800/50">
                       <tr>
                         <th className="text-left p-3 text-slate-400 font-medium">Date</th>
                         <th className="text-left p-3 text-slate-400 font-medium">Market</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Sport</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">Venue</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Side</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Units</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Entry Price</th>
@@ -2704,23 +2731,34 @@ export default function Dashboard() {
                             </span>
                           </td>
                           <td className="p-3 text-center">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              loss.venue === 'home' ? 'bg-blue-500/20 text-blue-400' : 
+                              loss.venue === 'away' ? 'bg-orange-500/20 text-orange-400' : 
+                              'bg-slate-700 text-slate-400'
+                            }`}>
+                              {loss.venue === 'home' && '🏠 '}
+                              {loss.venue === 'away' && '✈️ '}
+                              {loss.venue.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
                             <span className={`px-2 py-1 rounded text-xs font-bold ${
                               loss.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
                             }`}>
                               {loss.side}
                             </span>
                           </td>
-                          <td className="p-3 text-right text-white font-mono">{loss.units}</td>
+                          <td className="p-3 text-right text-white font-mono">{loss.units.toLocaleString()}</td>
                           <td className="p-3 text-right text-amber-400 font-mono">{loss.entry_price_cents}¢</td>
                           <td className="p-3 text-right text-red-400 font-mono">
-                            -${(loss.cost_cents / 100).toFixed(2)}
+                            -${(loss.cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="p-3 text-slate-400 text-xs">
                             {loss.fills && loss.fills.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
                                 {loss.fills.slice(0, 3).map((fill, i) => (
                                   <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-xs">
-                                    {fill.count}@{fill.price}¢
+                                    {fill.count.toLocaleString()}@{fill.price}¢
                                   </span>
                                 ))}
                                 {loss.fills.length > 3 && (

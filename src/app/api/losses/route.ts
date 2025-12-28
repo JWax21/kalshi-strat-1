@@ -135,6 +135,23 @@ export async function GET(request: Request) {
         // Loss amount
         const lostCents = order.executed_cost_cents || order.cost_cents;
 
+        // Determine home/away status
+        // Format: "Team A at Team B Winner?" - Team A is AWAY, Team B is HOME
+        // Format: "Team A vs Team B Winner?" - Team A is typically HOME
+        let venue: 'home' | 'away' | 'neutral' = 'neutral';
+        const atMatch = order.title?.match(/^(.+?)\s+at\s+(.+?)\s+Winner\?$/i);
+        const vsMatch = order.title?.match(/^(.+?)\s+vs\s+(.+?)\s+Winner\?$/i);
+        
+        if (atMatch) {
+          // "at" format: first team is away, second is home
+          // If we bet YES, we bet on first team (away)
+          // If we bet NO, we bet on second team (home)
+          venue = order.side === 'YES' ? 'away' : 'home';
+        } else if (vsMatch) {
+          // "vs" format: first team is typically home
+          venue = order.side === 'YES' ? 'home' : 'away';
+        }
+
         return {
           id: order.id,
           ticker: order.ticker,
@@ -151,6 +168,7 @@ export async function GET(request: Request) {
           result_status_at: order.result_status_at,
           sport,
           day_of_week: dayOfWeek,
+          venue,
           // Market data if available
           market_result: marketData?.result,
           market_status: marketData?.status,
@@ -247,6 +265,17 @@ export async function GET(request: Request) {
       .slice(0, 10)
       .map(([team, count]) => ({ team, count }));
 
+    // Group by venue (home/away)
+    const byVenue: Record<string, { count: number; lost_cents: number }> = {
+      'home': { count: 0, lost_cents: 0 },
+      'away': { count: 0, lost_cents: 0 },
+      'neutral': { count: 0, lost_cents: 0 },
+    };
+    for (const loss of enrichedLosses) {
+      byVenue[loss.venue].count++;
+      byVenue[loss.venue].lost_cents += loss.cost_cents;
+    }
+
     return NextResponse.json({
       success: true,
       losses: enrichedLosses,
@@ -258,6 +287,7 @@ export async function GET(request: Request) {
         by_day_of_week: byDayOfWeek,
         by_odds_range: byOddsRange,
         by_month: byMonth,
+        by_venue: byVenue,
         top_losing_teams: topLosingTeams,
       },
     });
