@@ -3169,23 +3169,30 @@ export default function Dashboard() {
                                   
                                   if (allPrices.length > 0) {
                                     const minPrice = Math.min(...allPrices, 0);
-                                    const maxPrice = Math.max(...allPrices, entryPrice);
-                                    const range = maxPrice - minPrice || 1;
+                                    const chartMaxPrice = Math.max(...allPrices, entryPrice);
+                                    const highPrice = loss.max_price_cents || chartMaxPrice;
+                                    const range = chartMaxPrice - minPrice || 1;
                                     const candleWidth = Math.max(2, Math.floor((width - 20) / candles.length) - 1);
                                     const gap = 1;
                                     
                                     const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
                                     const entryY = scaleY(entryPrice);
+                                    const highY = scaleY(highPrice);
                                     
                                     return (
                                       <div className="w-[160px] h-[40px]">
                                         <svg width={width} height={height} className="bg-slate-800/50 rounded">
+                                          {/* High price line (green dashed) */}
+                                          {loss.max_price_cents !== null && (
+                                            <line x1="0" y1={highY} x2={width} y2={highY} stroke="#22c55e" strokeWidth="1" strokeDasharray="2,2" />
+                                          )}
+                                          {/* Entry price line (orange dashed) */}
                                           <line x1="0" y1={entryY} x2={width} y2={entryY} stroke="#f59e0b" strokeWidth="1" strokeDasharray="3,3" />
                                           {candles.map((c, i) => {
                                             const x = 10 + i * (candleWidth + gap);
                                             const openY = scaleY(c.open);
                                             const closeY = scaleY(c.close);
-                                            const highY = scaleY(c.high);
+                                            const candleHighY = scaleY(c.high);
                                             const lowY = scaleY(c.low);
                                             const isUp = c.close >= c.open;
                                             const color = isUp ? '#22c55e' : '#ef4444';
@@ -3194,12 +3201,13 @@ export default function Dashboard() {
                                             
                                             return (
                                               <g key={i}>
-                                                <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1" />
+                                                <line x1={x + candleWidth / 2} y1={candleHighY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1" />
                                                 <rect x={x} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} />
                                               </g>
                                             );
                                           })}
-                                          <text x="2" y="10" fontSize="8" fill="#94a3b8">{Math.round(maxPrice)}¢</text>
+                                          {/* Labels */}
+                                          <text x={width - 25} y="10" fontSize="8" fill="#22c55e">{Math.round(highPrice)}¢</text>
                                           <text x="2" y={height - 2} fontSize="8" fill="#94a3b8">{Math.round(minPrice)}¢</text>
                                         </svg>
                                       </div>
@@ -3207,26 +3215,43 @@ export default function Dashboard() {
                                   }
                                 }
                                 
-                                // Fallback: Show simple entry → exit visualization
+                                // Fallback: Show entry → high → exit visualization
+                                const highPrice = loss.max_price_cents || entryPrice;
                                 const minPrice = 0;
-                                const maxPrice = entryPrice;
+                                const maxPrice = Math.max(entryPrice, highPrice);
                                 const range = maxPrice || 1;
                                 const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
                                 const entryY = scaleY(entryPrice);
+                                const highY = scaleY(highPrice);
                                 const exitY = scaleY(exitPrice);
+                                
+                                const hasHighAboveEntry = loss.max_price_cents !== null && loss.max_price_cents > entryPrice;
                                 
                                 return (
                                   <div className="w-[160px] h-[40px]">
                                     <svg width={width} height={height} className="bg-slate-800/50 rounded">
-                                      {/* Entry to exit line */}
-                                      <line x1="20" y1={entryY} x2={width - 20} y2={exitY} stroke="#ef4444" strokeWidth="2" />
+                                      {hasHighAboveEntry ? (
+                                        <>
+                                          {/* Entry to high line (green) */}
+                                          <line x1="20" y1={entryY} x2={width/2} y2={highY} stroke="#22c55e" strokeWidth="2" />
+                                          {/* High to exit line (red) */}
+                                          <line x1={width/2} y1={highY} x2={width - 20} y2={exitY} stroke="#ef4444" strokeWidth="2" />
+                                          {/* High point */}
+                                          <circle cx={width/2} cy={highY} r="4" fill="#22c55e" />
+                                          {/* High label */}
+                                          <text x={width/2 + 6} y={highY + 3} fontSize="8" fill="#22c55e">{highPrice}¢</text>
+                                        </>
+                                      ) : (
+                                        /* Entry to exit line (red) */
+                                        <line x1="20" y1={entryY} x2={width - 20} y2={exitY} stroke="#ef4444" strokeWidth="2" />
+                                      )}
                                       {/* Entry point */}
                                       <circle cx="20" cy={entryY} r="4" fill="#f59e0b" />
                                       {/* Exit point */}
                                       <circle cx={width - 20} cy={exitY} r="4" fill="#ef4444" />
                                       {/* Labels */}
-                                      <text x="28" y={entryY + 3} fontSize="9" fill="#f59e0b">{entryPrice}¢</text>
-                                      <text x={width - 35} y={exitY - 5} fontSize="9" fill="#ef4444">0¢</text>
+                                      <text x="28" y={entryY + 3} fontSize="8" fill="#f59e0b">{entryPrice}¢</text>
+                                      <text x={width - 30} y={exitY - 3} fontSize="8" fill="#ef4444">0¢</text>
                                     </svg>
                                   </div>
                                 );
