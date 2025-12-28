@@ -82,6 +82,7 @@ interface DayResult {
   total_cost_dollars: string;
   error?: string;
   skipped?: boolean;
+  reason?: string;
   debug?: {
     game_date?: string;
     markets_before_odds_filter?: number;
