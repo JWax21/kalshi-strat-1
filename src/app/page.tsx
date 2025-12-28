@@ -3109,6 +3109,7 @@ export default function Dashboard() {
                         <th className="text-left p-3 text-slate-400 font-medium">Date</th>
                         <th className="text-left p-3 text-slate-400 font-medium">Market</th>
                         <th className="text-center p-3 text-slate-400 font-medium">League</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">H/A</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Timing</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Units</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Entry</th>
@@ -3203,6 +3204,16 @@ export default function Dashboard() {
                             <td className="p-3 text-center">
                               <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
                                 {loss.league}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                loss.venue === 'home' ? 'bg-blue-500/20 text-blue-400' : 
+                                loss.venue === 'away' ? 'bg-orange-500/20 text-orange-400' : 
+                                loss.venue === 'mixed' ? 'bg-purple-500/20 text-purple-400' :
+                                'bg-slate-700 text-slate-400'
+                              }`}>
+                                {loss.venue === 'home' ? 'HOME' : loss.venue === 'away' ? 'AWAY' : loss.venue === 'neutral' ? 'N' : 'MIX'}
                               </span>
                             </td>
                             <td className="p-3 text-center">
