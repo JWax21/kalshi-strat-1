@@ -90,9 +90,11 @@ interface LossEntry {
   batch_date: string;
   market_close_time: string;
   result_status_at: string;
-  sport: string;
+  placement_status_at: string;
+  league: string;
   day_of_week: string;
   venue: 'home' | 'away' | 'neutral';
+  bet_timing: 'pre-game' | 'live' | 'unknown';
   implied_odds_percent: number;
   fills: { price: number; count: number; created_time: string; side: string }[];
 }
@@ -101,11 +103,12 @@ interface LossesSummary {
   total_losses: number;
   total_lost_cents: number;
   avg_odds: number;
-  by_sport: Record<string, { count: number; lost_cents: number; avg_odds: number }>;
+  by_league: Record<string, { count: number; lost_cents: number; avg_odds: number }>;
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
   by_odds_range: Record<string, { count: number; lost_cents: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
   by_venue: Record<string, { count: number; lost_cents: number }>;
+  by_timing: Record<string, { count: number; lost_cents: number }>;
   top_losing_teams: { team: string; count: number }[];
 }
 
@@ -2645,16 +2648,16 @@ export default function Dashboard() {
                 </div>
 
                 {/* Pattern Analysis */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                  {/* By Sport */}
+                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-6">
+                  {/* By League */}
                   <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Sport</h3>
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by League</h3>
                     <div className="space-y-2">
-                      {Object.entries(lossesData.summary.by_sport)
+                      {Object.entries(lossesData.summary.by_league)
                         .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                        .map(([sport, data]) => (
-                          <div key={sport} className="flex justify-between items-center">
-                            <span className="text-white">{sport}</span>
+                        .map(([league, data]) => (
+                          <div key={league} className="flex justify-between items-center">
+                            <span className="text-white font-medium">{league}</span>
                             <div className="text-right">
                               <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
                               <span className="text-slate-500 text-xs ml-2">({data.count})</span>
@@ -2725,6 +2728,30 @@ export default function Dashboard() {
                         ))}
                     </div>
                   </div>
+
+                  {/* By Timing (Pre-game vs Live) */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Pre-Game vs Live</h3>
+                    <div className="space-y-2">
+                      {lossesData.summary.by_timing && Object.entries(lossesData.summary.by_timing)
+                        .filter(([, data]) => data.count > 0)
+                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                        .map(([timing, data]) => (
+                          <div key={timing} className="flex justify-between items-center">
+                            <span className="text-white capitalize flex items-center gap-2">
+                              {timing === 'pre-game' && '📅'}
+                              {timing === 'live' && '🔴'}
+                              {timing === 'unknown' && '❓'}
+                              {timing}
+                            </span>
+                            <div className="text-right">
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
+                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Top Losing Teams */}
@@ -2761,13 +2788,14 @@ export default function Dashboard() {
 
                 {/* Detailed Losses Table */}
                 <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1100px]">
+                  <table className="w-full text-sm min-w-[1200px]">
                     <thead className="bg-slate-800/50">
                       <tr>
                         <th className="text-left p-3 text-slate-400 font-medium">Date</th>
                         <th className="text-left p-3 text-slate-400 font-medium">Market</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">Sport</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">League</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Venue</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">Timing</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Side</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Units</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Entry Price</th>
@@ -2785,8 +2813,8 @@ export default function Dashboard() {
                             {loss.title}
                           </td>
                           <td className="p-3 text-center">
-                            <span className="px-2 py-1 rounded text-xs bg-slate-700 text-slate-300">
-                              {loss.sport}
+                            <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
+                              {loss.league}
                             </span>
                           </td>
                           <td className="p-3 text-center">
@@ -2798,6 +2826,17 @@ export default function Dashboard() {
                               {loss.venue === 'home' && '🏠 '}
                               {loss.venue === 'away' && '✈️ '}
                               {loss.venue.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-1 rounded text-xs ${
+                              loss.bet_timing === 'pre-game' ? 'bg-green-500/20 text-green-400' : 
+                              loss.bet_timing === 'live' ? 'bg-red-500/20 text-red-400' : 
+                              'bg-slate-700 text-slate-400'
+                            }`}>
+                              {loss.bet_timing === 'pre-game' && '📅 '}
+                              {loss.bet_timing === 'live' && '🔴 '}
+                              {loss.bet_timing === 'pre-game' ? 'PRE' : loss.bet_timing === 'live' ? 'LIVE' : '?'}
                             </span>
                           </td>
                           <td className="p-3 text-center">

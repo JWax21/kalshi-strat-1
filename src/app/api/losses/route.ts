@@ -38,20 +38,84 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
-// Extract sport category from event ticker
-function getSportFromTicker(eventTicker: string): string {
-  if (eventTicker.startsWith('KXNFL') || eventTicker.startsWith('KXNCAAF')) return 'Football';
-  if (eventTicker.startsWith('KXNBA') || eventTicker.startsWith('KXNCAAM') || eventTicker.startsWith('KXNCAAW') || eventTicker.startsWith('KXEUROLEAGUE') || eventTicker.startsWith('KXNBL')) return 'Basketball';
-  if (eventTicker.startsWith('KXNHL')) return 'Hockey';
-  if (eventTicker.startsWith('KXMLB')) return 'Baseball';
-  if (eventTicker.startsWith('KXUFC')) return 'MMA';
-  if (eventTicker.startsWith('KXTENNIS') || eventTicker.startsWith('KXATP') || eventTicker.startsWith('KXWTA')) return 'Tennis';
-  if (eventTicker.startsWith('KXPGA') || eventTicker.startsWith('KXLPGA') || eventTicker.startsWith('KXGOLF')) return 'Golf';
-  if (eventTicker.startsWith('KXF1') || eventTicker.startsWith('KXNASCAR') || eventTicker.startsWith('KXINDYCAR')) return 'Motorsport';
+// Extract specific league from event ticker
+function getLeagueFromTicker(eventTicker: string): string {
+  // Football
+  if (eventTicker.startsWith('KXNFLGAME')) return 'NFL';
+  if (eventTicker.startsWith('KXNCAAFBGAME') || eventTicker.startsWith('KXNCAAFCSGAME') || eventTicker.startsWith('KXNCAAFGAME')) return 'NCAAF';
+  
+  // Basketball
+  if (eventTicker.startsWith('KXNBAGAME')) return 'NBA';
+  if (eventTicker.startsWith('KXNCAAMBGAME')) return 'NCAAM';
+  if (eventTicker.startsWith('KXNCAAWBGAME')) return 'NCAAW';
+  if (eventTicker.startsWith('KXEUROLEAGUEGAME')) return 'EuroLeague';
+  if (eventTicker.startsWith('KXNBLGAME')) return 'NBL';
+  
+  // Hockey
+  if (eventTicker.startsWith('KXNHLGAME')) return 'NHL';
+  
+  // Baseball
+  if (eventTicker.startsWith('KXMLBGAME')) return 'MLB';
+  
+  // MMA
+  if (eventTicker.startsWith('KXUFCFIGHT')) return 'UFC';
+  
+  // Tennis
+  if (eventTicker.startsWith('KXTENNISMATCH')) return 'Tennis';
+  if (eventTicker.startsWith('KXATPTOUR')) return 'ATP';
+  if (eventTicker.startsWith('KXWTATOUR')) return 'WTA';
+  
+  // Golf
+  if (eventTicker.startsWith('KXPGATOUR')) return 'PGA';
+  if (eventTicker.startsWith('KXLPGATOUR')) return 'LPGA';
+  if (eventTicker.startsWith('KXGOLFTOURNAMENT')) return 'Golf';
+  
+  // Motorsport
+  if (eventTicker.startsWith('KXF1RACE')) return 'F1';
+  if (eventTicker.startsWith('KXNASCARRACE')) return 'NASCAR';
+  if (eventTicker.startsWith('KXINDYCARRACE')) return 'IndyCar';
+  
+  // Other
   if (eventTicker.startsWith('KXCRICKET')) return 'Cricket';
-  if (eventTicker.startsWith('KXCHESS')) return 'Chess';
-  if (eventTicker.startsWith('KXDOTA')) return 'Esports';
+  if (eventTicker.startsWith('KXCHESSMATCH')) return 'Chess';
+  if (eventTicker.startsWith('KXDOTA2GAME')) return 'Dota2';
+  
   return 'Other';
+}
+
+// Determine if bet was placed pre-game or live
+// Returns 'pre-game', 'live', or 'unknown'
+function getBetTiming(placementTime: string | null, marketCloseTime: string | null): 'pre-game' | 'live' | 'unknown' {
+  if (!placementTime || !marketCloseTime) return 'unknown';
+  
+  const placementDate = new Date(placementTime);
+  const closeDate = new Date(marketCloseTime);
+  
+  // Calculate hours before market close
+  const hoursBeforeClose = (closeDate.getTime() - placementDate.getTime()) / (1000 * 60 * 60);
+  
+  // Typical game durations (approximate):
+  // NFL/NCAAF: ~3.5 hours
+  // NBA/NCAAM: ~2.5 hours
+  // NHL: ~2.5 hours
+  // MLB: ~3 hours
+  // UFC fights: ~0.5 hours per fight
+  // Tennis: varies widely
+  
+  // If placed more than 4 hours before close, definitely pre-game
+  // If placed less than 3 hours before close, likely during game (live)
+  // In between is ambiguous
+  
+  if (hoursBeforeClose > 4) {
+    return 'pre-game';
+  } else if (hoursBeforeClose < 3 && hoursBeforeClose > 0) {
+    return 'live';
+  } else if (hoursBeforeClose <= 0) {
+    // Placed after close time means something is off, but likely was live
+    return 'live';
+  }
+  
+  return 'unknown';
 }
 
 // Get day of week from date string
@@ -123,8 +187,9 @@ export async function GET(request: Request) {
 
         // Calculate details
         const batchDate = order.order_batches?.batch_date || order.created_at?.split('T')[0];
-        const sport = getSportFromTicker(order.event_ticker || '');
+        const league = getLeagueFromTicker(order.event_ticker || '');
         const dayOfWeek = getDayOfWeek(batchDate);
+        const betTiming = getBetTiming(order.placement_status_at, order.market_close_time);
         
         // Our entry price
         const entryPriceCents = order.executed_price_cents || order.price_cents;
@@ -166,9 +231,11 @@ export async function GET(request: Request) {
           batch_date: batchDate,
           market_close_time: order.market_close_time,
           result_status_at: order.result_status_at,
-          sport,
+          placement_status_at: order.placement_status_at,
+          league,
           day_of_week: dayOfWeek,
           venue,
+          bet_timing: betTiming,
           // Market data if available
           market_result: marketData?.result,
           market_status: marketData?.status,
@@ -189,19 +256,19 @@ export async function GET(request: Request) {
     const totalLostCents = enrichedLosses.reduce((sum, l) => sum + l.cost_cents, 0);
     const avgOdds = enrichedLosses.reduce((sum, l) => sum + l.implied_odds_percent, 0) / enrichedLosses.length;
 
-    // Group by sport
-    const bySport: Record<string, { count: number; lost_cents: number; avg_odds: number }> = {};
+    // Group by league
+    const byLeague: Record<string, { count: number; lost_cents: number; avg_odds: number }> = {};
     for (const loss of enrichedLosses) {
-      if (!bySport[loss.sport]) {
-        bySport[loss.sport] = { count: 0, lost_cents: 0, avg_odds: 0 };
+      if (!byLeague[loss.league]) {
+        byLeague[loss.league] = { count: 0, lost_cents: 0, avg_odds: 0 };
       }
-      bySport[loss.sport].count++;
-      bySport[loss.sport].lost_cents += loss.cost_cents;
-      bySport[loss.sport].avg_odds += loss.implied_odds_percent;
+      byLeague[loss.league].count++;
+      byLeague[loss.league].lost_cents += loss.cost_cents;
+      byLeague[loss.league].avg_odds += loss.implied_odds_percent;
     }
     // Calculate averages
-    for (const sport of Object.keys(bySport)) {
-      bySport[sport].avg_odds = Math.round(bySport[sport].avg_odds / bySport[sport].count);
+    for (const league of Object.keys(byLeague)) {
+      byLeague[league].avg_odds = Math.round(byLeague[league].avg_odds / byLeague[league].count);
     }
 
     // Group by day of week
@@ -276,6 +343,17 @@ export async function GET(request: Request) {
       byVenue[loss.venue].lost_cents += loss.cost_cents;
     }
 
+    // Group by bet timing (pre-game vs live)
+    const byTiming: Record<string, { count: number; lost_cents: number }> = {
+      'pre-game': { count: 0, lost_cents: 0 },
+      'live': { count: 0, lost_cents: 0 },
+      'unknown': { count: 0, lost_cents: 0 },
+    };
+    for (const loss of enrichedLosses) {
+      byTiming[loss.bet_timing].count++;
+      byTiming[loss.bet_timing].lost_cents += loss.cost_cents;
+    }
+
     return NextResponse.json({
       success: true,
       losses: enrichedLosses,
@@ -283,11 +361,12 @@ export async function GET(request: Request) {
         total_losses: enrichedLosses.length,
         total_lost_cents: totalLostCents,
         avg_odds: Math.round(avgOdds),
-        by_sport: bySport,
+        by_league: byLeague,
         by_day_of_week: byDayOfWeek,
         by_odds_range: byOddsRange,
         by_month: byMonth,
         by_venue: byVenue,
+        by_timing: byTiming,
         top_losing_teams: topLosingTeams,
       },
     });
