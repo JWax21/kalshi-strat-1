@@ -265,13 +265,6 @@ export async function GET(request: Request) {
         pending: totalPendingOrders,
         pnl_cents: totalPnl,
       },
-      debug: {
-        total_orders_fetched: allOrders?.length || 0,
-        orders_by_date_counts: Object.fromEntries(
-          Object.entries(ordersByDate).map(([d, orders]) => [d, orders.length])
-        ),
-        timestamp: new Date().toISOString(),
-      },
     });
     
     // Prevent caching
