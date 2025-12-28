@@ -292,7 +292,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     }
 
     // Calculate how long it's been resting
-    const createdAt = new Date(kalshiOrder.created_time);
+    const createdAt = new Date((kalshiOrder as any).created_time);
     const minutesResting = (Date.now() - createdAt.getTime()) / 60000;
 
     // If resting too long, cancel and blacklist
@@ -336,8 +336,8 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     else if (minutesResting >= RESTING_IMPROVE_AFTER_MINUTES) {
       try {
         const currentPrice = order.side === 'YES' 
-          ? kalshiOrder.yes_price 
-          : kalshiOrder.no_price;
+          ? (kalshiOrder as any).yes_price 
+          : (kalshiOrder as any).no_price;
         const newPrice = Math.min(currentPrice + PRICE_IMPROVEMENT_CENTS, 99);
 
         // Cancel old order
