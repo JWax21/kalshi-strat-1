@@ -209,35 +209,36 @@ export async function GET(request: Request) {
         }
 
         // Try to get candlestick data for price history
-        // API requires: /series/{series_ticker}/markets/{ticker}/candlesticks with start_ts, end_ts, period_interval
+        // API: /series/{series_ticker}/markets/{ticker}/candlesticks with start_ts, end_ts, period_interval
         let candlesticks: { ts: string; open: number; high: number; low: number; close: number }[] = [];
         try {
-          // Extract series_ticker from event_ticker (e.g., KXNBAGAME-25DEC26BOSIND -> KXNBAGAME)
-          const seriesTicker = order.event_ticker?.split('-')[0] || '';
+          // Get series_ticker from market data if available, otherwise extract from ticker
+          const seriesTicker = marketData?.series_ticker || order.ticker?.split('-')[0] || '';
           
-          // Calculate time range: from 24 hours before market close to market close
+          // Calculate time range: from 48 hours before market close to market close
           const endTs = order.market_close_time 
             ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
             : Math.floor(Date.now() / 1000);
-          const startTs = endTs - (24 * 60 * 60); // 24 hours before
+          const startTs = endTs - (48 * 60 * 60); // 48 hours before
           
-          if (seriesTicker) {
+          if (seriesTicker && order.ticker) {
             const candlestickResponse = await kalshiFetch(
               `/series/${seriesTicker}/markets/${order.ticker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`
             );
-            if (candlestickResponse?.candlesticks) {
+            
+            if (candlestickResponse?.candlesticks && candlestickResponse.candlesticks.length > 0) {
               candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
-                ts: c.end_period_ts,
-                open: c.price?.open || 0,
-                high: c.price?.high || 0,
-                low: c.price?.low || 0,
-                close: c.price?.close || 0,
-              }));
+                ts: String(c.end_period_ts),
+                open: c.price?.open ?? c.yes_bid?.open ?? 0,
+                high: c.price?.high ?? c.yes_bid?.high ?? 0,
+                low: c.price?.low ?? c.yes_bid?.low ?? 0,
+                close: c.price?.close ?? c.yes_bid?.close ?? 0,
+              })).filter((c: any) => c.open > 0 || c.close > 0); // Filter out empty candles
             }
           }
           await new Promise(r => setTimeout(r, 50)); // Rate limit
         } catch (e) {
-          // Candlestick data not available
+          console.error(`Candlestick fetch error for ${order.ticker}:`, e);
         }
 
         // Calculate details

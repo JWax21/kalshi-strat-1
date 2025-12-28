@@ -3158,79 +3158,81 @@ export default function Dashboard() {
                               -${(loss.total_cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td className="p-3">
-                              {loss.candlesticks && loss.candlesticks.length > 0 ? (
-                                <div className="w-[200px] h-[50px] relative">
-                                  {(() => {
-                                    const candles = loss.candlesticks.slice(-24); // Last 24 hours
-                                    if (candles.length === 0) return <span className="text-slate-600">—</span>;
-                                    
-                                    const allPrices = candles.flatMap(c => [c.high, c.low, c.open, c.close]).filter(p => p > 0);
-                                    if (allPrices.length === 0) return <span className="text-slate-600">—</span>;
-                                    
-                                    const minPrice = Math.min(...allPrices);
-                                    const maxPrice = Math.max(...allPrices);
+                              {(() => {
+                                const width = 160;
+                                const height = 40;
+                                const entryPrice = loss.avg_entry_price;
+                                const exitPrice = 0; // Lost = settled at 0
+                                
+                                // If we have candlestick data, show it
+                                if (loss.candlesticks && loss.candlesticks.length > 0) {
+                                  const candles = loss.candlesticks.slice(-24);
+                                  const allPrices = candles.flatMap(c => [c.high, c.low, c.open, c.close]).filter(p => p > 0);
+                                  
+                                  if (allPrices.length > 0) {
+                                    const minPrice = Math.min(...allPrices, 0);
+                                    const maxPrice = Math.max(...allPrices, entryPrice);
                                     const range = maxPrice - minPrice || 1;
-                                    const entryPrice = loss.avg_entry_price;
-                                    
-                                    const width = 200;
-                                    const height = 50;
                                     const candleWidth = Math.max(2, Math.floor((width - 20) / candles.length) - 1);
                                     const gap = 1;
                                     
-                                    // Scale price to Y coordinate (inverted - higher price = lower Y)
                                     const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
                                     const entryY = scaleY(entryPrice);
                                     
                                     return (
-                                      <svg width={width} height={height} className="bg-slate-800/50 rounded">
-                                        {/* Entry price line */}
-                                        <line x1="0" y1={entryY} x2={width} y2={entryY} stroke="#f59e0b" strokeWidth="1" strokeDasharray="3,3" />
-                                        
-                                        {/* Candlesticks */}
-                                        {candles.map((c, i) => {
-                                          const x = 10 + i * (candleWidth + gap);
-                                          const openY = scaleY(c.open);
-                                          const closeY = scaleY(c.close);
-                                          const highY = scaleY(c.high);
-                                          const lowY = scaleY(c.low);
-                                          const isUp = c.close >= c.open;
-                                          const color = isUp ? '#22c55e' : '#ef4444';
-                                          const bodyTop = Math.min(openY, closeY);
-                                          const bodyHeight = Math.max(1, Math.abs(closeY - openY));
-                                          
-                                          return (
-                                            <g key={i}>
-                                              {/* Wick */}
-                                              <line 
-                                                x1={x + candleWidth / 2} 
-                                                y1={highY} 
-                                                x2={x + candleWidth / 2} 
-                                                y2={lowY} 
-                                                stroke={color} 
-                                                strokeWidth="1" 
-                                              />
-                                              {/* Body */}
-                                              <rect 
-                                                x={x} 
-                                                y={bodyTop} 
-                                                width={candleWidth} 
-                                                height={bodyHeight} 
-                                                fill={color} 
-                                              />
-                                            </g>
-                                          );
-                                        })}
-                                        
-                                        {/* Labels */}
-                                        <text x="2" y="10" fontSize="8" fill="#94a3b8">{maxPrice}¢</text>
-                                        <text x="2" y={height - 2} fontSize="8" fill="#94a3b8">{minPrice}¢</text>
-                                      </svg>
+                                      <div className="w-[160px] h-[40px]">
+                                        <svg width={width} height={height} className="bg-slate-800/50 rounded">
+                                          <line x1="0" y1={entryY} x2={width} y2={entryY} stroke="#f59e0b" strokeWidth="1" strokeDasharray="3,3" />
+                                          {candles.map((c, i) => {
+                                            const x = 10 + i * (candleWidth + gap);
+                                            const openY = scaleY(c.open);
+                                            const closeY = scaleY(c.close);
+                                            const highY = scaleY(c.high);
+                                            const lowY = scaleY(c.low);
+                                            const isUp = c.close >= c.open;
+                                            const color = isUp ? '#22c55e' : '#ef4444';
+                                            const bodyTop = Math.min(openY, closeY);
+                                            const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+                                            
+                                            return (
+                                              <g key={i}>
+                                                <line x1={x + candleWidth / 2} y1={highY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1" />
+                                                <rect x={x} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} />
+                                              </g>
+                                            );
+                                          })}
+                                          <text x="2" y="10" fontSize="8" fill="#94a3b8">{Math.round(maxPrice)}¢</text>
+                                          <text x="2" y={height - 2} fontSize="8" fill="#94a3b8">{Math.round(minPrice)}¢</text>
+                                        </svg>
+                                      </div>
                                     );
-                                  })()}
-                                </div>
-                              ) : (
-                                <span className="text-slate-600 text-xs">No data</span>
-                              )}
+                                  }
+                                }
+                                
+                                // Fallback: Show simple entry → exit visualization
+                                const minPrice = 0;
+                                const maxPrice = entryPrice;
+                                const range = maxPrice || 1;
+                                const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
+                                const entryY = scaleY(entryPrice);
+                                const exitY = scaleY(exitPrice);
+                                
+                                return (
+                                  <div className="w-[160px] h-[40px]">
+                                    <svg width={width} height={height} className="bg-slate-800/50 rounded">
+                                      {/* Entry to exit line */}
+                                      <line x1="20" y1={entryY} x2={width - 20} y2={exitY} stroke="#ef4444" strokeWidth="2" />
+                                      {/* Entry point */}
+                                      <circle cx="20" cy={entryY} r="4" fill="#f59e0b" />
+                                      {/* Exit point */}
+                                      <circle cx={width - 20} cy={exitY} r="4" fill="#ef4444" />
+                                      {/* Labels */}
+                                      <text x="28" y={entryY + 3} fontSize="9" fill="#f59e0b">{entryPrice}¢</text>
+                                      <text x={width - 35} y={exitY - 5} fontSize="9" fill="#ef4444">0¢</text>
+                                    </svg>
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </tr>
                         ));
