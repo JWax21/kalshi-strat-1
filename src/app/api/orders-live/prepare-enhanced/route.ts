@@ -132,6 +132,9 @@ function calculateLiquidityScore(
 
 /**
  * Distribute capital based on liquidity scores
+ * STRATEGY: Spread first, 3% cap second
+ * 1. Calculate even distribution = capital / number of markets
+ * 2. Use 3% cap only when we don't have enough markets to deploy all capital
  * If betting both sides of same event, use half the position limit per side
  */
 function distributeCapitalByLiquidity(
@@ -141,7 +144,13 @@ function distributeCapitalByLiquidity(
 ): LiquidityAnalysis[] {
   if (analyses.length === 0) return [];
   
+  // SPREAD FIRST: Calculate even distribution across all markets
+  const evenDistributionCents = Math.floor(totalCapitalCents / analyses.length);
   const baseMaxPositionCents = Math.floor(totalCapitalCents * maxPositionPercent);
+  // 3% CAP SECOND: Only use 3% cap if even distribution exceeds it
+  const baseTargetCents = Math.min(evenDistributionCents, baseMaxPositionCents);
+  
+  console.log(`Capital distribution: ${totalCapitalCents}¢ / ${analyses.length} markets = ${evenDistributionCents}¢ each (capped at ${baseMaxPositionCents}¢ = ${baseTargetCents}¢ target)`);
   
   // Group by event_ticker to detect when we're betting both sides
   const eventGroups = new Map<string, LiquidityAnalysis[]>();
@@ -158,15 +167,15 @@ function distributeCapitalByLiquidity(
   for (const [eventTicker, eventMarkets] of eventGroups) {
     // If betting multiple sides of same event, halve the limit per side
     const limitPerSide = eventMarkets.length > 1 
-      ? Math.floor(baseMaxPositionCents / 2)  // 1.5% per side if both sides
-      : baseMaxPositionCents;                   // 3% if only one side
+      ? Math.floor(baseTargetCents / 2)  // Half of target if both sides
+      : baseTargetCents;                  // Full target if only one side
     
     for (const market of eventMarkets) {
       positionLimits.set(market.market.ticker, limitPerSide);
     }
   }
   
-  // Calculate total liquidity score for proportional allocation
+  // Calculate total liquidity score for proportional allocation (used for ordering)
   const totalScore = analyses.reduce((sum, a) => sum + a.liquidity_score, 0);
   
   let remainingCapital = totalCapitalCents;
@@ -178,21 +187,15 @@ function distributeCapitalByLiquidity(
   for (const analysis of sortedAnalyses) {
     if (remainingCapital <= 0) break;
     
-    // Get the position limit for this specific market
-    const maxPositionCents = positionLimits.get(analysis.market.ticker) || baseMaxPositionCents;
-    
-    // Proportional allocation based on liquidity score
-    const proportionalAllocation = Math.floor(
-      (analysis.liquidity_score / totalScore) * totalCapitalCents
-    );
+    // Get the position limit for this specific market (based on even distribution)
+    const targetPositionCents = positionLimits.get(analysis.market.ticker) || baseTargetCents;
     
     // Cap by various limits
-    const maxByPosition = maxPositionCents;
+    const maxByPosition = targetPositionCents;
     const maxByOrderbook = analysis.max_fillable_units * analysis.price_cents;
     const maxByRemaining = remainingCapital;
     
     const allocationCents = Math.min(
-      proportionalAllocation,
       maxByPosition,
       maxByOrderbook,
       maxByRemaining
@@ -212,30 +215,45 @@ function distributeCapitalByLiquidity(
     }
   }
   
-  // Second pass: distribute remaining capital to highest liquidity markets
-  while (remainingCapital > 0) {
-    let allocated = false;
+  // Second pass: if we still have capital and target was less than 3%, distribute up to 3%
+  if (remainingCapital > 0 && baseTargetCents < baseMaxPositionCents) {
+    console.log(`Second pass: ${remainingCapital}¢ remaining, distributing up to 3% cap...`);
     
-    for (const result of results) {
-      if (remainingCapital <= 0) break;
+    // Recalculate position limits using full 3% cap
+    for (const [eventTicker, eventMarkets] of eventGroups) {
+      const limitPerSide = eventMarkets.length > 1 
+        ? Math.floor(baseMaxPositionCents / 2)
+        : baseMaxPositionCents;
       
-      // Get the position limit for this specific market
-      const maxPositionCents = positionLimits.get(result.market.ticker) || baseMaxPositionCents;
-      
-      const currentCost = result.recommended_cost_cents;
-      const maxCost = Math.min(maxPositionCents, result.max_fillable_units * result.price_cents);
-      
-      if (currentCost < maxCost && remainingCapital >= result.price_cents) {
-        // Add one more unit
-        result.recommended_units += 1;
-        result.recommended_cost_cents += result.price_cents;
-        remainingCapital -= result.price_cents;
-        allocated = true;
+      for (const market of eventMarkets) {
+        positionLimits.set(market.market.ticker, limitPerSide);
       }
     }
     
-    // If we couldn't allocate anything, break
-    if (!allocated) break;
+    while (remainingCapital > 0) {
+      let allocated = false;
+      
+      for (const result of results) {
+        if (remainingCapital <= 0) break;
+        
+        // Get the position limit for this specific market (now using 3% cap)
+        const maxPositionCents = positionLimits.get(result.market.ticker) || baseMaxPositionCents;
+        
+        const currentCost = result.recommended_cost_cents;
+        const maxCost = Math.min(maxPositionCents, result.max_fillable_units * result.price_cents);
+        
+        if (currentCost < maxCost && remainingCapital >= result.price_cents) {
+          // Add one more unit
+          result.recommended_units += 1;
+          result.recommended_cost_cents += result.price_cents;
+          remainingCapital -= result.price_cents;
+          allocated = true;
+        }
+      }
+      
+      // If we couldn't allocate anything, break
+      if (!allocated) break;
+    }
   }
   
   return results;

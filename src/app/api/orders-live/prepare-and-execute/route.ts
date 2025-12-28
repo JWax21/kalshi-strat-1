@@ -117,8 +117,14 @@ export async function POST(request: Request) {
       return { ...market, favorite_side: favoriteSide, favorite_odds: favoriteOdds, price_cents: priceCents };
     });
 
-    // Step 7: Distribute capital (3% max per market)
+    // Step 7: Distribute capital - SPREAD FIRST, 3% cap second
+    // Calculate even distribution across all markets
+    const evenDistributionCents = Math.floor(availableBalance / enrichedMarkets.length);
     const maxPositionCents = Math.floor(availableBalance * MAX_POSITION_PERCENT);
+    // Use even distribution, capped at 3%
+    const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
+    
+    console.log(`Capital distribution: ${availableBalance}¢ / ${enrichedMarkets.length} markets = ${evenDistributionCents}¢ each (capped at ${maxPositionCents}¢ = ${targetAllocationCents}¢ target)`);
     
     type MarketAllocation = { market: typeof enrichedMarkets[0]; units: number; cost: number };
     const allocations: MarketAllocation[] = enrichedMarkets.map(m => ({
@@ -130,18 +136,40 @@ export async function POST(request: Request) {
     let remainingBalance = availableBalance;
     let madeProgress = true;
 
+    // First pass: distribute up to target allocation (even distribution or 3%, whichever is lower)
     while (remainingBalance > 0 && madeProgress) {
       madeProgress = false;
       for (const alloc of allocations) {
         if (remainingBalance <= 0) break;
         const costPerUnit = alloc.market.price_cents;
-        const maxUnits = Math.floor(maxPositionCents / costPerUnit);
+        const maxUnits = Math.floor(targetAllocationCents / costPerUnit);
         
         if (alloc.units < maxUnits && remainingBalance >= costPerUnit) {
           alloc.units += 1;
           alloc.cost += costPerUnit;
           remainingBalance -= costPerUnit;
           madeProgress = true;
+        }
+      }
+    }
+    
+    // Second pass: if we still have balance, distribute up to 3% cap
+    if (remainingBalance > 0 && targetAllocationCents < maxPositionCents) {
+      console.log(`Second pass: ${remainingBalance}¢ remaining, distributing up to 3% cap...`);
+      madeProgress = true;
+      while (remainingBalance > 0 && madeProgress) {
+        madeProgress = false;
+        for (const alloc of allocations) {
+          if (remainingBalance <= 0) break;
+          const costPerUnit = alloc.market.price_cents;
+          const maxUnits = Math.floor(maxPositionCents / costPerUnit);
+          
+          if (alloc.units < maxUnits && remainingBalance >= costPerUnit) {
+            alloc.units += 1;
+            alloc.cost += costPerUnit;
+            remainingBalance -= costPerUnit;
+            madeProgress = true;
+          }
         }
       }
     }

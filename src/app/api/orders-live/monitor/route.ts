@@ -618,6 +618,13 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     // Track exposure per event during this session (to update as we place orders)
     const sessionEventExposure: Map<string, number> = new Map(eventExposureCents);
 
+    // CALCULATE EVEN DISTRIBUTION: spread capital across ALL eligible markets first
+    // Only use 3% cap if we don't have enough markets to deploy all capital
+    const evenAllocationCents = Math.floor(availableBalance / eligibleMarkets.length);
+    const targetAllocationCents = Math.min(evenAllocationCents, maxEventExposureCents);
+    
+    console.log(`Capital distribution: ${availableBalance}¢ / ${eligibleMarkets.length} markets = ${evenAllocationCents}¢ each (capped at ${maxEventExposureCents}¢ = ${targetAllocationCents}¢)`);
+
     // Place orders on eligible markets
     for (const market of eligibleMarkets) {
       if (availableBalance <= 0) break;
@@ -646,10 +653,12 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         continue;
       }
 
-      // Calculate units: fill up to REMAINING CAPACITY (not full 3%), respecting available balance
-      const maxUnitsForEvent = Math.floor(remainingCapacity / priceCents);
+      // Calculate units: use EVEN DISTRIBUTION first, then cap by 3% and remaining capacity
+      // This ensures we spread across all markets instead of filling 3% on each and running out
+      const targetForThisMarket = Math.min(targetAllocationCents, remainingCapacity);
+      const maxUnitsForTarget = Math.floor(targetForThisMarket / priceCents);
       const affordableUnits = Math.floor(availableBalance / priceCents);
-      const units = Math.min(maxUnitsForEvent, affordableUnits);
+      const units = Math.min(maxUnitsForTarget, affordableUnits);
 
       if (units <= 0) continue;
       

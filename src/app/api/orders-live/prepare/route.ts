@@ -58,9 +58,13 @@ const MAX_POSITION_PERCENT = 0.03; // 3% max per market
 
 /**
  * Distribute capital across markets as evenly as possible.
+ * 
+ * STRATEGY: Spread first, 3% cap second
+ * 1. Calculate even distribution = capital / number of markets
+ * 2. Use 3% cap only when we don't have enough markets to deploy all capital
+ * 
  * Markets are sorted by open interest (highest first).
  * Higher OI markets get priority for extra units.
- * Respects 3% position limit per market.
  */
 function distributeCapital(
   markets: any[],
@@ -73,14 +77,19 @@ function distributeCapital(
   // Sort by open interest descending (already sorted, but ensure)
   const sortedMarkets = [...markets].sort((a, b) => b.open_interest - a.open_interest);
   
-  // Calculate max units per market based on 3% limit
-  // Max position value = 3% of total capital
-  const maxPositionCents = Math.floor(availableCapitalCents * MAX_POSITION_PERCENT);
+  // SPREAD FIRST: Calculate even distribution across all markets
+  const evenDistributionCents = Math.floor(availableCapitalCents / sortedMarkets.length);
   
-  // Calculate max units for each market based on their price
+  // 3% CAP SECOND: Only use 3% cap if even distribution exceeds it
+  const maxPositionCents = Math.floor(availableCapitalCents * MAX_POSITION_PERCENT);
+  const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
+  
+  console.log(`Capital distribution: ${availableCapitalCents}¢ / ${sortedMarkets.length} markets = ${evenDistributionCents}¢ each (capped at ${maxPositionCents}¢ = ${targetAllocationCents}¢ target)`);
+  
+  // Calculate max units for each market based on target allocation
   const marketsWithLimits = sortedMarkets.map(market => ({
     market,
-    maxUnits: Math.floor(maxPositionCents / market.price_cents),
+    maxUnits: Math.floor(targetAllocationCents / market.price_cents),
     currentUnits: 0,
   }));
 
@@ -95,7 +104,7 @@ function distributeCapital(
   let remainingCapital = availableCapitalCents;
   let madeProgress = true;
 
-  // Keep distributing units until we can't anymore
+  // Keep distributing units until we can't anymore (round-robin for fairness)
   while (remainingCapital > 0 && madeProgress) {
     madeProgress = false;
     
@@ -105,13 +114,41 @@ function distributeCapital(
       const marketResult = result[i];
       const costForOne = marketResult.market.price_cents;
       
-      // Check if we can add another unit (within 3% limit and have capital)
+      // Check if we can add another unit (within target limit and have capital)
       if (marketResult.units < marketLimit.maxUnits && remainingCapital >= costForOne) {
         marketResult.units += 1;
         marketResult.cost_cents += costForOne;
         marketResult.potential_payout_cents += 100;
         remainingCapital -= costForOne;
         madeProgress = true;
+      }
+    }
+  }
+  
+  // If we still have leftover capital (all markets at target), do a second pass up to 3% cap
+  if (remainingCapital > 0 && targetAllocationCents < maxPositionCents) {
+    console.log(`Second pass: ${remainingCapital}¢ remaining, distributing up to 3% cap...`);
+    
+    // Update limits to 3% cap for second pass
+    for (let i = 0; i < marketsWithLimits.length; i++) {
+      marketsWithLimits[i].maxUnits = Math.floor(maxPositionCents / marketsWithLimits[i].market.price_cents);
+    }
+    
+    madeProgress = true;
+    while (remainingCapital > 0 && madeProgress) {
+      madeProgress = false;
+      for (let i = 0; i < result.length && remainingCapital > 0; i++) {
+        const marketLimit = marketsWithLimits[i];
+        const marketResult = result[i];
+        const costForOne = marketResult.market.price_cents;
+        
+        if (marketResult.units < marketLimit.maxUnits && remainingCapital >= costForOne) {
+          marketResult.units += 1;
+          marketResult.cost_cents += costForOne;
+          marketResult.potential_payout_cents += 100;
+          remainingCapital -= costForOne;
+          madeProgress = true;
+        }
       }
     }
   }

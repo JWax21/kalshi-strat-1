@@ -235,7 +235,14 @@ async function prepareForDay(
     const deduplicatedMarkets = Array.from(eventGroups.values());
     console.log(`Deduplicated: ${enrichedMarkets.length} markets -> ${deduplicatedMarkets.length} unique events (after exposure check)`);
 
-    // Allocate capital - ONE position per event, respecting remaining capacity
+    // SPREAD FIRST: Calculate even distribution across all markets
+    const evenDistributionCents = Math.floor(availableCapitalCents / deduplicatedMarkets.length);
+    // 3% CAP SECOND: Only use 3% cap if even distribution exceeds it
+    const targetAllocationCents = Math.min(evenDistributionCents, baseMaxPositionCents);
+    
+    console.log(`Capital distribution: ${availableCapitalCents}¢ / ${deduplicatedMarkets.length} markets = ${evenDistributionCents}¢ each (capped at ${baseMaxPositionCents}¢ = ${targetAllocationCents}¢ target)`);
+
+    // Allocate capital - ONE position per event, respecting remaining capacity AND even distribution
     const allocatedMarkets: Array<{
       market: KalshiMarket;
       side: 'YES' | 'NO';
@@ -251,9 +258,11 @@ async function prepareForDay(
       const existingExposure = existingEventExposure.get(em.market.event_ticker) || 0;
       const remainingCapacity = baseMaxPositionCents - existingExposure;
       
-      // Calculate units based on remaining capacity
-      const maxUnits = Math.floor(remainingCapacity / em.price_cents);
-      const units = maxUnits;
+      // Use target allocation (even distribution) capped by remaining capacity
+      const targetForThisMarket = Math.min(targetAllocationCents, remainingCapacity);
+      
+      // Calculate units based on target allocation
+      const units = Math.floor(targetForThisMarket / em.price_cents);
       
       if (units > 0) {
         allocatedMarkets.push({
