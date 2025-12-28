@@ -247,20 +247,37 @@ export async function GET(request: Request) {
               candlestickResponse ? `${candlestickResponse.candlesticks?.length || 0} candles` : 'null');
             
             if (candlestickResponse?.candlesticks && candlestickResponse.candlesticks.length > 0) {
-              candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
-                ts: String(c.end_period_ts),
-                open: c.price?.open ?? c.yes_bid?.open ?? 0,
-                high: c.price?.high ?? c.price?.max ?? c.yes_bid?.high ?? 0,
-                low: c.price?.low ?? c.price?.min ?? c.yes_bid?.low ?? 0,
-                close: c.price?.close ?? c.yes_bid?.close ?? 0,
-              })).filter((c: any) => c.open > 0 || c.close > 0);
+              // Candlestick data is for YES side - we need to convert for user's actual side
+              const userSide = order.side; // 'YES' or 'NO'
               
-              // Calculate max and min from all candles
+              candlesticks = candlestickResponse.candlesticks.map((c: any) => {
+                const yesOpen = c.price?.open ?? c.yes_bid?.open ?? 0;
+                const yesHigh = c.price?.high ?? c.price?.max ?? c.yes_bid?.high ?? 0;
+                const yesLow = c.price?.low ?? c.price?.min ?? c.yes_bid?.low ?? 0;
+                const yesClose = c.price?.close ?? c.yes_bid?.close ?? 0;
+                
+                if (userSide === 'YES') {
+                  return { ts: String(c.end_period_ts), open: yesOpen, high: yesHigh, low: yesLow, close: yesClose };
+                } else {
+                  // For NO side: our price = 100 - YES price
+                  // Our high = 100 - YES low (when YES is lowest, NO is highest)
+                  // Our low = 100 - YES high (when YES is highest, NO is lowest)
+                  return {
+                    ts: String(c.end_period_ts),
+                    open: yesOpen > 0 ? 100 - yesOpen : 0,
+                    high: yesLow > 0 ? 100 - yesLow : 0,  // Our high is when YES was at its LOW
+                    low: yesHigh > 0 ? 100 - yesHigh : 0, // Our low is when YES was at its HIGH
+                    close: yesClose > 0 ? 100 - yesClose : 0,
+                  };
+                }
+              }).filter((c: any) => c.open > 0 || c.close > 0);
+              
+              // Calculate max and min from all candles (now correctly for user's side)
               for (const c of candlesticks) {
                 if (c.high > maxPriceSeen) maxPriceSeen = c.high;
                 if (c.low < minPriceSeen && c.low > 0) minPriceSeen = c.low;
               }
-              console.log(`[Candlestick] Parsed ${candlesticks.length} candles, max=${maxPriceSeen}, min=${minPriceSeen}`);
+              console.log(`[Candlestick] Parsed ${candlesticks.length} candles for ${userSide} side, max=${maxPriceSeen}, min=${minPriceSeen}`);
             }
           }
           await new Promise(r => setTimeout(r, 50)); // Rate limit
