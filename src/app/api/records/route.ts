@@ -128,8 +128,10 @@ export async function GET(request: Request) {
       return null;
     };
 
-    // Group orders by SETTLEMENT DATE for P&L calculations
-    // Only include orders that settled on Dec 24 or later
+    // Group orders by SETTLEMENT DATE only
+    // Pending orders are counted separately, not mixed into date buckets
+    let totalPendingOrders = 0;
+    
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
         // For settled orders, group by settlement date
@@ -142,15 +144,9 @@ export async function GET(request: Request) {
             ordersByDate[settlementDate].push(order);
           }
         }
-        // For pending orders, group by game date from ticker
+        // Count pending orders separately
         else if (order.result_status === 'undecided') {
-          const gameDate = order.ticker ? getGameDateFromTicker(order.ticker) : null;
-          if (gameDate && gameDate >= startDateStr) {
-            if (!ordersByDate[gameDate]) {
-              ordersByDate[gameDate] = [];
-            }
-            ordersByDate[gameDate].push(order);
-          }
+          totalPendingOrders++;
         }
       });
     }
@@ -192,41 +188,6 @@ export async function GET(request: Request) {
       previousEndCash = previousEndCash - dayPnl;
     }
 
-    // Helper to count wins/losses by unique event_ticker
-    // An event is "won" if ANY order for it won, "lost" only if ALL orders for it lost
-    const countByUniqueEvent = (orders: any[]): { wonEvents: number; lostEvents: number; pendingEvents: number } => {
-      const eventResults: Record<string, { hasWon: boolean; hasLost: boolean; hasPending: boolean }> = {};
-      
-      for (const order of orders) {
-        if (!eventResults[order.event_ticker]) {
-          eventResults[order.event_ticker] = { hasWon: false, hasLost: false, hasPending: false };
-        }
-        if (order.result_status === 'won') {
-          eventResults[order.event_ticker].hasWon = true;
-        } else if (order.result_status === 'lost') {
-          eventResults[order.event_ticker].hasLost = true;
-        } else if (order.result_status === 'undecided') {
-          eventResults[order.event_ticker].hasPending = true;
-        }
-      }
-      
-      let wonEvents = 0;
-      let lostEvents = 0;
-      let pendingEvents = 0;
-      
-      for (const result of Object.values(eventResults)) {
-        if (result.hasWon) {
-          wonEvents++;
-        } else if (result.hasLost) {
-          lostEvents++;
-        } else if (result.hasPending) {
-          pendingEvents++;
-        }
-      }
-      
-      return { wonEvents, lostEvents, pendingEvents };
-    };
-
     // Now build records going forward
     let runningCash = previousEndCash;
     
@@ -237,8 +198,9 @@ export async function GET(request: Request) {
       const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
       const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
       
-      // Count by unique events
-      const { wonEvents, lostEvents, pendingEvents } = countByUniqueEvent(confirmedOrders);
+      // Count individual orders (not unique events)
+      const wonCount = wonOrders.length;
+      const lostCount = lostOrders.length;
       
       const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
       const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
@@ -270,9 +232,9 @@ export async function GET(request: Request) {
         start_portfolio_cents: Math.round(startPortfolio),
         end_cash_cents: Math.round(endCash),
         end_portfolio_cents: Math.round(endPortfolio),
-        wins: wonEvents,
-        losses: lostEvents,
-        pending: pendingEvents,
+        wins: wonCount,
+        losses: lostCount,
+        pending: 0, // Pending shown as total, not per-day
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
         avg_price_cents: Math.round(avgPrice),
@@ -288,7 +250,6 @@ export async function GET(request: Request) {
     // Calculate totals
     const totalWins = records.reduce((sum, r) => sum + r.wins, 0);
     const totalLosses = records.reduce((sum, r) => sum + r.losses, 0);
-    const totalPending = records.reduce((sum, r) => sum + r.pending, 0);
     const totalPnl = records.reduce((sum, r) => sum + r.pnl_cents, 0);
 
     return NextResponse.json({
@@ -299,7 +260,7 @@ export async function GET(request: Request) {
       totals: {
         wins: totalWins,
         losses: totalLosses,
-        pending: totalPending,
+        pending: totalPendingOrders,
         pnl_cents: totalPnl,
       },
     });
