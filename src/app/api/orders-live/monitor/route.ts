@@ -345,6 +345,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   }
 
   // Step 5: Execute PENDING orders for today's games (from prepare-week)
+  // IMPORTANT: Recalculate units based on CURRENT available capital, not original estimates
   // Only execute after 6am ET
   if (isAfter6amET()) {
     const todayForPending = getTodayET();
@@ -356,50 +357,86 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     
     if (pendingError) {
       result.details.errors.push(`Failed to fetch pending orders: ${pendingError.message}`);
-    } else if (pendingOrders && pendingOrders.length > 0) {
-      console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending orders for today (${todayForPending})`);
+    } else if (pendingOrders && pendingOrders.length > 0 && availableBalance > 0) {
+      console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending orders for today (${todayForPending}), available balance: ${availableBalance}¢`);
+      
+      // RECALCULATE: Spread available capital evenly across all pending orders
+      // Use 3% cap only if even distribution exceeds it
+      const evenDistributionCents = Math.floor(availableBalance / pendingOrders.length);
+      const maxPositionCents = Math.floor((availableBalance + totalExposure) * MAX_POSITION_PERCENT);
+      const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
+      
+      console.log(`Capital redistribution: ${availableBalance}¢ / ${pendingOrders.length} orders = ${evenDistributionCents}¢ each (cap: ${maxPositionCents}¢, target: ${targetAllocationCents}¢)`);
+      
+      let capitalUsed = 0;
       
       for (const order of pendingOrders) {
+        // Skip if we've used all capital
+        const remainingCapital = availableBalance - capitalUsed;
+        if (remainingCapital <= 0) {
+          console.log(`Skipping ${order.ticker} - no remaining capital`);
+          continue;
+        }
+        
         try {
-          // Place order on Kalshi
+          // RECALCULATE units based on current available capital
+          const priceCents = order.price_cents;
+          const maxUnitsForTarget = Math.floor(Math.min(targetAllocationCents, remainingCapital) / priceCents);
+          const recalculatedUnits = Math.max(maxUnitsForTarget, 1); // At least 1 unit
+          const recalculatedCost = recalculatedUnits * priceCents;
+          
+          if (recalculatedCost > remainingCapital) {
+            console.log(`Skipping ${order.ticker} - insufficient capital (need ${recalculatedCost}¢, have ${remainingCapital}¢)`);
+            continue;
+          }
+          
+          console.log(`Recalculated ${order.ticker}: ${order.units}u -> ${recalculatedUnits}u @ ${priceCents}¢ (cost: ${recalculatedCost}¢)`);
+          
+          // Place order on Kalshi with recalculated units
           const payload: any = {
             ticker: order.ticker,
             action: 'buy',
             side: order.side.toLowerCase(),
-            count: order.units || 1,
+            count: recalculatedUnits,
             type: 'limit',
             client_order_id: `pending_${order.id}_${Date.now()}`,
           };
 
           if (order.side === 'YES') {
-            payload.yes_price = order.price_cents;
+            payload.yes_price = priceCents;
           } else {
-            payload.no_price = order.price_cents;
+            payload.no_price = priceCents;
           }
 
           const orderResult = await placeOrder(payload);
           const kalshiOrderId = orderResult.order?.order_id;
           const status = orderResult.order?.status;
           const isExecuted = status === 'executed';
-          const filledCount = (orderResult.order as any)?.filled_count || order.units || 1;
+          const filledCount = (orderResult.order as any)?.filled_count || recalculatedUnits;
+          const actualCost = priceCents * filledCount;
 
-          // Update order in DB
+          // Update order in DB with recalculated values
           await supabase
             .from('orders')
             .update({
+              units: recalculatedUnits,
+              cost_cents: recalculatedCost,
+              potential_payout_cents: recalculatedUnits * 100,
+              potential_profit_cents: (100 - priceCents) * recalculatedUnits,
               kalshi_order_id: kalshiOrderId,
               placement_status: isExecuted ? 'confirmed' : 'placed',
               placement_status_at: new Date().toISOString(),
-              executed_price_cents: isExecuted ? order.price_cents : null,
-              executed_cost_cents: isExecuted ? order.price_cents * filledCount : null,
+              executed_price_cents: isExecuted ? priceCents : null,
+              executed_cost_cents: isExecuted ? actualCost : null,
             })
             .eq('id', order.id);
 
+          capitalUsed += recalculatedCost;
           result.actions.new_orders_placed++;
           result.details.new_placements.push(
-            `[PENDING] ${order.ticker}: ${order.units}u @ ${order.price_cents}¢ ${order.side} (${status})`
+            `[PENDING] ${order.ticker}: ${recalculatedUnits}u @ ${priceCents}¢ ${order.side} (${status}) [recalc from ${order.units}u]`
           );
-          console.log(`Executed pending: ${order.ticker} - ${order.units}u @ ${order.price_cents}¢ ${order.side} (${status})`);
+          console.log(`Executed pending: ${order.ticker} - ${recalculatedUnits}u @ ${priceCents}¢ ${order.side} (${status})`);
           
           await new Promise(r => setTimeout(r, 300)); // Rate limit
         } catch (e) {
@@ -407,6 +444,12 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           console.error(`Failed to execute pending ${order.ticker}:`, e);
         }
       }
+      
+      // Update available balance after placing pending orders
+      availableBalance -= capitalUsed;
+      console.log(`Capital used for pending orders: ${capitalUsed}¢, remaining: ${availableBalance}¢`);
+    } else if (pendingOrders && pendingOrders.length > 0 && availableBalance <= 0) {
+      console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending orders but no available capital (${availableBalance}¢)`);
     }
   }
 
