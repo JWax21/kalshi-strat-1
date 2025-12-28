@@ -106,24 +106,56 @@ export async function GET(request: Request) {
     const { data: allOrders } = await supabase
       .from('orders')
       .select('*')
-      .eq('placement_status', 'confirmed')
-      .not('placement_status_at', 'is', null);
-
+      .eq('placement_status', 'confirmed');
 
     const ordersByDate: Record<string, any[]> = {};
 
-    // Group orders by PLACEMENT DATE (in ET), not by batch/game date
+    // Helper to get game date from order
+    // For settled orders: use settlement_status_at minus 8 hours (approximate game start)
+    // For unsettled orders: use batch date from order_batches or market_close_time
+    const getGameDate = (order: any): string | null => {
+      if (order.settlement_status_at && (order.result_status === 'won' || order.result_status === 'lost')) {
+        // Subtract 8 hours from settlement time to approximate game start
+        const settlementTime = new Date(order.settlement_status_at);
+        settlementTime.setHours(settlementTime.getHours() - 8);
+        return getDateFromTimestampET(settlementTime.toISOString());
+      }
+      
+      // For unsettled orders, try to extract date from ticker
+      // Format: KXNBAGAME-25DEC28BOSIND = Dec 28, 2025
+      if (order.ticker) {
+        const tickerMatch = order.ticker.match(/-(\d{2})([A-Z]{3})(\d{2})/);
+        if (tickerMatch) {
+          const [, yearStr, monthStr, dayStr] = tickerMatch;
+          const monthMap: Record<string, string> = {
+            'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
+            'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
+            'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+          };
+          const month = monthMap[monthStr];
+          if (month) {
+            return `20${yearStr}-${month}-${dayStr}`;
+          }
+        }
+      }
+      
+      // Fallback to placement_status_at if available
+      if (order.placement_status_at) {
+        return getDateFromTimestampET(order.placement_status_at);
+      }
+      
+      return null;
+    };
+
+    // Group orders by GAME DATE
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
-        if (order.placement_status_at) {
-          const placementDateET = getDateFromTimestampET(order.placement_status_at);
-          // Only include orders within our date range
-          if (placementDateET >= startDateStr) {
-            if (!ordersByDate[placementDateET]) {
-              ordersByDate[placementDateET] = [];
-            }
-            ordersByDate[placementDateET].push(order);
+        const gameDate = getGameDate(order);
+        if (gameDate && gameDate >= startDateStr) {
+          if (!ordersByDate[gameDate]) {
+            ordersByDate[gameDate] = [];
           }
+          ordersByDate[gameDate].push(order);
         }
       });
     }
