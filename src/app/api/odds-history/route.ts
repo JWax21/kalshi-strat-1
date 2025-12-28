@@ -234,13 +234,13 @@ async function logOddsAndCheckAlerts(): Promise<{
 
     // Step 6: Clean up old data (older than RETENTION_DAYS)
     const retentionCutoff = new Date(now.getTime() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const { count: deletedCount } = await supabase
+    const { data: deletedData } = await supabase
       .from('odds_history')
       .delete()
       .lt('logged_at', retentionCutoff)
-      .select('*', { count: 'exact', head: true });
+      .select('id');
     
-    result.cleaned = deletedCount || 0;
+    result.cleaned = deletedData?.length || 0;
 
   } catch (err) {
     result.errors.push(`Fatal error: ${err}`);
