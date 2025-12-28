@@ -129,10 +129,21 @@ export async function GET(request: Request) {
     };
 
     // Group orders by GAME DATE (extracted from ticker)
+    // Only include orders that settled on Dec 24 or later (or are still pending)
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
         const gameDate = order.ticker ? getGameDateFromTicker(order.ticker) : null;
-        if (gameDate && gameDate >= startDateStr) {
+        if (!gameDate) return;
+        
+        // For settled orders, check settlement date
+        if (order.result_status === 'won' || order.result_status === 'lost') {
+          if (order.settlement_status_at) {
+            const settlementDate = getDateFromTimestampET(order.settlement_status_at);
+            if (settlementDate < startDateStr) return; // Skip if settled before Dec 24
+          }
+        }
+        
+        if (gameDate >= startDateStr) {
           if (!ordersByDate[gameDate]) {
             ordersByDate[gameDate] = [];
           }
