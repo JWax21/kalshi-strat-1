@@ -115,6 +115,45 @@ interface LossesData {
   summary: LossesSummary;
 }
 
+interface WhatIfOrderAnalysis {
+  id: string;
+  ticker: string;
+  title: string;
+  side: string;
+  units: number;
+  entry_price_cents: number;
+  cost_cents: number;
+  result_status: 'won' | 'lost';
+  price_history: { timestamp: string; yes_price: number; no_price: number }[];
+  min_price_after_entry: number | null;
+  max_price_after_entry: number | null;
+  would_trigger_at: Record<number, boolean>;
+  recovery_at: Record<number, number>;
+}
+
+interface WhatIfStopLossResult {
+  lossesTriggered: number;
+  winsTriggered: number;
+  lossRecovery: number;
+  missedWinProfit: number;
+  simulatedPnL: number;
+  improvement: number;
+}
+
+interface WhatIfData {
+  success: boolean;
+  orders: WhatIfOrderAnalysis[];
+  summary: {
+    total_orders: number;
+    won: number;
+    lost: number;
+    actual_pnl_cents: number;
+    stop_loss_results: Record<number, WhatIfStopLossResult>;
+    optimal_stop_loss: WhatIfStopLossResult & { price: number };
+    has_price_history: number;
+  };
+}
+
 interface OrderBatch {
   id: string;
   batch_date: string;
@@ -316,6 +355,8 @@ export default function Dashboard() {
   
   // What-If simulation state
   const [stopLossPrice, setStopLossPrice] = useState(50); // Default 50 cents
+  const [whatIfData, setWhatIfData] = useState<WhatIfData | null>(null);
+  const [whatIfLoading, setWhatIfLoading] = useState(false);
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
@@ -640,6 +681,22 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch what-if analysis data
+  const fetchWhatIf = async () => {
+    setWhatIfLoading(true);
+    try {
+      const res = await fetch('/api/whatif?days=90');
+      const data = await res.json();
+      if (data.success) {
+        setWhatIfData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching what-if data:', err);
+    } finally {
+      setWhatIfLoading(false);
+    }
+  };
+
   // Prepare orders
   const prepareOrders = async (forToday: boolean = false) => {
     setPreparingOrders(true);
@@ -795,6 +852,8 @@ export default function Dashboard() {
       fetchRecords();
     } else if (activeTab === 'losses') {
       fetchLosses();
+    } else if (activeTab === 'whatif') {
+      fetchWhatIf();
     }
   }, [activeTab]);
 
@@ -2789,268 +2848,250 @@ export default function Dashboard() {
             {/* Header */}
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-white">What If Analysis</h2>
-              <p className="text-slate-400 text-sm mt-1">Simulate automatic stop-loss selling</p>
+              <p className="text-slate-400 text-sm mt-1">Simulate automatic stop-loss selling with historical price data</p>
             </div>
 
-            {(() => {
-              // Get all settled orders
-              const allOrders = orderBatches.flatMap(b => b.orders || []);
-              const settledOrders = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
-              const wonOrders = settledOrders.filter(o => o.result_status === 'won');
-              const lostOrders = settledOrders.filter(o => o.result_status === 'lost');
-
-              if (settledOrders.length === 0) {
-                return (
-                  <div className="text-center py-12 text-slate-400">
-                    No settled orders to analyze yet.
-                  </div>
-                );
-              }
-
-              // ACTUAL RESULTS
-              const actualWonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
-              const actualWonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents), 0);
-              const actualLostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents), 0);
-              const actualFees = settledOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-              const actualPnL = actualWonPayout - actualWonCost - actualLostCost - actualFees;
-
-              // SIMULATED RESULTS WITH STOP-LOSS
-              // For losses: If entry price > stopLossPrice, we would have sold at stopLossPrice
-              // Recovery = stopLossPrice * units (instead of 0)
-              let simulatedLossRecovery = 0;
-              let tradesExitedEarly = 0;
-              
-              for (const order of lostOrders) {
-                const entryPrice = order.executed_price_cents || order.price_cents;
-                // If our entry was above the stop-loss, we would have exited
-                if (entryPrice > stopLossPrice) {
-                  // We recover stopLossPrice per unit instead of 0
-                  simulatedLossRecovery += stopLossPrice * order.units;
-                  tradesExitedEarly++;
-                }
-                // If entry was at or below stop-loss, we never triggered it (still lost full amount)
-              }
-
-              // For wins: Assume some % would have triggered stop-loss before winning
-              // Use a simple model: if stopLossPrice is close to entry, more likely to trigger
-              let simulatedMissedWins = 0;
-              let winsExitedEarly = 0;
-              
-              for (const order of wonOrders) {
-                const entryPrice = order.executed_price_cents || order.price_cents;
-                // Simple model: probability of dip = (entryPrice - stopLossPrice) / entryPrice
-                // If stopLoss is 50 and entry is 90, there's a ~44% chance of dipping below 50
-                // This is a rough approximation
-                const dipProbability = Math.max(0, (entryPrice - stopLossPrice) / entryPrice);
-                
-                // For simplicity: if stop-loss is within 20 cents of entry, assume 30% chance of early exit
-                // if within 10 cents, 60% chance
-                const gap = entryPrice - stopLossPrice;
-                let exitProbability = 0;
-                if (gap <= 5) exitProbability = 0.8;
-                else if (gap <= 10) exitProbability = 0.5;
-                else if (gap <= 15) exitProbability = 0.3;
-                else if (gap <= 20) exitProbability = 0.15;
-                else if (gap <= 30) exitProbability = 0.05;
-                else exitProbability = 0.02;
-                
-                // If we would have exited early, we'd get stopLossPrice * units instead of 100 * units
-                const fullPayout = order.actual_payout_cents || order.potential_payout_cents;
-                const earlyExitPayout = stopLossPrice * order.units;
-                const missedProfit = (fullPayout - earlyExitPayout) * exitProbability;
-                simulatedMissedWins += missedProfit;
-                if (exitProbability > 0.3) winsExitedEarly++;
-              }
-
-              // Simulated P&L
-              // = Actual won payout - missed wins from early exit
-              // + Recovery from stop-loss on losses
-              // - Actual costs - fees
-              const simulatedPnL = actualWonPayout - simulatedMissedWins + simulatedLossRecovery - actualWonCost - actualLostCost - actualFees;
-              const improvement = simulatedPnL - actualPnL;
-
-              // Find optimal stop-loss by testing different values
-              const testStopLosses = [30, 40, 50, 60, 70, 75, 80, 85];
-              const results = testStopLosses.map(sl => {
-                let recovery = 0;
-                for (const order of lostOrders) {
-                  const entryPrice = order.executed_price_cents || order.price_cents;
-                  if (entryPrice > sl) {
-                    recovery += sl * order.units;
-                  }
-                }
-                
-                let missed = 0;
-                for (const order of wonOrders) {
-                  const entryPrice = order.executed_price_cents || order.price_cents;
-                  const gap = entryPrice - sl;
-                  let exitProb = 0;
-                  if (gap <= 5) exitProb = 0.8;
-                  else if (gap <= 10) exitProb = 0.5;
-                  else if (gap <= 15) exitProb = 0.3;
-                  else if (gap <= 20) exitProb = 0.15;
-                  else if (gap <= 30) exitProb = 0.05;
-                  else exitProb = 0.02;
-                  
-                  const fullPayout = order.actual_payout_cents || order.potential_payout_cents;
-                  const earlyPayout = sl * order.units;
-                  missed += (fullPayout - earlyPayout) * exitProb;
-                }
-                
-                const simPnL = actualWonPayout - missed + recovery - actualWonCost - actualLostCost - actualFees;
-                return { stopLoss: sl, pnl: simPnL, improvement: simPnL - actualPnL };
-              });
-
-              const bestResult = results.reduce((best, r) => r.pnl > best.pnl ? r : best, results[0]);
-
-              return (
-                <>
-                  {/* Stop-Loss Slider */}
-                  <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-lg font-medium text-white">Stop-Loss Price</h3>
-                        <p className="text-sm text-slate-400">Auto-sell when price drops below this level</p>
-                      </div>
-                      <div className="text-3xl font-bold text-purple-400">{stopLossPrice}¢</div>
+            {whatIfLoading && !whatIfData ? (
+              <div className="text-center py-12 text-slate-400">
+                Loading historical data from Kalshi...
+              </div>
+            ) : whatIfData?.summary ? (
+              <>
+                {/* Data Quality Indicator */}
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-slate-400">Orders analyzed:</span>
+                      <span className="text-white ml-2">{whatIfData.summary.total_orders}</span>
+                      <span className="text-slate-500 mx-2">|</span>
+                      <span className="text-emerald-400">{whatIfData.summary.won}W</span>
+                      <span className="text-slate-500 mx-1">/</span>
+                      <span className="text-red-400">{whatIfData.summary.lost}L</span>
                     </div>
-                    <input
-                      type="range"
-                      min="10"
-                      max="90"
-                      step="5"
-                      value={stopLossPrice}
-                      onChange={(e) => setStopLossPrice(parseInt(e.target.value))}
-                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                    />
-                    <div className="flex justify-between text-xs text-slate-500 mt-2">
-                      <span>10¢ (aggressive)</span>
-                      <span>50¢</span>
-                      <span>90¢ (conservative)</span>
+                    <div>
+                      <span className="text-slate-400">With price history:</span>
+                      <span className={`ml-2 ${whatIfData.summary.has_price_history > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {whatIfData.summary.has_price_history} / {whatIfData.summary.total_orders}
+                      </span>
                     </div>
                   </div>
+                </div>
 
-                  {/* Comparison Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                {/* Stop-Loss Slider */}
+                <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-medium text-white">Stop-Loss Price</h3>
+                      <p className="text-sm text-slate-400">Auto-sell when price drops below this level</p>
+                    </div>
+                    <div className="text-3xl font-bold text-purple-400">{stopLossPrice}¢</div>
+                  </div>
+                  <input
+                    type="range"
+                    min="30"
+                    max="85"
+                    step="5"
+                    value={stopLossPrice}
+                    onChange={(e) => setStopLossPrice(parseInt(e.target.value))}
+                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                  />
+                  <div className="flex justify-between text-xs text-slate-500 mt-2">
+                    <span>30¢ (aggressive)</span>
+                    <span>60¢</span>
+                    <span>85¢ (conservative)</span>
+                  </div>
+                </div>
+
+                {/* Comparison Cards */}
+                {whatIfData.summary.stop_loss_results[stopLossPrice] && (
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                       <div className="text-xs text-slate-500 uppercase mb-1">Actual P&L</div>
-                      <div className={`text-2xl font-bold ${actualPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {actualPnL >= 0 ? '+' : ''}${(actualPnL / 100).toFixed(2)}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {wonOrders.length}W / {lostOrders.length}L
+                      <div className={`text-2xl font-bold ${whatIfData.summary.actual_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {whatIfData.summary.actual_pnl_cents >= 0 ? '+' : ''}${(whatIfData.summary.actual_pnl_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-purple-500/50">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Simulated P&L @ {stopLossPrice}¢</div>
-                      <div className={`text-2xl font-bold ${simulatedPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {simulatedPnL >= 0 ? '+' : ''}${(simulatedPnL / 100).toFixed(2)}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {tradesExitedEarly} losses would exit early
+                      <div className="text-xs text-slate-500 uppercase mb-1">Simulated @ {stopLossPrice}¢</div>
+                      <div className={`text-2xl font-bold ${whatIfData.summary.stop_loss_results[stopLossPrice].simulatedPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {whatIfData.summary.stop_loss_results[stopLossPrice].simulatedPnL >= 0 ? '+' : ''}${(whatIfData.summary.stop_loss_results[stopLossPrice].simulatedPnL / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                       <div className="text-xs text-slate-500 uppercase mb-1">Improvement</div>
-                      <div className={`text-2xl font-bold ${improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {improvement >= 0 ? '+' : ''}${(improvement / 100).toFixed(2)}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {improvement >= 0 ? 'Better' : 'Worse'} than holding
+                      <div className={`text-2xl font-bold ${whatIfData.summary.stop_loss_results[stopLossPrice].improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {whatIfData.summary.stop_loss_results[stopLossPrice].improvement >= 0 ? '+' : ''}${(whatIfData.summary.stop_loss_results[stopLossPrice].improvement / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Trades Affected</div>
+                      <div className="text-lg font-bold">
+                        <span className="text-red-400">{whatIfData.summary.stop_loss_results[stopLossPrice].lossesTriggered}L</span>
+                        <span className="text-slate-500 mx-1">/</span>
+                        <span className="text-emerald-400">{whatIfData.summary.stop_loss_results[stopLossPrice].winsTriggered}W</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">would trigger stop</div>
+                    </div>
                   </div>
+                )}
 
-                  {/* Breakdown */}
+                {/* Breakdown */}
+                {whatIfData.summary.stop_loss_results[stopLossPrice] && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <h3 className="text-sm font-medium text-slate-400 mb-3">Loss Recovery</h3>
+                      <h3 className="text-sm font-medium text-slate-400 mb-3">Loss Recovery @ {stopLossPrice}¢</h3>
                       <div className="space-y-2">
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Losses that would trigger stop-loss</span>
-                          <span className="text-white">{tradesExitedEarly} / {lostOrders.length}</span>
+                          <span className="text-slate-400">Losses that would trigger</span>
+                          <span className="text-white">{whatIfData.summary.stop_loss_results[stopLossPrice].lossesTriggered} / {whatIfData.summary.lost}</span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-slate-400">Amount recovered</span>
-                          <span className="text-emerald-400">+${(simulatedLossRecovery / 100).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Actual loss amount</span>
-                          <span className="text-red-400">-${(actualLostCost / 100).toFixed(2)}</span>
+                          <span className="text-emerald-400">+${(whatIfData.summary.stop_loss_results[stopLossPrice].lossRecovery / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <h3 className="text-sm font-medium text-slate-400 mb-3">Missed Wins (Est.)</h3>
+                      <h3 className="text-sm font-medium text-slate-400 mb-3">Missed Wins @ {stopLossPrice}¢</h3>
                       <div className="space-y-2">
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Wins that might exit early</span>
-                          <span className="text-white">~{winsExitedEarly} / {wonOrders.length}</span>
+                          <span className="text-slate-400">Wins that would trigger</span>
+                          <span className="text-white">{whatIfData.summary.stop_loss_results[stopLossPrice].winsTriggered} / {whatIfData.summary.won}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Estimated profit missed</span>
-                          <span className="text-red-400">-${(simulatedMissedWins / 100).toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Actual win payout</span>
-                          <span className="text-emerald-400">+${(actualWonPayout / 100).toFixed(2)}</span>
+                          <span className="text-slate-400">Profit missed</span>
+                          <span className="text-red-400">-${(whatIfData.summary.stop_loss_results[stopLossPrice].missedWinProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
                         </div>
                       </div>
                     </div>
                   </div>
+                )}
 
-                  {/* Optimal Stop-Loss Finder */}
+                {/* Optimal Stop-Loss Finder */}
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
+                  <h3 className="text-sm font-medium text-slate-400 mb-3">Find Optimal Stop-Loss</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-slate-400 border-b border-slate-700">
+                          <th className="text-left py-2">Stop-Loss</th>
+                          <th className="text-right py-2">Losses Triggered</th>
+                          <th className="text-right py-2">Wins Triggered</th>
+                          <th className="text-right py-2">Recovery</th>
+                          <th className="text-right py-2">Missed Profit</th>
+                          <th className="text-right py-2">Simulated P&L</th>
+                          <th className="text-right py-2">vs Actual</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(whatIfData.summary.stop_loss_results)
+                          .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
+                          .map(([sl, result]) => {
+                            const isOptimal = parseInt(sl) === whatIfData.summary.optimal_stop_loss.price;
+                            return (
+                              <tr 
+                                key={sl} 
+                                className={`border-b border-slate-800 ${isOptimal ? 'bg-purple-500/10' : ''} ${parseInt(sl) === stopLossPrice ? 'ring-1 ring-purple-500' : ''}`}
+                              >
+                                <td className="py-2">
+                                  <span className={isOptimal ? 'text-purple-400 font-bold' : 'text-white'}>
+                                    {sl}¢ {isOptimal && '⭐'}
+                                  </span>
+                                </td>
+                                <td className="py-2 text-right text-red-400">{result.lossesTriggered}</td>
+                                <td className="py-2 text-right text-amber-400">{result.winsTriggered}</td>
+                                <td className="py-2 text-right text-emerald-400 font-mono">
+                                  +${(result.lossRecovery / 100).toLocaleString()}
+                                </td>
+                                <td className="py-2 text-right text-red-400 font-mono">
+                                  -${(result.missedWinProfit / 100).toLocaleString()}
+                                </td>
+                                <td className={`py-2 text-right font-mono ${result.simulatedPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {result.simulatedPnL >= 0 ? '+' : ''}${(result.simulatedPnL / 100).toLocaleString()}
+                                </td>
+                                <td className={`py-2 text-right font-mono font-bold ${result.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {result.improvement >= 0 ? '+' : ''}${(result.improvement / 100).toLocaleString()}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-3 text-sm text-slate-400">
+                    <span className="text-purple-400">⭐ Optimal stop-loss: {whatIfData.summary.optimal_stop_loss.price}¢</span>
+                    {' '}would have improved P&L by{' '}
+                    <span className={whatIfData.summary.optimal_stop_loss.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                      ${(whatIfData.summary.optimal_stop_loss.improvement / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Individual Trade Analysis */}
+                {whatIfData.orders.filter(o => o.price_history.length > 0 || o.min_price_after_entry !== null).length > 0 && (
                   <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Find Optimal Stop-Loss</h3>
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">
+                      Trades with Price History ({whatIfData.orders.filter(o => o.price_history.length > 0).length} orders)
+                    </h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-slate-400 border-b border-slate-700">
-                            <th className="text-left py-2">Stop-Loss</th>
-                            <th className="text-right py-2">Simulated P&L</th>
-                            <th className="text-right py-2">vs Actual</th>
+                            <th className="text-left py-2">Market</th>
+                            <th className="text-center py-2">Result</th>
+                            <th className="text-right py-2">Entry</th>
+                            <th className="text-right py-2">Min Price</th>
+                            <th className="text-right py-2">Max Price</th>
+                            <th className="text-center py-2">Would Trigger @ {stopLossPrice}¢</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {results.map((r) => (
-                            <tr 
-                              key={r.stopLoss} 
-                              className={`border-b border-slate-800 ${r.stopLoss === bestResult.stopLoss ? 'bg-purple-500/10' : ''}`}
-                            >
-                              <td className="py-2">
-                                <span className={r.stopLoss === bestResult.stopLoss ? 'text-purple-400 font-bold' : 'text-white'}>
-                                  {r.stopLoss}¢
-                                  {r.stopLoss === bestResult.stopLoss && ' ⭐'}
-                                </span>
-                              </td>
-                              <td className={`py-2 text-right font-mono ${r.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {r.pnl >= 0 ? '+' : ''}${(r.pnl / 100).toFixed(2)}
-                              </td>
-                              <td className={`py-2 text-right font-mono ${r.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {r.improvement >= 0 ? '+' : ''}${(r.improvement / 100).toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
+                          {whatIfData.orders
+                            .filter(o => o.min_price_after_entry !== null)
+                            .slice(0, 20)
+                            .map((order) => (
+                              <tr key={order.id} className="border-b border-slate-800">
+                                <td className="py-2 text-white max-w-[200px] truncate" title={order.title}>
+                                  {order.title}
+                                </td>
+                                <td className="py-2 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-xs ${order.result_status === 'won' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                    {order.result_status.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="py-2 text-right text-white font-mono">{order.entry_price_cents}¢</td>
+                                <td className="py-2 text-right text-red-400 font-mono">
+                                  {order.min_price_after_entry !== null ? `${order.min_price_after_entry}¢` : '—'}
+                                </td>
+                                <td className="py-2 text-right text-emerald-400 font-mono">
+                                  {order.max_price_after_entry !== null ? `${order.max_price_after_entry}¢` : '—'}
+                                </td>
+                                <td className="py-2 text-center">
+                                  {order.would_trigger_at[stopLossPrice] ? (
+                                    <span className="text-amber-400">✓ Yes</span>
+                                  ) : (
+                                    <span className="text-slate-500">No</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
                         </tbody>
                       </table>
                     </div>
-                    <div className="mt-3 text-sm text-slate-400">
-                      <span className="text-purple-400">⭐ Best stop-loss: {bestResult.stopLoss}¢</span> would have improved P&L by{' '}
-                      <span className={bestResult.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                        ${(bestResult.improvement / 100).toFixed(2)}
-                      </span>
-                    </div>
                   </div>
+                )}
 
-                  {/* Disclaimer */}
-                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-400 text-sm">
-                    <strong>⚠️ Note:</strong> This simulation uses estimates for win trades exiting early (based on proximity of stop-loss to entry price). 
-                    Actual results would depend on real-time price movements which we don&apos;t have historical data for.
-                    The loss recovery calculation is more accurate since we know those trades went to 0.
-                  </div>
-                </>
-              );
-            })()}
+                {/* Note about data */}
+                <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 text-purple-300 text-sm">
+                  <strong>📊 Data Source:</strong> Historical price data is fetched from Kalshi&apos;s candlestick API where available.
+                  For orders without price history, estimates are used based on entry price proximity to stop-loss.
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12 text-slate-400">
+                No settled orders to analyze yet.
+              </div>
+            )}
           </div>
         )}
 
