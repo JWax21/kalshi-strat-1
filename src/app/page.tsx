@@ -3713,8 +3713,8 @@ export default function Dashboard() {
                                     <th className="text-center py-2 px-2">Side</th>
                                     <th className="text-right py-2 px-2">Entry</th>
                                     <th className="text-right py-2 px-2">Low</th>
-                                    <th className="text-center py-2 px-2">Would Stop?</th>
-                                    <th className="text-center py-2 px-2">Result</th>
+                                    <th className="text-center py-2 px-2">Actual</th>
+                                    <th className="text-center py-2 px-2">With SL</th>
                                     <th className="text-right py-2 px-2">Cost</th>
                                     <th className="text-right py-2 px-2">Actual P&L</th>
                                     <th className="text-right py-2 px-2">Sim P&L</th>
@@ -3746,18 +3746,21 @@ export default function Dashboard() {
                                           ) : '—'}
                                         </td>
                                         <td className="py-2 px-2 text-center">
-                                          {event.would_stop ? (
-                                            <span className="text-amber-400">⚠️ Yes</span>
+                                          {event.actual_result === 'won' ? (
+                                            <span className="text-emerald-400">✓ Won</span>
                                           ) : (
-                                            <span className="text-slate-500">No</span>
+                                            <span className="text-red-400">✗ Lost</span>
                                           )}
                                         </td>
                                         <td className="py-2 px-2 text-center">
                                           {event.simulated_result === 'won' && (
                                             <span className="text-emerald-400">✓ Win</span>
                                           )}
-                                          {event.simulated_result === 'stopped' && (
-                                            <span className="text-amber-400">⏹ Stopped</span>
+                                          {event.simulated_result === 'stopped' && event.actual_result === 'lost' && (
+                                            <span className="text-emerald-400">💰 Saved</span>
+                                          )}
+                                          {event.simulated_result === 'stopped' && event.actual_result === 'won' && (
+                                            <span className="text-amber-400">😢 Missed</span>
                                           )}
                                           {event.simulated_result === 'lost' && (
                                             <span className="text-red-400">✗ Loss</span>

@@ -357,6 +357,7 @@ export async function GET(request: Request) {
           }
           
           // Add breakdown entry for loss
+          // With stop-loss, this becomes a "stopped" result (we exit at 75¢ instead of riding to 0)
           breakdown.push({
             event_ticker: eventTicker,
             event_title: eventOrders[0]?.event_title || eventTicker,
@@ -366,7 +367,7 @@ export async function GET(request: Request) {
             actual_result: 'lost',
             min_price: 0, // It went to 0
             would_stop: wouldStopLoss,
-            simulated_result: 'lost',
+            simulated_result: wouldStopLoss ? 'stopped' : 'lost', // With SL, losses become stops (unless entry < SL)
             cost: eventCost,
             actual_payout: 0,
             simulated_payout: Math.round(eventSimulatedPayout),
