@@ -720,6 +720,31 @@ export default function Dashboard() {
       setWhatIfLoading(false);
     }
   };
+  
+  // Check stop-loss status (dry run)
+  const checkStopLoss = async () => {
+    setStopLossLoading(true);
+    setStopLossError(null);
+    try {
+      const res = await fetch('/api/stop-loss', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dryRun: true }),
+      });
+      const data = await res.json();
+      setStopLossStatus(data);
+      
+      // Check for critical alerts
+      if (data.data_errors > 0 || data.alerts?.some((a: string) => a.includes('SUSPICIOUS'))) {
+        setStopLossError(`⚠️ ${data.data_errors} data errors detected!`);
+      }
+    } catch (err) {
+      console.error('Error checking stop-loss:', err);
+      setStopLossError('Failed to check stop-loss status');
+    } finally {
+      setStopLossLoading(false);
+    }
+  };
 
   // Prepare orders
   const prepareOrders = async (forToday: boolean = false) => {
@@ -1647,6 +1672,149 @@ export default function Dashboard() {
                 );
               }
             })()}
+
+            {/* Stop-Loss Monitoring Panel - Only show for Active positions */}
+            {positionsSubTab === 'active' && (
+              <div className="mb-6 bg-slate-900 rounded-xl border border-slate-800 p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-lg font-semibold text-white">🛡️ Stop-Loss Monitor</h3>
+                    <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">75% Threshold</span>
+                    <span className="text-xs text-slate-500">Runs every minute</span>
+                  </div>
+                  <button
+                    onClick={checkStopLoss}
+                    disabled={stopLossLoading}
+                    className="px-4 py-2 text-sm bg-amber-500 text-slate-950 font-medium rounded-lg hover:bg-amber-400 disabled:opacity-50"
+                  >
+                    {stopLossLoading ? 'Checking...' : 'Check Now (Dry Run)'}
+                  </button>
+                </div>
+                
+                {stopLossError && (
+                  <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">
+                    {stopLossError}
+                  </div>
+                )}
+                
+                {stopLossStatus && (
+                  <div className="space-y-4">
+                    {/* Summary Row */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 uppercase">Checked</div>
+                        <div className="text-xl font-bold text-white">{stopLossStatus.positions_checked}</div>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 uppercase">Would Sell</div>
+                        <div className={`text-xl font-bold ${stopLossStatus.positions_sold > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                          {stopLossStatus.positions_sold}
+                        </div>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 uppercase">Holding</div>
+                        <div className="text-xl font-bold text-emerald-400">{stopLossStatus.positions_held}</div>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 uppercase">Data Errors</div>
+                        <div className={`text-xl font-bold ${stopLossStatus.data_errors > 0 ? 'text-amber-400' : 'text-slate-500'}`}>
+                          {stopLossStatus.data_errors}
+                        </div>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <div className="text-xs text-slate-500 uppercase">Last Check</div>
+                        <div className="text-sm text-slate-300">
+                          {new Date(stopLossStatus.timestamp).toLocaleTimeString()}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Alerts */}
+                    {stopLossStatus.alerts && stopLossStatus.alerts.length > 0 && (
+                      <div className="p-3 bg-slate-800/50 rounded-lg">
+                        <div className="text-xs text-slate-500 uppercase mb-2">Alerts</div>
+                        <div className="space-y-1">
+                          {stopLossStatus.alerts.map((alert, i) => (
+                            <div key={i} className={`text-sm ${
+                              alert.includes('SUSPICIOUS') || alert.includes('❌') ? 'text-red-400' :
+                              alert.includes('⚠️') ? 'text-amber-400' :
+                              alert.includes('✅') ? 'text-emerald-400' : 'text-slate-400'
+                            }`}>
+                              {alert}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Position Details (Expandable) */}
+                    {stopLossStatus.details && stopLossStatus.details.length > 0 && (
+                      <details className="group">
+                        <summary className="cursor-pointer text-sm text-slate-400 hover:text-white">
+                          Show {stopLossStatus.details.length} position details
+                        </summary>
+                        <div className="mt-2 overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead className="bg-slate-800/50">
+                              <tr>
+                                <th className="text-left p-2 text-slate-400">Market</th>
+                                <th className="text-center p-2 text-slate-400">Side</th>
+                                <th className="text-right p-2 text-slate-400">Current</th>
+                                <th className="text-center p-2 text-slate-400">Confidence</th>
+                                <th className="text-center p-2 text-slate-400">Action</th>
+                                <th className="text-left p-2 text-slate-400">Reason</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {stopLossStatus.details.map((d, i) => (
+                                <tr key={i} className="border-t border-slate-800/50">
+                                  <td className="p-2 text-slate-300 max-w-[200px] truncate">{d.title}</td>
+                                  <td className="p-2 text-center">
+                                    <span className={d.side === 'yes' ? 'text-emerald-400' : 'text-red-400'}>
+                                      {d.side.toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="p-2 text-right text-white">
+                                    {d.currentOdds !== null ? `${(d.currentOdds * 100).toFixed(0)}¢` : '?'}
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <span className={`px-2 py-0.5 rounded text-xs ${
+                                      d.validation.confidence === 'high' ? 'bg-emerald-500/20 text-emerald-400' :
+                                      d.validation.confidence === 'medium' ? 'bg-amber-500/20 text-amber-400' :
+                                      d.validation.confidence === 'low' ? 'bg-orange-500/20 text-orange-400' :
+                                      'bg-red-500/20 text-red-400'
+                                    }`}>
+                                      {d.validation.confidence}
+                                    </span>
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <span className={`px-2 py-0.5 rounded text-xs ${
+                                      d.action === 'sell' ? 'bg-red-500/20 text-red-400' :
+                                      d.action === 'hold' ? 'bg-emerald-500/20 text-emerald-400' :
+                                      'bg-amber-500/20 text-amber-400'
+                                    }`}>
+                                      {d.action.toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="p-2 text-slate-400 max-w-[300px] truncate">{d.reason}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+                
+                {!stopLossStatus && !stopLossLoading && (
+                  <div className="text-sm text-slate-500">
+                    Click "Check Now" to run a dry-run stop-loss check on your positions.
+                    This will validate price data before any sells would be executed.
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Positions Table */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
