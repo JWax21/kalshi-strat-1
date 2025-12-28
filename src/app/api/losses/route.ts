@@ -209,17 +209,31 @@ export async function GET(request: Request) {
         }
 
         // Try to get candlestick data for price history
+        // API requires: /series/{series_ticker}/markets/{ticker}/candlesticks with start_ts, end_ts, period_interval
         let candlesticks: { ts: string; open: number; high: number; low: number; close: number }[] = [];
         try {
-          const candlestickResponse = await kalshiFetch(`/markets/${order.ticker}/candlesticks?period_interval=60`); // Hourly candles
-          if (candlestickResponse?.candlesticks) {
-            candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
-              ts: c.end_period_ts,
-              open: c.yes_price?.open || c.open_price || 0,
-              high: c.yes_price?.high || c.high_price || 0,
-              low: c.yes_price?.low || c.low_price || 0,
-              close: c.yes_price?.close || c.close_price || 0,
-            }));
+          // Extract series_ticker from event_ticker (e.g., KXNBAGAME-25DEC26BOSIND -> KXNBAGAME)
+          const seriesTicker = order.event_ticker?.split('-')[0] || '';
+          
+          // Calculate time range: from 24 hours before market close to market close
+          const endTs = order.market_close_time 
+            ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
+            : Math.floor(Date.now() / 1000);
+          const startTs = endTs - (24 * 60 * 60); // 24 hours before
+          
+          if (seriesTicker) {
+            const candlestickResponse = await kalshiFetch(
+              `/series/${seriesTicker}/markets/${order.ticker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`
+            );
+            if (candlestickResponse?.candlesticks) {
+              candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
+                ts: c.end_period_ts,
+                open: c.price?.open || 0,
+                high: c.price?.high || 0,
+                low: c.price?.low || 0,
+                close: c.price?.close || 0,
+              }));
+            }
           }
           await new Promise(r => setTimeout(r, 50)); // Rate limit
         } catch (e) {
