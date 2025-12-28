@@ -48,7 +48,7 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'records' | 'orders' | 'markets' | 'positions';
+type Tab = 'records' | 'orders' | 'markets' | 'positions' | 'losses';
 
 interface DailyRecord {
   date: string;
@@ -74,6 +74,43 @@ interface RecordsData {
     losses: number;
     pnl_cents: number;
   };
+}
+
+interface LossEntry {
+  id: string;
+  ticker: string;
+  event_ticker: string;
+  title: string;
+  side: string;
+  units: number;
+  entry_price_cents: number;
+  exit_price_cents: number;
+  cost_cents: number;
+  potential_payout_cents: number;
+  batch_date: string;
+  market_close_time: string;
+  result_status_at: string;
+  sport: string;
+  day_of_week: string;
+  implied_odds_percent: number;
+  fills: { price: number; count: number; created_time: string; side: string }[];
+}
+
+interface LossesSummary {
+  total_losses: number;
+  total_lost_cents: number;
+  avg_odds: number;
+  by_sport: Record<string, { count: number; lost_cents: number; avg_odds: number }>;
+  by_day_of_week: Record<string, { count: number; lost_cents: number }>;
+  by_odds_range: Record<string, { count: number; lost_cents: number }>;
+  by_month: Record<string, { count: number; lost_cents: number }>;
+  top_losing_teams: { team: string; count: number }[];
+}
+
+interface LossesData {
+  success: boolean;
+  losses: LossEntry[];
+  summary: LossesSummary;
 }
 
 interface OrderBatch {
@@ -270,6 +307,10 @@ export default function Dashboard() {
   const [recordsData, setRecordsData] = useState<RecordsData | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
+  
+  // Losses state
+  const [lossesData, setLossesData] = useState<LossesData | null>(null);
+  const [lossesLoading, setLossesLoading] = useState(false);
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
@@ -578,6 +619,22 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch losses data
+  const fetchLosses = async () => {
+    setLossesLoading(true);
+    try {
+      const res = await fetch('/api/losses?days=90');
+      const data = await res.json();
+      if (data.success) {
+        setLossesData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching losses:', err);
+    } finally {
+      setLossesLoading(false);
+    }
+  };
+
   // Prepare orders
   const prepareOrders = async (forToday: boolean = false) => {
     setPreparingOrders(true);
@@ -731,6 +788,8 @@ export default function Dashboard() {
       fetchRecords(); // Also fetch records for Capital Deployment table
     } else if (activeTab === 'records') {
       fetchRecords();
+    } else if (activeTab === 'losses') {
+      fetchLosses();
     }
   }, [activeTab]);
 
@@ -1017,6 +1076,7 @@ export default function Dashboard() {
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
             <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
+            <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Losses</button>
             <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Schedule</button>
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Events</button>
           </div>
@@ -2478,6 +2538,205 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="text-center py-12 text-slate-400">No records found. Daily snapshots are captured automatically at 11:55pm ET.</div>
+            )}
+          </div>
+        )}
+
+        {/* Losses Tab */}
+        {activeTab === 'losses' && (
+          <div className="py-8">
+            {/* Header */}
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white">Loss Analysis</h2>
+              <p className="text-slate-400 text-sm mt-1">Detailed breakdown of losing trades</p>
+            </div>
+
+            {lossesLoading && !lossesData ? (
+              <div className="text-center py-12 text-slate-400">Loading loss data...</div>
+            ) : lossesData?.losses && lossesData.losses.length > 0 ? (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Total Losses</div>
+                    <div className="text-2xl font-bold text-red-400">{lossesData.summary.total_losses}</div>
+                  </div>
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Total Lost</div>
+                    <div className="text-2xl font-bold text-red-400">
+                      -${(lossesData.summary.total_lost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </div>
+                  </div>
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Avg Odds Paid</div>
+                    <div className="text-2xl font-bold text-amber-400">{lossesData.summary.avg_odds}¢</div>
+                  </div>
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <div className="text-xs text-slate-500 uppercase mb-1">Avg Loss/Trade</div>
+                    <div className="text-2xl font-bold text-red-400">
+                      -${(lossesData.summary.total_lost_cents / lossesData.summary.total_losses / 100).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pattern Analysis */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                  {/* By Sport */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Sport</h3>
+                    <div className="space-y-2">
+                      {Object.entries(lossesData.summary.by_sport)
+                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                        .map(([sport, data]) => (
+                          <div key={sport} className="flex justify-between items-center">
+                            <span className="text-white">{sport}</span>
+                            <div className="text-right">
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</span>
+                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
+                              <span className="text-slate-400 text-xs ml-2">{data.avg_odds}¢</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* By Odds Range */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Odds Range</h3>
+                    <div className="space-y-2">
+                      {Object.entries(lossesData.summary.by_odds_range)
+                        .filter(([, data]) => data.count > 0)
+                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                        .map(([range, data]) => (
+                          <div key={range} className="flex justify-between items-center">
+                            <span className="text-white">{range}</span>
+                            <div className="text-right">
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</span>
+                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  {/* By Day of Week */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Day</h3>
+                    <div className="space-y-2">
+                      {Object.entries(lossesData.summary.by_day_of_week)
+                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                        .map(([day, data]) => (
+                          <div key={day} className="flex justify-between items-center">
+                            <span className="text-white">{day}</span>
+                            <div className="text-right">
+                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</span>
+                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Top Losing Teams */}
+                {lossesData.summary.top_losing_teams && lossesData.summary.top_losing_teams.length > 0 && (
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Teams We Lost Betting On (Most Frequent)</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {lossesData.summary.top_losing_teams.map(({ team, count }) => (
+                        <span key={team} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm">
+                          {team} <span className="text-red-300">({count})</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Monthly Breakdown */}
+                {lossesData.summary.by_month && Object.keys(lossesData.summary.by_month).length > 0 && (
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Month</h3>
+                    <div className="flex flex-wrap gap-4">
+                      {Object.entries(lossesData.summary.by_month)
+                        .sort((a, b) => b[0].localeCompare(a[0]))
+                        .map(([month, data]) => (
+                          <div key={month} className="text-center">
+                            <div className="text-slate-400 text-xs">{month}</div>
+                            <div className="text-red-400 font-mono">-${(data.lost_cents / 100).toFixed(0)}</div>
+                            <div className="text-slate-500 text-xs">{data.count} losses</div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Detailed Losses Table */}
+                <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+                  <table className="w-full text-sm min-w-[1000px]">
+                    <thead className="bg-slate-800/50">
+                      <tr>
+                        <th className="text-left p-3 text-slate-400 font-medium">Date</th>
+                        <th className="text-left p-3 text-slate-400 font-medium">Market</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">Sport</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">Side</th>
+                        <th className="text-right p-3 text-slate-400 font-medium">Units</th>
+                        <th className="text-right p-3 text-slate-400 font-medium">Entry Price</th>
+                        <th className="text-right p-3 text-slate-400 font-medium">Lost</th>
+                        <th className="text-left p-3 text-slate-400 font-medium">Fill History</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lossesData.losses.map((loss) => (
+                        <tr key={loss.id} className="border-t border-slate-800 hover:bg-slate-800/30">
+                          <td className="p-3 text-slate-400 font-mono text-xs">
+                            {new Date(loss.batch_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </td>
+                          <td className="p-3 text-white max-w-[300px] truncate" title={loss.title}>
+                            {loss.title}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className="px-2 py-1 rounded text-xs bg-slate-700 text-slate-300">
+                              {loss.sport}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${
+                              loss.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                            }`}>
+                              {loss.side}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right text-white font-mono">{loss.units}</td>
+                          <td className="p-3 text-right text-amber-400 font-mono">{loss.entry_price_cents}¢</td>
+                          <td className="p-3 text-right text-red-400 font-mono">
+                            -${(loss.cost_cents / 100).toFixed(2)}
+                          </td>
+                          <td className="p-3 text-slate-400 text-xs">
+                            {loss.fills && loss.fills.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {loss.fills.slice(0, 3).map((fill, i) => (
+                                  <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-xs">
+                                    {fill.count}@{fill.price}¢
+                                  </span>
+                                ))}
+                                {loss.fills.length > 3 && (
+                                  <span className="text-slate-500">+{loss.fills.length - 3} more</span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-slate-600">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12 text-slate-400">
+                No losses found in the last 90 days. 🎉
+              </div>
             )}
           </div>
         )}
