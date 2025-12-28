@@ -130,36 +130,34 @@ export async function GET(request: Request) {
       return null;
     };
 
-    // Group orders by ESTIMATED GAME DATE
-    // For settled orders: subtract 8 hours from settlement_status_at to estimate game start
+    // Group orders by GAME DATE (from ticker)
     // For pending orders: use today's date
     let totalPendingOrders = 0;
     const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
-        // For settled orders, subtract 8 hours from settlement time to estimate game date
-        if ((order.result_status === 'won' || order.result_status === 'lost') && order.settlement_status_at) {
-          const settlementTime = new Date(order.settlement_status_at);
-          // Subtract 8 hours to estimate game start time
-          settlementTime.setHours(settlementTime.getHours() - 8);
-          const estimatedGameDate = getDateFromTimestampET(settlementTime.toISOString());
-          
-          if (estimatedGameDate >= startDateStr) {
-            if (!ordersByDate[estimatedGameDate]) {
-              ordersByDate[estimatedGameDate] = [];
+        // Get game date from ticker (most accurate)
+        const gameDate = order.ticker ? getGameDateFromTicker(order.ticker) : null;
+        
+        // For settled orders, use game date from ticker
+        if ((order.result_status === 'won' || order.result_status === 'lost') && gameDate) {
+          if (gameDate >= startDateStr) {
+            if (!ordersByDate[gameDate]) {
+              ordersByDate[gameDate] = [];
             }
-            ordersByDate[estimatedGameDate].push(order);
+            ordersByDate[gameDate].push(order);
           }
         }
-        // Pending orders default to today's date
+        // Pending orders: use game date from ticker, or default to today
         else if (order.result_status === 'undecided') {
           totalPendingOrders++;
-          if (todayET >= startDateStr) {
-            if (!ordersByDate[todayET]) {
-              ordersByDate[todayET] = [];
+          const pendingDate = gameDate || todayET;
+          if (pendingDate >= startDateStr) {
+            if (!ordersByDate[pendingDate]) {
+              ordersByDate[pendingDate] = [];
             }
-            ordersByDate[todayET].push(order);
+            ordersByDate[pendingDate].push(order);
           }
         }
       });
