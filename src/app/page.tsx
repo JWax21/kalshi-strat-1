@@ -48,7 +48,7 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'records' | 'orders' | 'markets' | 'positions' | 'losses';
+type Tab = 'records' | 'orders' | 'markets' | 'positions' | 'losses' | 'whatif';
 
 interface DailyRecord {
   date: string;
@@ -311,6 +311,9 @@ export default function Dashboard() {
   // Losses state
   const [lossesData, setLossesData] = useState<LossesData | null>(null);
   const [lossesLoading, setLossesLoading] = useState(false);
+  
+  // What-If simulation state
+  const [stopLossPrice, setStopLossPrice] = useState(50); // Default 50 cents
   const [executingOrders, setExecutingOrders] = useState(false);
   const [updatingStatuses, setUpdatingStatuses] = useState(false);
   const [reconcilingOrders, setReconcilingOrders] = useState(false);
@@ -1077,6 +1080,7 @@ export default function Dashboard() {
             <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
             <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
             <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Losses</button>
+            <button onClick={() => setActiveTab('whatif')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'whatif' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}>What If</button>
             <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Schedule</button>
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Events</button>
           </div>
@@ -2738,6 +2742,277 @@ export default function Dashboard() {
                 No losses found in the last 90 days. 🎉
               </div>
             )}
+          </div>
+        )}
+
+        {/* What If Tab */}
+        {activeTab === 'whatif' && (
+          <div className="py-8">
+            {/* Header */}
+            <div className="mb-6">
+              <h2 className="text-2xl font-bold text-white">What If Analysis</h2>
+              <p className="text-slate-400 text-sm mt-1">Simulate automatic stop-loss selling</p>
+            </div>
+
+            {(() => {
+              // Get all settled orders
+              const allOrders = orderBatches.flatMap(b => b.orders || []);
+              const settledOrders = allOrders.filter(o => o.result_status === 'won' || o.result_status === 'lost');
+              const wonOrders = settledOrders.filter(o => o.result_status === 'won');
+              const lostOrders = settledOrders.filter(o => o.result_status === 'lost');
+
+              if (settledOrders.length === 0) {
+                return (
+                  <div className="text-center py-12 text-slate-400">
+                    No settled orders to analyze yet.
+                  </div>
+                );
+              }
+
+              // ACTUAL RESULTS
+              const actualWonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
+              const actualWonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents), 0);
+              const actualLostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents), 0);
+              const actualFees = settledOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const actualPnL = actualWonPayout - actualWonCost - actualLostCost - actualFees;
+
+              // SIMULATED RESULTS WITH STOP-LOSS
+              // For losses: If entry price > stopLossPrice, we would have sold at stopLossPrice
+              // Recovery = stopLossPrice * units (instead of 0)
+              let simulatedLossRecovery = 0;
+              let tradesExitedEarly = 0;
+              
+              for (const order of lostOrders) {
+                const entryPrice = order.executed_price_cents || order.price_cents;
+                // If our entry was above the stop-loss, we would have exited
+                if (entryPrice > stopLossPrice) {
+                  // We recover stopLossPrice per unit instead of 0
+                  simulatedLossRecovery += stopLossPrice * order.units;
+                  tradesExitedEarly++;
+                }
+                // If entry was at or below stop-loss, we never triggered it (still lost full amount)
+              }
+
+              // For wins: Assume some % would have triggered stop-loss before winning
+              // Use a simple model: if stopLossPrice is close to entry, more likely to trigger
+              let simulatedMissedWins = 0;
+              let winsExitedEarly = 0;
+              
+              for (const order of wonOrders) {
+                const entryPrice = order.executed_price_cents || order.price_cents;
+                // Simple model: probability of dip = (entryPrice - stopLossPrice) / entryPrice
+                // If stopLoss is 50 and entry is 90, there's a ~44% chance of dipping below 50
+                // This is a rough approximation
+                const dipProbability = Math.max(0, (entryPrice - stopLossPrice) / entryPrice);
+                
+                // For simplicity: if stop-loss is within 20 cents of entry, assume 30% chance of early exit
+                // if within 10 cents, 60% chance
+                const gap = entryPrice - stopLossPrice;
+                let exitProbability = 0;
+                if (gap <= 5) exitProbability = 0.8;
+                else if (gap <= 10) exitProbability = 0.5;
+                else if (gap <= 15) exitProbability = 0.3;
+                else if (gap <= 20) exitProbability = 0.15;
+                else if (gap <= 30) exitProbability = 0.05;
+                else exitProbability = 0.02;
+                
+                // If we would have exited early, we'd get stopLossPrice * units instead of 100 * units
+                const fullPayout = order.actual_payout_cents || order.potential_payout_cents;
+                const earlyExitPayout = stopLossPrice * order.units;
+                const missedProfit = (fullPayout - earlyExitPayout) * exitProbability;
+                simulatedMissedWins += missedProfit;
+                if (exitProbability > 0.3) winsExitedEarly++;
+              }
+
+              // Simulated P&L
+              // = Actual won payout - missed wins from early exit
+              // + Recovery from stop-loss on losses
+              // - Actual costs - fees
+              const simulatedPnL = actualWonPayout - simulatedMissedWins + simulatedLossRecovery - actualWonCost - actualLostCost - actualFees;
+              const improvement = simulatedPnL - actualPnL;
+
+              // Find optimal stop-loss by testing different values
+              const testStopLosses = [30, 40, 50, 60, 70, 75, 80, 85];
+              const results = testStopLosses.map(sl => {
+                let recovery = 0;
+                for (const order of lostOrders) {
+                  const entryPrice = order.executed_price_cents || order.price_cents;
+                  if (entryPrice > sl) {
+                    recovery += sl * order.units;
+                  }
+                }
+                
+                let missed = 0;
+                for (const order of wonOrders) {
+                  const entryPrice = order.executed_price_cents || order.price_cents;
+                  const gap = entryPrice - sl;
+                  let exitProb = 0;
+                  if (gap <= 5) exitProb = 0.8;
+                  else if (gap <= 10) exitProb = 0.5;
+                  else if (gap <= 15) exitProb = 0.3;
+                  else if (gap <= 20) exitProb = 0.15;
+                  else if (gap <= 30) exitProb = 0.05;
+                  else exitProb = 0.02;
+                  
+                  const fullPayout = order.actual_payout_cents || order.potential_payout_cents;
+                  const earlyPayout = sl * order.units;
+                  missed += (fullPayout - earlyPayout) * exitProb;
+                }
+                
+                const simPnL = actualWonPayout - missed + recovery - actualWonCost - actualLostCost - actualFees;
+                return { stopLoss: sl, pnl: simPnL, improvement: simPnL - actualPnL };
+              });
+
+              const bestResult = results.reduce((best, r) => r.pnl > best.pnl ? r : best, results[0]);
+
+              return (
+                <>
+                  {/* Stop-Loss Slider */}
+                  <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-lg font-medium text-white">Stop-Loss Price</h3>
+                        <p className="text-sm text-slate-400">Auto-sell when price drops below this level</p>
+                      </div>
+                      <div className="text-3xl font-bold text-purple-400">{stopLossPrice}¢</div>
+                    </div>
+                    <input
+                      type="range"
+                      min="10"
+                      max="90"
+                      step="5"
+                      value={stopLossPrice}
+                      onChange={(e) => setStopLossPrice(parseInt(e.target.value))}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                    />
+                    <div className="flex justify-between text-xs text-slate-500 mt-2">
+                      <span>10¢ (aggressive)</span>
+                      <span>50¢</span>
+                      <span>90¢ (conservative)</span>
+                    </div>
+                  </div>
+
+                  {/* Comparison Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Actual P&L</div>
+                      <div className={`text-2xl font-bold ${actualPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {actualPnL >= 0 ? '+' : ''}${(actualPnL / 100).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {wonOrders.length}W / {lostOrders.length}L
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-purple-500/50">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Simulated P&L @ {stopLossPrice}¢</div>
+                      <div className={`text-2xl font-bold ${simulatedPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {simulatedPnL >= 0 ? '+' : ''}${(simulatedPnL / 100).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {tradesExitedEarly} losses would exit early
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Improvement</div>
+                      <div className={`text-2xl font-bold ${improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {improvement >= 0 ? '+' : ''}${(improvement / 100).toFixed(2)}
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        {improvement >= 0 ? 'Better' : 'Worse'} than holding
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Breakdown */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <h3 className="text-sm font-medium text-slate-400 mb-3">Loss Recovery</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Losses that would trigger stop-loss</span>
+                          <span className="text-white">{tradesExitedEarly} / {lostOrders.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Amount recovered</span>
+                          <span className="text-emerald-400">+${(simulatedLossRecovery / 100).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Actual loss amount</span>
+                          <span className="text-red-400">-${(actualLostCost / 100).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <h3 className="text-sm font-medium text-slate-400 mb-3">Missed Wins (Est.)</h3>
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Wins that might exit early</span>
+                          <span className="text-white">~{winsExitedEarly} / {wonOrders.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Estimated profit missed</span>
+                          <span className="text-red-400">-${(simulatedMissedWins / 100).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Actual win payout</span>
+                          <span className="text-emerald-400">+${(actualWonPayout / 100).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Optimal Stop-Loss Finder */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">Find Optimal Stop-Loss</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-slate-400 border-b border-slate-700">
+                            <th className="text-left py-2">Stop-Loss</th>
+                            <th className="text-right py-2">Simulated P&L</th>
+                            <th className="text-right py-2">vs Actual</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {results.map((r) => (
+                            <tr 
+                              key={r.stopLoss} 
+                              className={`border-b border-slate-800 ${r.stopLoss === bestResult.stopLoss ? 'bg-purple-500/10' : ''}`}
+                            >
+                              <td className="py-2">
+                                <span className={r.stopLoss === bestResult.stopLoss ? 'text-purple-400 font-bold' : 'text-white'}>
+                                  {r.stopLoss}¢
+                                  {r.stopLoss === bestResult.stopLoss && ' ⭐'}
+                                </span>
+                              </td>
+                              <td className={`py-2 text-right font-mono ${r.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {r.pnl >= 0 ? '+' : ''}${(r.pnl / 100).toFixed(2)}
+                              </td>
+                              <td className={`py-2 text-right font-mono ${r.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {r.improvement >= 0 ? '+' : ''}${(r.improvement / 100).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-3 text-sm text-slate-400">
+                      <span className="text-purple-400">⭐ Best stop-loss: {bestResult.stopLoss}¢</span> would have improved P&L by{' '}
+                      <span className={bestResult.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                        ${(bestResult.improvement / 100).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Disclaimer */}
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-400 text-sm">
+                    <strong>⚠️ Note:</strong> This simulation uses estimates for win trades exiting early (based on proximity of stop-loss to entry price). 
+                    Actual results would depend on real-time price movements which we don&apos;t have historical data for.
+                    The loss recovery calculation is more accurate since we know those trades went to 0.
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
