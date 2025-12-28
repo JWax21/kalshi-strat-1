@@ -21,7 +21,8 @@ async function kalshiFetch(endpoint: string): Promise<any> {
     saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
   }).toString('base64');
 
-  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+  const fullUrl = `${KALSHI_CONFIG.baseUrl}${endpoint}`;
+  const response = await fetch(fullUrl, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -32,6 +33,8 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   });
 
   if (!response.ok) {
+    const errorText = await response.text().catch(() => 'unknown');
+    console.error(`[kalshiFetch] Error ${response.status} for ${endpoint}: ${errorText}`);
     return null;
   }
 
@@ -214,19 +217,34 @@ export async function GET(request: Request) {
         let maxPriceSeen = 0; // Track the highest price seen
         let minPriceSeen = 100; // Track the lowest price seen
         try {
-          // Get series_ticker from market data if available, otherwise extract from ticker
-          const seriesTicker = marketData?.series_ticker || order.ticker?.split('-')[0] || '';
+          // Extract series_ticker from event_ticker (e.g., KXNBAGAME-25DEC26BOSIND -> KXNBAGAME)
+          // or from market data if available
+          const seriesTicker = marketData?.series_ticker || order.event_ticker?.split('-')[0] || '';
+          const marketTicker = order.ticker; // The full market ticker
           
-          // Calculate time range: from 48 hours before market close to market close
-          const endTs = order.market_close_time 
+          // Calculate time range based on when the order was placed and when market closed
+          // Use placement time as reference point to get price history during the trade
+          const placementTime = order.placement_status_at 
+            ? Math.floor(new Date(order.placement_status_at).getTime() / 1000)
+            : null;
+          const closeTime = order.market_close_time 
             ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
             : Math.floor(Date.now() / 1000);
-          const startTs = endTs - (48 * 60 * 60); // 48 hours before
           
-          if (seriesTicker && order.ticker) {
-            const candlestickResponse = await kalshiFetch(
-              `/series/${seriesTicker}/markets/${order.ticker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`
-            );
+          // Get data from 2 hours before placement to market close
+          const startTs = placementTime ? placementTime - (2 * 60 * 60) : closeTime - (48 * 60 * 60);
+          const endTs = closeTime;
+          
+          console.log(`[Candlestick] Fetching for ${marketTicker}, series=${seriesTicker}, start=${startTs}, end=${endTs}`);
+          
+          if (seriesTicker && marketTicker) {
+            const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+            console.log(`[Candlestick] URL: ${url}`);
+            
+            const candlestickResponse = await kalshiFetch(url);
+            
+            console.log(`[Candlestick] Response for ${marketTicker}:`, 
+              candlestickResponse ? `${candlestickResponse.candlesticks?.length || 0} candles` : 'null');
             
             if (candlestickResponse?.candlesticks && candlestickResponse.candlesticks.length > 0) {
               candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
@@ -242,11 +260,12 @@ export async function GET(request: Request) {
                 if (c.high > maxPriceSeen) maxPriceSeen = c.high;
                 if (c.low < minPriceSeen && c.low > 0) minPriceSeen = c.low;
               }
+              console.log(`[Candlestick] Parsed ${candlesticks.length} candles, max=${maxPriceSeen}, min=${minPriceSeen}`);
             }
           }
           await new Promise(r => setTimeout(r, 50)); // Rate limit
         } catch (e) {
-          console.error(`Candlestick fetch error for ${order.ticker}:`, e);
+          console.error(`[Candlestick] Fetch error for ${order.ticker}:`, e);
         }
 
         // Calculate details
