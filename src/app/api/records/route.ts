@@ -130,25 +130,37 @@ export async function GET(request: Request) {
       return null;
     };
 
-    // Group orders by SETTLEMENT DATE only
-    // Pending orders are counted separately, not mixed into date buckets
+    // Group orders by ESTIMATED GAME DATE
+    // For settled orders: subtract 8 hours from settlement_status_at to estimate game start
+    // For pending orders: use today's date
     let totalPendingOrders = 0;
+    const todayET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     
     if (allOrders && allOrders.length > 0) {
       allOrders.forEach(order => {
-        // For settled orders, group by settlement date
+        // For settled orders, subtract 8 hours from settlement time to estimate game date
         if ((order.result_status === 'won' || order.result_status === 'lost') && order.settlement_status_at) {
-          const settlementDate = getDateFromTimestampET(order.settlement_status_at);
-          if (settlementDate >= startDateStr) {
-            if (!ordersByDate[settlementDate]) {
-              ordersByDate[settlementDate] = [];
+          const settlementTime = new Date(order.settlement_status_at);
+          // Subtract 8 hours to estimate game start time
+          settlementTime.setHours(settlementTime.getHours() - 8);
+          const estimatedGameDate = getDateFromTimestampET(settlementTime.toISOString());
+          
+          if (estimatedGameDate >= startDateStr) {
+            if (!ordersByDate[estimatedGameDate]) {
+              ordersByDate[estimatedGameDate] = [];
             }
-            ordersByDate[settlementDate].push(order);
+            ordersByDate[estimatedGameDate].push(order);
           }
         }
-        // Count pending orders separately
+        // Pending orders default to today's date
         else if (order.result_status === 'undecided') {
           totalPendingOrders++;
+          if (todayET >= startDateStr) {
+            if (!ordersByDate[todayET]) {
+              ordersByDate[todayET] = [];
+            }
+            ordersByDate[todayET].push(order);
+          }
         }
       });
     }
