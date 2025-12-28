@@ -279,6 +279,12 @@ export async function GET(request: Request) {
         pending: totalPending,
         pnl_cents: totalPnl,
       },
+      debug: {
+        total_orders_fetched: allOrders?.length || 0,
+        dates_with_orders: Object.keys(ordersByDate).sort(),
+        dec28_orders: ordersByDate['2025-12-28']?.length || 0,
+        start_date_filter: startDateStr,
+      },
     });
   } catch (error) {
     console.error('Error fetching records:', error);
