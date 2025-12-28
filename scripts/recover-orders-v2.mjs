@@ -125,6 +125,8 @@ async function main() {
     let side = null;
     let firstOrderId = null;
     
+    let earliestFillTime = null;
+    
     for (const fill of fills) {
       const count = fill.count || 0;
       // Kalshi price is 0.0-1.0 (decimal), so multiply by 100 to get cents
@@ -133,6 +135,14 @@ async function main() {
       totalCostCents += count * priceCents;
       side = side || fill.side?.toUpperCase();
       firstOrderId = firstOrderId || fill.order_id;
+      
+      // Track earliest fill time for placement_status_at
+      if (fill.created_time) {
+        const fillTime = new Date(fill.created_time);
+        if (!earliestFillTime || fillTime < earliestFillTime) {
+          earliestFillTime = fillTime;
+        }
+      }
     }
     
     if (totalCount === 0) continue;
@@ -207,6 +217,7 @@ async function main() {
       actual_payout_cents: actualPayoutCents,
       fee_cents: feeCents,
       batch_date: batchDate,
+      placement_time: earliestFillTime ? earliestFillTime.toISOString() : new Date().toISOString(),
     });
   }
   
@@ -283,7 +294,7 @@ async function main() {
           open_interest: order.open_interest,
           market_close_time: order.market_close_time,
           placement_status: order.placement_status,
-          placement_status_at: new Date().toISOString(),
+          placement_status_at: order.placement_time,
           kalshi_order_id: order.kalshi_order_id,
           result_status: order.result_status,
           result_status_at: order.result_status !== 'undecided' ? new Date().toISOString() : null,
