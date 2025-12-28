@@ -27,14 +27,6 @@
     {
       "path": "/api/snapshot",
       "schedule": "0 10 * * *"
-    },
-    {
-      "path": "/api/stop-loss",
-      "schedule": "* * * * *"
-    },
-    {
-      "path": "/api/odds-history",
-      "schedule": "* * * * *"
     }
   ]
 }

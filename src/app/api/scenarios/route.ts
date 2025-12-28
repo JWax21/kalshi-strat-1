@@ -53,7 +53,9 @@ async function getPriceRangeForOrder(
     const userSide = order.side; // 'YES' or 'NO'
 
     if (!seriesTicker || !marketTicker) {
-      console.log(`[PriceRange] Missing ticker for order ${order.id}: series=${seriesTicker}, market=${marketTicker}`);
+      console.log(
+        `[PriceRange] Missing ticker for order ${order.id}: series=${seriesTicker}, market=${marketTicker}`
+      );
       return { minPrice: null, maxPrice: null };
     }
 
@@ -66,11 +68,13 @@ async function getPriceRangeForOrder(
       : Math.floor(Date.now() / 1000);
 
     // Get data from 2 hours before placement to market close (same as losses API)
-    const startTs = placementTime ? placementTime - (2 * 60 * 60) : closeTime - (48 * 60 * 60);
+    const startTs = placementTime
+      ? placementTime - 2 * 60 * 60
+      : closeTime - 48 * 60 * 60;
     const endTs = closeTime;
 
     const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
-    
+
     const response = await kalshiFetch(url);
 
     if (!response?.candlesticks || response.candlesticks.length === 0) {
@@ -100,7 +104,9 @@ async function getPriceRangeForOrder(
       }
     }
 
-    console.log(`[PriceRange] ${marketTicker} (${userSide}): max=${maxPrice}, min=${minPrice}, candles=${response.candlesticks.length}`);
+    console.log(
+      `[PriceRange] ${marketTicker} (${userSide}): max=${maxPrice}, min=${minPrice}, candles=${response.candlesticks.length}`
+    );
 
     return {
       minPrice: minPrice < 100 ? minPrice : null,
@@ -200,7 +206,7 @@ function calculateScenario(
     let eventMaxPrice = 0;
     let eventMinPrice = 100;
     let hasCandlestickData = false;
-    
+
     for (const order of eventOrders) {
       const range = orderPriceRanges.get(order.id);
       if (range?.maxPrice !== null && range?.maxPrice !== undefined) {
@@ -215,7 +221,7 @@ function calculateScenario(
         }
       }
     }
-    
+
     // Skip events without candlestick data - we can't accurately simulate
     if (!hasCandlestickData) {
       continue;
@@ -434,7 +440,7 @@ function calculateScenarioNoStopLoss(
     // Get max price for this event from CANDLESTICK DATA ONLY
     let eventMaxPrice = 0;
     let hasCandlestickData = false;
-    
+
     for (const order of eventOrders) {
       const range = orderPriceRanges.get(order.id);
       if (range?.maxPrice !== null && range?.maxPrice !== undefined) {
@@ -444,7 +450,7 @@ function calculateScenarioNoStopLoss(
         hasCandlestickData = true;
       }
     }
-    
+
     // Skip events without candlestick data
     if (!hasCandlestickData) {
       continue;
