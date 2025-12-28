@@ -98,6 +98,8 @@ interface LossEntry {
   implied_odds_percent: number;
   fills: { price: number; count: number; created_time: string; side: string }[];
   candlesticks: { ts: string; open: number; high: number; low: number; close: number }[];
+  max_price_cents: number | null;
+  min_price_cents: number | null;
 }
 
 interface LossesSummary {
@@ -3028,11 +3030,10 @@ export default function Dashboard() {
                         <th className="text-left p-3 text-slate-400 font-medium">Date</th>
                         <th className="text-left p-3 text-slate-400 font-medium">Market</th>
                         <th className="text-center p-3 text-slate-400 font-medium">League</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">Venue</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Timing</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">Side</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Units</th>
-                        <th className="text-right p-3 text-slate-400 font-medium">Entry Price</th>
+                        <th className="text-right p-3 text-slate-400 font-medium">Entry</th>
+                        <th className="text-right p-3 text-slate-400 font-medium">High</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Lost</th>
                         <th className="text-center p-3 text-slate-400 font-medium">Price Chart</th>
                       </tr>
@@ -3054,6 +3055,7 @@ export default function Dashboard() {
                           orders: number;
                           all_fills: any[];
                           candlesticks: { ts: string; open: number; high: number; low: number; close: number }[];
+                          max_price_cents: number | null;
                         }> = {};
                         
                         for (const loss of lossesData.losses) {
@@ -3072,6 +3074,7 @@ export default function Dashboard() {
                               orders: 0,
                               all_fills: [],
                               candlesticks: [],
+                              max_price_cents: null,
                             };
                           }
                           const event = eventMap[loss.event_ticker];
@@ -3086,6 +3089,10 @@ export default function Dashboard() {
                           // Use candlesticks from first order that has them
                           if (loss.candlesticks && loss.candlesticks.length > 0 && event.candlesticks.length === 0) {
                             event.candlesticks = loss.candlesticks;
+                          }
+                          // Track highest max_price seen
+                          if (loss.max_price_cents !== null && (event.max_price_cents === null || loss.max_price_cents > event.max_price_cents)) {
+                            event.max_price_cents = loss.max_price_cents;
                           }
                           // Use earliest batch_date
                           if (loss.batch_date < event.batch_date) {
@@ -3110,25 +3117,13 @@ export default function Dashboard() {
                             <td className="p-3 text-slate-400 font-mono text-xs">
                               {new Date(loss.batch_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </td>
-                            <td className="p-3 text-white max-w-[300px] truncate" title={loss.title}>
+                            <td className="p-3 text-white max-w-[250px] truncate" title={loss.title}>
                               {loss.title}
                               {loss.orders > 1 && <span className="ml-2 text-xs text-slate-500">({loss.orders} orders)</span>}
                             </td>
                             <td className="p-3 text-center">
                               <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
                                 {loss.league}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-1 rounded text-xs ${
-                                loss.venue === 'home' ? 'bg-blue-500/20 text-blue-400' : 
-                                loss.venue === 'away' ? 'bg-orange-500/20 text-orange-400' : 
-                                loss.venue === 'mixed' ? 'bg-purple-500/20 text-purple-400' :
-                                'bg-slate-700 text-slate-400'
-                              }`}>
-                                {loss.venue === 'home' && '🏠 '}
-                                {loss.venue === 'away' && '✈️ '}
-                                {loss.venue === 'mixed' ? 'MIXED' : loss.venue.toUpperCase()}
                               </span>
                             </td>
                             <td className="p-3 text-center">
@@ -3143,17 +3138,20 @@ export default function Dashboard() {
                                 {loss.timing === 'pre-game' ? 'PRE' : loss.timing === 'live' ? 'LIVE' : loss.timing === 'mixed' ? 'MIXED' : '?'}
                               </span>
                             </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                loss.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 
-                                loss.side === 'NO' ? 'bg-red-500/20 text-red-400' :
-                                'bg-purple-500/20 text-purple-400'
-                              }`}>
-                                {loss.side}
-                              </span>
-                            </td>
                             <td className="p-3 text-right text-white font-mono">{loss.total_units.toLocaleString()}</td>
                             <td className="p-3 text-right text-amber-400 font-mono">{loss.avg_entry_price}¢</td>
+                            <td className="p-3 text-right font-mono">
+                              {loss.max_price_cents !== null ? (
+                                <span className={loss.max_price_cents > loss.avg_entry_price ? 'text-emerald-400' : 'text-slate-400'}>
+                                  {loss.max_price_cents}¢
+                                  {loss.max_price_cents > loss.avg_entry_price && (
+                                    <span className="text-xs ml-1 text-emerald-600">↑{loss.max_price_cents - loss.avg_entry_price}</span>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="text-slate-600">—</span>
+                              )}
+                            </td>
                             <td className="p-3 text-right text-red-400 font-mono">
                               -${(loss.total_cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>

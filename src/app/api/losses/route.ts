@@ -211,6 +211,8 @@ export async function GET(request: Request) {
         // Try to get candlestick data for price history
         // API: /series/{series_ticker}/markets/{ticker}/candlesticks with start_ts, end_ts, period_interval
         let candlesticks: { ts: string; open: number; high: number; low: number; close: number }[] = [];
+        let maxPriceSeen = 0; // Track the highest price seen
+        let minPriceSeen = 100; // Track the lowest price seen
         try {
           // Get series_ticker from market data if available, otherwise extract from ticker
           const seriesTicker = marketData?.series_ticker || order.ticker?.split('-')[0] || '';
@@ -230,10 +232,16 @@ export async function GET(request: Request) {
               candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
                 ts: String(c.end_period_ts),
                 open: c.price?.open ?? c.yes_bid?.open ?? 0,
-                high: c.price?.high ?? c.yes_bid?.high ?? 0,
-                low: c.price?.low ?? c.yes_bid?.low ?? 0,
+                high: c.price?.high ?? c.price?.max ?? c.yes_bid?.high ?? 0,
+                low: c.price?.low ?? c.price?.min ?? c.yes_bid?.low ?? 0,
                 close: c.price?.close ?? c.yes_bid?.close ?? 0,
-              })).filter((c: any) => c.open > 0 || c.close > 0); // Filter out empty candles
+              })).filter((c: any) => c.open > 0 || c.close > 0);
+              
+              // Calculate max and min from all candles
+              for (const c of candlesticks) {
+                if (c.high > maxPriceSeen) maxPriceSeen = c.high;
+                if (c.low < minPriceSeen && c.low > 0) minPriceSeen = c.low;
+              }
             }
           }
           await new Promise(r => setTimeout(r, 50)); // Rate limit
@@ -304,6 +312,9 @@ export async function GET(request: Request) {
           })),
           // Candlestick price history
           candlesticks,
+          // Max/min prices seen (for stop-loss analysis)
+          max_price_cents: maxPriceSeen > 0 ? maxPriceSeen : null,
+          min_price_cents: minPriceSeen < 100 ? minPriceSeen : null,
           // Calculate implied odds we paid
           implied_odds_percent: entryPriceCents,
         };
