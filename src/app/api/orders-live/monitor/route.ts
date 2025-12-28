@@ -215,18 +215,23 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   result.capital.deployed_cents = totalExposure;
   result.capital.remaining_cents = availableBalance;
 
-  // Step 4: Process resting orders - improve or cancel
+  // Step 4: Process resting orders - reconcile DB with Kalshi reality
+  // CRITICAL: If our DB says "placed" but Kalshi doesn't have it, reclaim that capital!
   for (const order of restingOrders || []) {
-    const kalshiOrder = kalshiOrdersResponse.orders?.find(
-      (o: any) => o.order_id === order.kalshi_order_id
-    );
+    const kalshiOrder = kalshiRestingOrders.get(order.kalshi_order_id);
 
-    // If order is no longer resting on Kalshi, it might have filled
+    // If order is no longer resting on Kalshi, check what happened
     if (!kalshiOrder) {
-      // Check if it's now executed
+      let wasExecuted = false;
+      let orderExists = false;
+      
+      // Check if it's now executed or cancelled on Kalshi
       try {
         const orderDetail = await kalshiFetch(`/portfolio/orders/${order.kalshi_order_id}`);
+        orderExists = !!orderDetail.order;
+        
         if (orderDetail.order?.status === 'executed') {
+          wasExecuted = true;
           // Update to confirmed
           const executedPrice = order.side === 'YES' 
             ? orderDetail.order.yes_price 
@@ -242,10 +247,47 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             })
             .eq('id', order.id);
           result.details.improved.push(`${order.ticker}: filled!`);
+          console.log(`Order ${order.ticker} was filled on Kalshi`);
+        } else if (orderDetail.order?.status === 'cancelled') {
+          // Order was cancelled on Kalshi - update DB and reclaim capital
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'cancelled',
+              placement_status_at: new Date().toISOString(),
+              cancelled_at: new Date().toISOString(),
+              cancel_reason: 'Cancelled on Kalshi (detected during reconciliation)',
+            })
+            .eq('id', order.id);
+          
+          const reclaimedCents = order.cost_cents || 0;
+          availableBalance += reclaimedCents;
+          result.actions.cancelled_orders++;
+          result.details.cancelled.push(`${order.ticker}: cancelled on Kalshi, reclaimed ${reclaimedCents}¢`);
+          console.log(`Order ${order.ticker} was cancelled on Kalshi - reclaimed ${reclaimedCents}¢`);
         }
       } catch (e) {
-        // Order might not exist anymore
+        // Order doesn't exist on Kalshi at all - ghost order in our DB
+        // This happens if order failed to place or was cancelled
+        console.log(`Order ${order.ticker} (${order.kalshi_order_id}) not found on Kalshi - ghost order`);
+        
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'cancelled',
+            placement_status_at: new Date().toISOString(),
+            cancelled_at: new Date().toISOString(),
+            cancel_reason: 'Order not found on Kalshi (ghost order)',
+          })
+          .eq('id', order.id);
+        
+        const reclaimedCents = order.cost_cents || 0;
+        availableBalance += reclaimedCents;
+        result.actions.cancelled_orders++;
+        result.details.cancelled.push(`${order.ticker}: ghost order not on Kalshi, reclaimed ${reclaimedCents}¢`);
       }
+      
+      await new Promise(r => setTimeout(r, 100)); // Rate limit
       continue;
     }
 
