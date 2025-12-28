@@ -3037,71 +3037,138 @@ export default function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {lossesData.losses.map((loss) => (
-                        <tr key={loss.id} className="border-t border-slate-800 hover:bg-slate-800/30">
-                          <td className="p-3 text-slate-400 font-mono text-xs">
-                            {new Date(loss.batch_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </td>
-                          <td className="p-3 text-white max-w-[300px] truncate" title={loss.title}>
-                            {loss.title}
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
-                              {loss.league}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className={`px-2 py-1 rounded text-xs ${
-                              loss.venue === 'home' ? 'bg-blue-500/20 text-blue-400' : 
-                              loss.venue === 'away' ? 'bg-orange-500/20 text-orange-400' : 
-                              'bg-slate-700 text-slate-400'
-                            }`}>
-                              {loss.venue === 'home' && '🏠 '}
-                              {loss.venue === 'away' && '✈️ '}
-                              {loss.venue.toUpperCase()}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className={`px-2 py-1 rounded text-xs ${
-                              loss.bet_timing === 'pre-game' ? 'bg-green-500/20 text-green-400' : 
-                              loss.bet_timing === 'live' ? 'bg-red-500/20 text-red-400' : 
-                              'bg-slate-700 text-slate-400'
-                            }`}>
-                              {loss.bet_timing === 'pre-game' && '📅 '}
-                              {loss.bet_timing === 'live' && '🔴 '}
-                              {loss.bet_timing === 'pre-game' ? 'PRE' : loss.bet_timing === 'live' ? 'LIVE' : '?'}
-                            </span>
-                          </td>
-                          <td className="p-3 text-center">
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${
-                              loss.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
-                            }`}>
-                              {loss.side}
-                            </span>
-                          </td>
-                          <td className="p-3 text-right text-white font-mono">{loss.units.toLocaleString()}</td>
-                          <td className="p-3 text-right text-amber-400 font-mono">{loss.entry_price_cents}¢</td>
-                          <td className="p-3 text-right text-red-400 font-mono">
-                            -${(loss.cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="p-3 text-slate-400 text-xs">
-                            {loss.fills && loss.fills.length > 0 ? (
-                              <div className="flex flex-wrap gap-1">
-                                {loss.fills.slice(0, 3).map((fill, i) => (
-                                  <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-xs">
-                                    {fill.count.toLocaleString()}@{fill.price}¢
-                                  </span>
-                                ))}
-                                {loss.fills.length > 3 && (
-                                  <span className="text-slate-500">+{loss.fills.length - 3} more</span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-600">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {(() => {
+                        // Aggregate losses by event_ticker
+                        const eventMap: Record<string, {
+                          event_ticker: string;
+                          title: string;
+                          batch_date: string;
+                          league: string;
+                          venues: Set<string>;
+                          timings: Set<string>;
+                          sides: Set<string>;
+                          total_units: number;
+                          total_cost_cents: number;
+                          avg_entry_price: number;
+                          orders: number;
+                          all_fills: any[];
+                        }> = {};
+                        
+                        for (const loss of lossesData.losses) {
+                          if (!eventMap[loss.event_ticker]) {
+                            eventMap[loss.event_ticker] = {
+                              event_ticker: loss.event_ticker,
+                              title: loss.title,
+                              batch_date: loss.batch_date,
+                              league: loss.league,
+                              venues: new Set(),
+                              timings: new Set(),
+                              sides: new Set(),
+                              total_units: 0,
+                              total_cost_cents: 0,
+                              avg_entry_price: 0,
+                              orders: 0,
+                              all_fills: [],
+                            };
+                          }
+                          const event = eventMap[loss.event_ticker];
+                          event.venues.add(loss.venue);
+                          event.timings.add(loss.bet_timing);
+                          event.sides.add(loss.side);
+                          event.total_units += loss.units;
+                          event.total_cost_cents += loss.cost_cents;
+                          event.avg_entry_price += loss.entry_price_cents;
+                          event.orders++;
+                          if (loss.fills) event.all_fills.push(...loss.fills);
+                          // Use earliest batch_date
+                          if (loss.batch_date < event.batch_date) {
+                            event.batch_date = loss.batch_date;
+                          }
+                        }
+                        
+                        // Calculate averages and convert to array
+                        const aggregatedLosses = Object.values(eventMap).map(event => ({
+                          ...event,
+                          avg_entry_price: Math.round(event.avg_entry_price / event.orders),
+                          venue: event.venues.size === 1 ? [...event.venues][0] : 'mixed',
+                          timing: event.timings.size === 1 ? [...event.timings][0] : 'mixed',
+                          side: event.sides.size === 1 ? [...event.sides][0] : 'MIXED',
+                        }));
+                        
+                        // Sort by date descending
+                        aggregatedLosses.sort((a, b) => b.batch_date.localeCompare(a.batch_date));
+                        
+                        return aggregatedLosses.map((loss) => (
+                          <tr key={loss.event_ticker} className="border-t border-slate-800 hover:bg-slate-800/30">
+                            <td className="p-3 text-slate-400 font-mono text-xs">
+                              {new Date(loss.batch_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </td>
+                            <td className="p-3 text-white max-w-[300px] truncate" title={loss.title}>
+                              {loss.title}
+                              {loss.orders > 1 && <span className="ml-2 text-xs text-slate-500">({loss.orders} orders)</span>}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
+                                {loss.league}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                loss.venue === 'home' ? 'bg-blue-500/20 text-blue-400' : 
+                                loss.venue === 'away' ? 'bg-orange-500/20 text-orange-400' : 
+                                loss.venue === 'mixed' ? 'bg-purple-500/20 text-purple-400' :
+                                'bg-slate-700 text-slate-400'
+                              }`}>
+                                {loss.venue === 'home' && '🏠 '}
+                                {loss.venue === 'away' && '✈️ '}
+                                {loss.venue === 'mixed' ? 'MIXED' : loss.venue.toUpperCase()}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-1 rounded text-xs ${
+                                loss.timing === 'pre-game' ? 'bg-green-500/20 text-green-400' : 
+                                loss.timing === 'live' ? 'bg-red-500/20 text-red-400' : 
+                                loss.timing === 'mixed' ? 'bg-purple-500/20 text-purple-400' :
+                                'bg-slate-700 text-slate-400'
+                              }`}>
+                                {loss.timing === 'pre-game' && '📅 '}
+                                {loss.timing === 'live' && '🔴 '}
+                                {loss.timing === 'pre-game' ? 'PRE' : loss.timing === 'live' ? 'LIVE' : loss.timing === 'mixed' ? 'MIXED' : '?'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                loss.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 
+                                loss.side === 'NO' ? 'bg-red-500/20 text-red-400' :
+                                'bg-purple-500/20 text-purple-400'
+                              }`}>
+                                {loss.side}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right text-white font-mono">{loss.total_units.toLocaleString()}</td>
+                            <td className="p-3 text-right text-amber-400 font-mono">{loss.avg_entry_price}¢</td>
+                            <td className="p-3 text-right text-red-400 font-mono">
+                              -${(loss.total_cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-3 text-slate-400 text-xs">
+                              {loss.all_fills && loss.all_fills.length > 0 ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {loss.all_fills.slice(0, 3).map((fill: any, i: number) => (
+                                    <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-xs">
+                                      {fill.count.toLocaleString()}@{fill.price}¢
+                                    </span>
+                                  ))}
+                                  {loss.all_fills.length > 3 && (
+                                    <span className="text-slate-500">+{loss.all_fills.length - 3} more</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-600">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        ));
+                      })()}
                     </tbody>
                   </table>
                 </div>
