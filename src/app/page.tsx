@@ -310,6 +310,41 @@ function formatDateForDisplay(dateStr: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
+// Helper to count wins and losses by unique event_ticker
+// An event is considered "won" if ANY order for it won, "lost" only if ALL orders for it lost
+function countByUniqueEvent(orders: { event_ticker: string; result_status: string }[]): { wonEvents: number; lostEvents: number; wonEventTickers: Set<string>; lostEventTickers: Set<string> } {
+  const eventResults: Record<string, { hasWon: boolean; hasLost: boolean }> = {};
+  
+  for (const order of orders) {
+    if (!eventResults[order.event_ticker]) {
+      eventResults[order.event_ticker] = { hasWon: false, hasLost: false };
+    }
+    if (order.result_status === 'won') {
+      eventResults[order.event_ticker].hasWon = true;
+    } else if (order.result_status === 'lost') {
+      eventResults[order.event_ticker].hasLost = true;
+    }
+  }
+  
+  const wonEventTickers = new Set<string>();
+  const lostEventTickers = new Set<string>();
+  
+  for (const [eventTicker, result] of Object.entries(eventResults)) {
+    if (result.hasWon) {
+      wonEventTickers.add(eventTicker);
+    } else if (result.hasLost) {
+      lostEventTickers.add(eventTicker);
+    }
+  }
+  
+  return {
+    wonEvents: wonEventTickers.size,
+    lostEvents: lostEventTickers.size,
+    wonEventTickers,
+    lostEventTickers
+  };
+}
+
 export default function Dashboard() {
   // Auth state (must be first)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -1617,6 +1652,9 @@ export default function Dashboard() {
               const totalFees = historicalOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
               const historicalPnl = wonPayout - wonCost - lostCost - totalFees;
               
+              // Count by unique event_ticker
+              const { wonEvents, lostEvents } = countByUniqueEvent(historicalOrders);
+              
               // Show different cards based on which sub-tab is active
               if (positionsSubTab === 'active') {
                 return (
@@ -1643,11 +1681,11 @@ export default function Dashboard() {
                 return (
                   <div className="mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">W/L ({historicalDays}D)</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">W/L Events ({historicalDays}D)</div>
                       <div className="text-2xl font-bold">
-                        <span className="text-emerald-400">{wonOrders.length}W</span>
+                        <span className="text-emerald-400">{wonEvents}W</span>
                         <span className="text-slate-500 mx-1">/</span>
-                        <span className="text-red-400">{lostOrders.length}L</span>
+                        <span className="text-red-400">{lostEvents}L</span>
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
@@ -1775,7 +1813,9 @@ export default function Dashboard() {
                                     </span>
                                   </td>
                                   <td className="p-2 text-right text-white">
-                                    {d.currentOdds !== null ? `${(d.currentOdds * 100).toFixed(0)}¢` : '?'}
+                                    {d.currentOdds !== null 
+                                      ? `${(d.side === 'yes' ? d.currentOdds * 100 : (1 - d.currentOdds) * 100).toFixed(0)}¢` 
+                                      : '?'}
                                   </td>
                                   <td className="p-2 text-center">
                                     <span className={`px-2 py-0.5 rounded text-xs ${
@@ -2154,6 +2194,10 @@ export default function Dashboard() {
               const estimatedLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
               const estimatedPnl = wonProfit - estimatedLost;
               
+              // Count by unique event_ticker
+              const { wonEvents, lostEvents } = countByUniqueEvent(confirmedOrders);
+              const undecidedEvents = new Set(undecidedOrders.map(o => o.event_ticker)).size;
+              
               // Calculate settlement breakdown
               const settledOrders = [...wonOrders, ...lostOrders];
               const pendingSettlement = settledOrders.filter(o => o.settlement_status === 'pending');
@@ -2220,34 +2264,34 @@ export default function Dashboard() {
 
                     {/* Result Status */}
                     <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Results</div>
+                      <div className="text-sm font-medium text-white mb-3">Results (by Event)</div>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-slate-500 text-xs uppercase">
                             <th className="text-left pb-2">Status</th>
-                            <th className="text-right pb-2">Orders</th>
+                            <th className="text-right pb-2">Events</th>
                             <th className="text-right pb-2">Value</th>
                           </tr>
                         </thead>
                         <tbody className="text-sm">
                           <tr>
                             <td className="py-1.5 text-slate-400">Undecided</td>
-                            <td className="py-1.5 text-right text-white">{undecidedOrders.length}</td>
+                            <td className="py-1.5 text-right text-white">{undecidedEvents}</td>
                             <td className="py-1.5 text-right font-mono text-white">${(undecidedExposure / 100).toFixed(2)}</td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Won</td>
-                            <td className="py-1.5 text-right text-emerald-400">{wonOrders.length}</td>
+                            <td className="py-1.5 text-right text-emerald-400">{wonEvents}</td>
                             <td className="py-1.5 text-right font-mono text-emerald-400">+${(wonProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Lost</td>
-                            <td className="py-1.5 text-right text-red-400">{lostOrders.length}</td>
+                            <td className="py-1.5 text-right text-red-400">{lostEvents}</td>
                             <td className="py-1.5 text-right font-mono text-red-400">-${(estimatedLost / 100).toFixed(2)}</td>
                           </tr>
                           <tr className="border-t border-slate-700">
                             <td className="py-2 text-white font-medium">Est. P&L</td>
-                            <td className="py-2 text-right text-white font-medium">{confirmedOrders.length}</td>
+                            <td className="py-2 text-right text-white font-medium">{undecidedEvents + wonEvents + lostEvents}</td>
                             <td className={`py-2 text-right font-mono font-medium ${estimatedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                               {estimatedPnl >= 0 ? '+' : ''}${(estimatedPnl / 100).toFixed(2)}
                             </td>
