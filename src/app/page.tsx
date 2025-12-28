@@ -3033,7 +3033,7 @@ export default function Dashboard() {
                         <th className="text-right p-3 text-slate-400 font-medium">Units</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Entry Price</th>
                         <th className="text-right p-3 text-slate-400 font-medium">Lost</th>
-                        <th className="text-left p-3 text-slate-400 font-medium">Fill History</th>
+                        <th className="text-center p-3 text-slate-400 font-medium">Price Chart</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -3052,6 +3052,7 @@ export default function Dashboard() {
                           avg_entry_price: number;
                           orders: number;
                           all_fills: any[];
+                          candlesticks: { ts: string; open: number; high: number; low: number; close: number }[];
                         }> = {};
                         
                         for (const loss of lossesData.losses) {
@@ -3069,6 +3070,7 @@ export default function Dashboard() {
                               avg_entry_price: 0,
                               orders: 0,
                               all_fills: [],
+                              candlesticks: [],
                             };
                           }
                           const event = eventMap[loss.event_ticker];
@@ -3080,6 +3082,10 @@ export default function Dashboard() {
                           event.avg_entry_price += loss.entry_price_cents;
                           event.orders++;
                           if (loss.fills) event.all_fills.push(...loss.fills);
+                          // Use candlesticks from first order that has them
+                          if (loss.candlesticks && loss.candlesticks.length > 0 && event.candlesticks.length === 0) {
+                            event.candlesticks = loss.candlesticks;
+                          }
                           // Use earliest batch_date
                           if (loss.batch_date < event.batch_date) {
                             event.batch_date = loss.batch_date;
@@ -3150,20 +3156,79 @@ export default function Dashboard() {
                             <td className="p-3 text-right text-red-400 font-mono">
                               -${(loss.total_cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
-                            <td className="p-3 text-slate-400 text-xs">
-                              {loss.all_fills && loss.all_fills.length > 0 ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {loss.all_fills.slice(0, 3).map((fill: any, i: number) => (
-                                    <span key={i} className="px-1.5 py-0.5 bg-slate-800 rounded text-xs">
-                                      {fill.count.toLocaleString()}@{fill.price}¢
-                                    </span>
-                                  ))}
-                                  {loss.all_fills.length > 3 && (
-                                    <span className="text-slate-500">+{loss.all_fills.length - 3} more</span>
-                                  )}
+                            <td className="p-3">
+                              {loss.candlesticks && loss.candlesticks.length > 0 ? (
+                                <div className="w-[200px] h-[50px] relative">
+                                  {(() => {
+                                    const candles = loss.candlesticks.slice(-24); // Last 24 hours
+                                    if (candles.length === 0) return <span className="text-slate-600">—</span>;
+                                    
+                                    const allPrices = candles.flatMap(c => [c.high, c.low, c.open, c.close]).filter(p => p > 0);
+                                    if (allPrices.length === 0) return <span className="text-slate-600">—</span>;
+                                    
+                                    const minPrice = Math.min(...allPrices);
+                                    const maxPrice = Math.max(...allPrices);
+                                    const range = maxPrice - minPrice || 1;
+                                    const entryPrice = loss.avg_entry_price;
+                                    
+                                    const width = 200;
+                                    const height = 50;
+                                    const candleWidth = Math.max(2, Math.floor((width - 20) / candles.length) - 1);
+                                    const gap = 1;
+                                    
+                                    // Scale price to Y coordinate (inverted - higher price = lower Y)
+                                    const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
+                                    const entryY = scaleY(entryPrice);
+                                    
+                                    return (
+                                      <svg width={width} height={height} className="bg-slate-800/50 rounded">
+                                        {/* Entry price line */}
+                                        <line x1="0" y1={entryY} x2={width} y2={entryY} stroke="#f59e0b" strokeWidth="1" strokeDasharray="3,3" />
+                                        
+                                        {/* Candlesticks */}
+                                        {candles.map((c, i) => {
+                                          const x = 10 + i * (candleWidth + gap);
+                                          const openY = scaleY(c.open);
+                                          const closeY = scaleY(c.close);
+                                          const highY = scaleY(c.high);
+                                          const lowY = scaleY(c.low);
+                                          const isUp = c.close >= c.open;
+                                          const color = isUp ? '#22c55e' : '#ef4444';
+                                          const bodyTop = Math.min(openY, closeY);
+                                          const bodyHeight = Math.max(1, Math.abs(closeY - openY));
+                                          
+                                          return (
+                                            <g key={i}>
+                                              {/* Wick */}
+                                              <line 
+                                                x1={x + candleWidth / 2} 
+                                                y1={highY} 
+                                                x2={x + candleWidth / 2} 
+                                                y2={lowY} 
+                                                stroke={color} 
+                                                strokeWidth="1" 
+                                              />
+                                              {/* Body */}
+                                              <rect 
+                                                x={x} 
+                                                y={bodyTop} 
+                                                width={candleWidth} 
+                                                height={bodyHeight} 
+                                                fill={color} 
+                                              />
+                                            </g>
+                                          );
+                                        })}
+                                        
+                                        {/* Labels */}
+                                        <text x="2" y="10" fontSize="8" fill="#94a3b8">{maxPrice}¢</text>
+                                        <text x="2" y={height - 2} fontSize="8" fill="#94a3b8">{minPrice}¢</text>
+                                      </svg>
+                                    );
+                                  })()}
                                 </div>
                               ) : (
-                                <span className="text-slate-600">—</span>
+                                <span className="text-slate-600 text-xs">No data</span>
                               )}
                             </td>
                           </tr>

@@ -208,6 +208,24 @@ export async function GET(request: Request) {
           // No fills found
         }
 
+        // Try to get candlestick data for price history
+        let candlesticks: { ts: string; open: number; high: number; low: number; close: number }[] = [];
+        try {
+          const candlestickResponse = await kalshiFetch(`/markets/${order.ticker}/candlesticks?period_interval=60`); // Hourly candles
+          if (candlestickResponse?.candlesticks) {
+            candlesticks = candlestickResponse.candlesticks.map((c: any) => ({
+              ts: c.end_period_ts,
+              open: c.yes_price?.open || c.open_price || 0,
+              high: c.yes_price?.high || c.high_price || 0,
+              low: c.yes_price?.low || c.low_price || 0,
+              close: c.yes_price?.close || c.close_price || 0,
+            }));
+          }
+          await new Promise(r => setTimeout(r, 50)); // Rate limit
+        } catch (e) {
+          // Candlestick data not available
+        }
+
         // Calculate details
         const batchDate = order.order_batches?.batch_date || order.created_at?.split('T')[0];
         const league = getLeagueFromTicker(order.event_ticker || '');
@@ -269,6 +287,8 @@ export async function GET(request: Request) {
             created_time: f.created_time,
             side: f.side,
           })),
+          // Candlestick price history
+          candlesticks,
           // Calculate implied odds we paid
           implied_odds_percent: entryPriceCents,
         };
