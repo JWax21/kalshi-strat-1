@@ -164,6 +164,41 @@ export async function GET(request: Request) {
       previousEndCash = previousEndCash - dayPnl;
     }
 
+    // Helper to count wins/losses by unique event_ticker
+    // An event is "won" if ANY order for it won, "lost" only if ALL orders for it lost
+    const countByUniqueEvent = (orders: any[]): { wonEvents: number; lostEvents: number; pendingEvents: number } => {
+      const eventResults: Record<string, { hasWon: boolean; hasLost: boolean; hasPending: boolean }> = {};
+      
+      for (const order of orders) {
+        if (!eventResults[order.event_ticker]) {
+          eventResults[order.event_ticker] = { hasWon: false, hasLost: false, hasPending: false };
+        }
+        if (order.result_status === 'won') {
+          eventResults[order.event_ticker].hasWon = true;
+        } else if (order.result_status === 'lost') {
+          eventResults[order.event_ticker].hasLost = true;
+        } else if (order.result_status === 'undecided') {
+          eventResults[order.event_ticker].hasPending = true;
+        }
+      }
+      
+      let wonEvents = 0;
+      let lostEvents = 0;
+      let pendingEvents = 0;
+      
+      for (const result of Object.values(eventResults)) {
+        if (result.hasWon) {
+          wonEvents++;
+        } else if (result.hasLost) {
+          lostEvents++;
+        } else if (result.hasPending) {
+          pendingEvents++;
+        }
+      }
+      
+      return { wonEvents, lostEvents, pendingEvents };
+    };
+
     // Now build records going forward
     let runningCash = previousEndCash;
     
@@ -173,7 +208,9 @@ export async function GET(request: Request) {
       const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
       const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
       const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
-      const pendingOrders = confirmedOrders.filter(o => o.result_status === 'undecided');
+      
+      // Count by unique events
+      const { wonEvents, lostEvents, pendingEvents } = countByUniqueEvent(confirmedOrders);
       
       const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
       const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
@@ -205,9 +242,9 @@ export async function GET(request: Request) {
         start_portfolio_cents: Math.round(startPortfolio),
         end_cash_cents: Math.round(endCash),
         end_portfolio_cents: Math.round(endPortfolio),
-        wins: wonOrders.length,
-        losses: lostOrders.length,
-        pending: pendingOrders.length,
+        wins: wonEvents,
+        losses: lostEvents,
+        pending: pendingEvents,
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
         avg_price_cents: Math.round(avgPrice),

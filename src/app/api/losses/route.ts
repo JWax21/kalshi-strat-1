@@ -152,11 +152,18 @@ export async function GET(request: Request) {
 
     if (allError) throw allError;
 
-    // Pre-calculate total bets per league from all decided orders
-    const totalBetsByLeague: Record<string, number> = {};
+    // Pre-calculate total bets per league from all decided orders (counting unique events)
+    const eventsByLeague: Record<string, Set<string>> = {};
     for (const order of allDecidedOrders || []) {
       const league = getLeagueFromTicker(order.event_ticker || '');
-      totalBetsByLeague[league] = (totalBetsByLeague[league] || 0) + 1;
+      if (!eventsByLeague[league]) {
+        eventsByLeague[league] = new Set();
+      }
+      eventsByLeague[league].add(order.event_ticker);
+    }
+    const totalBetsByLeague: Record<string, number> = {};
+    for (const [league, events] of Object.entries(eventsByLeague)) {
+      totalBetsByLeague[league] = events.size;
     }
 
     if (!lostOrders || lostOrders.length === 0) {
@@ -272,19 +279,30 @@ export async function GET(request: Request) {
     const totalLostCents = enrichedLosses.reduce((sum, l) => sum + l.cost_cents, 0);
     const avgOdds = enrichedLosses.reduce((sum, l) => sum + l.implied_odds_percent, 0) / enrichedLosses.length;
 
-    // Group by league
-    const byLeague: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number }> = {};
+    // Count unique lost events
+    const uniqueLostEvents = new Set(enrichedLosses.map(l => l.event_ticker)).size;
+
+    // Group by league (counting unique events)
+    const byLeague: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number; event_tickers: Set<string> }> = {};
     for (const loss of enrichedLosses) {
       if (!byLeague[loss.league]) {
-        byLeague[loss.league] = { count: 0, total_bets: totalBetsByLeague[loss.league] || 0, lost_cents: 0, avg_odds: 0 };
+        byLeague[loss.league] = { count: 0, total_bets: totalBetsByLeague[loss.league] || 0, lost_cents: 0, avg_odds: 0, event_tickers: new Set() };
       }
-      byLeague[loss.league].count++;
+      byLeague[loss.league].event_tickers.add(loss.event_ticker);
       byLeague[loss.league].lost_cents += loss.cost_cents;
       byLeague[loss.league].avg_odds += loss.implied_odds_percent;
     }
-    // Calculate averages
+    // Calculate averages and convert event count
+    const byLeagueOutput: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number }> = {};
     for (const league of Object.keys(byLeague)) {
-      byLeague[league].avg_odds = Math.round(byLeague[league].avg_odds / byLeague[league].count);
+      const data = byLeague[league];
+      const orderCount = enrichedLosses.filter(l => l.league === league).length;
+      byLeagueOutput[league] = {
+        count: data.event_tickers.size, // Count unique events, not orders
+        total_bets: data.total_bets,
+        lost_cents: data.lost_cents,
+        avg_odds: Math.round(data.avg_odds / orderCount),
+      };
     }
 
     // Group by day of week
@@ -374,10 +392,10 @@ export async function GET(request: Request) {
       success: true,
       losses: enrichedLosses,
       summary: {
-        total_losses: enrichedLosses.length,
+        total_losses: uniqueLostEvents, // Count unique events, not orders
         total_lost_cents: totalLostCents,
         avg_odds: Math.round(avgOdds),
-        by_league: byLeague,
+        by_league: byLeagueOutput,
         by_day_of_week: byDayOfWeek,
         by_odds_range: byOddsRange,
         by_month: byMonth,
