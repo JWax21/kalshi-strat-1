@@ -484,8 +484,10 @@ export async function GET(request: Request) {
     const thresholds = [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95];
     
     // Create matrix: threshold x stopLoss -> P&L
+    // Also store all scenario details for breakdown display
     const matrix: Record<number, Record<number, number>> = {};
-    const scenarios: ScenarioResult[] = [];
+    const allScenarios: Record<string, ScenarioResult> = {}; // key: "threshold-stopLoss"
+    const scenarios: ScenarioResult[] = []; // For backward compat (75¢ SL)
     const scenariosWithoutStopLoss: ScenarioResult[] = [];
     
     // Calculate for each threshold
@@ -496,8 +498,9 @@ export async function GET(request: Request) {
       for (const sl of stopLossValues) {
         const result = calculateScenario(threshold, sl, orders, orderMinPrices);
         matrix[threshold][sl] = result.pnl;
+        allScenarios[`${threshold}-${sl}`] = result;
         
-        // Store detailed scenarios for the first stop-loss value (for backward compat)
+        // Store detailed scenarios for the last stop-loss value (for backward compat)
         if (sl === stopLossValues[stopLossValues.length - 1]) {
           scenarios.push(result);
         }
@@ -506,6 +509,7 @@ export async function GET(request: Request) {
       // Also calculate without stop-loss for comparison
       const noSLResult = calculateScenarioNoStopLoss(threshold, orders);
       scenariosWithoutStopLoss.push(noSLResult);
+      allScenarios[`${threshold}-0`] = noSLResult;
       matrix[threshold][0] = noSLResult.pnl; // 0 = no stop-loss
     }
     
@@ -528,6 +532,7 @@ export async function GET(request: Request) {
       success: true,
       scenarios,
       scenariosWithoutStopLoss,
+      allScenarios,
       matrix,
       stopLossValues,
       thresholds,

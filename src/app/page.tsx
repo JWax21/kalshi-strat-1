@@ -460,9 +460,28 @@ export default function Dashboard() {
     stopLossValues: number[];
     thresholds: number[];
     optimal: { threshold: number; stopLoss: number; pnl: number };
+    allScenarios: Record<string, {
+      threshold: number;
+      stopLoss: number | null;
+      totalBets: number;
+      totalEvents: number;
+      wins: number;
+      losses: number;
+      winsStoppedOut: number;
+      lossesSaved: number;
+      winRate: number;
+      totalCost: number;
+      totalPayout: number;
+      stopLossRecovery: number;
+      missedWinProfit: number;
+      pnl: number;
+      roi: number;
+      breakdown: EventBreakdown[];
+    }>;
   } | null>(null);
   
   const [selectedThreshold, setSelectedThreshold] = useState<number | null>(null);
+  const [selectedCell, setSelectedCell] = useState<{ threshold: number; stopLoss: number } | null>(null);
   const [scenariosLoading, setScenariosLoading] = useState(false);
   
   // Stop-loss monitoring state
@@ -3636,23 +3655,34 @@ export default function Dashboard() {
                                 className={`border-b border-slate-800 ${idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
                               >
                                 <td className="py-2 px-2 font-mono font-bold text-white">{threshold}¢</td>
-                                <td className={`py-2 px-2 text-right font-mono ${
-                                  scenariosData.matrix[threshold][0] >= 0 ? 'text-emerald-400' : 'text-red-400'
-                                }`}>
+                                <td 
+                                  onClick={() => setSelectedCell({ threshold, stopLoss: 0 })}
+                                  className={`py-2 px-2 text-right font-mono cursor-pointer transition-colors ${
+                                    selectedCell?.threshold === threshold && selectedCell?.stopLoss === 0
+                                      ? 'bg-purple-500/40 text-purple-200 ring-2 ring-purple-500'
+                                      : scenariosData.matrix[threshold][0] >= 0 
+                                        ? 'text-emerald-400 hover:bg-emerald-500/20' 
+                                        : 'text-red-400 hover:bg-red-500/20'
+                                  }`}
+                                >
                                   {scenariosData.matrix[threshold][0] >= 0 ? '+' : ''}${(scenariosData.matrix[threshold][0] / 100).toFixed(0)}
                                 </td>
                                 {scenariosData.stopLossValues.map(sl => {
                                   const pnl = scenariosData.matrix[threshold][sl];
                                   const isOptimal = threshold === scenariosData.optimal.threshold && sl === scenariosData.optimal.stopLoss;
+                                  const isSelected = selectedCell?.threshold === threshold && selectedCell?.stopLoss === sl;
                                   return (
                                     <td 
-                                      key={sl} 
-                                      className={`py-2 px-2 text-right font-mono ${
-                                        isOptimal 
-                                          ? 'bg-emerald-500/30 text-emerald-300 font-bold rounded' 
-                                          : pnl >= 0 
-                                            ? 'text-emerald-400' 
-                                            : 'text-red-400'
+                                      key={sl}
+                                      onClick={() => setSelectedCell({ threshold, stopLoss: sl })}
+                                      className={`py-2 px-2 text-right font-mono cursor-pointer transition-colors ${
+                                        isSelected
+                                          ? 'bg-purple-500/40 text-purple-200 ring-2 ring-purple-500'
+                                          : isOptimal 
+                                            ? 'bg-emerald-500/30 text-emerald-300 font-bold hover:bg-emerald-500/40' 
+                                            : pnl >= 0 
+                                              ? 'text-emerald-400 hover:bg-emerald-500/20' 
+                                              : 'text-red-400 hover:bg-red-500/20'
                                       }`}
                                     >
                                       {pnl >= 0 ? '+' : ''}${(pnl / 100).toFixed(0)}
@@ -3677,6 +3707,138 @@ export default function Dashboard() {
                           </span>
                         </div>
                       </div>
+                      
+                      <p className="mt-3 text-xs text-slate-500">💡 Click any cell to see detailed game-by-game breakdown below</p>
+                      
+                      {/* Selected Cell Breakdown */}
+                      {selectedCell && scenariosData.allScenarios && (() => {
+                        const key = `${selectedCell.threshold}-${selectedCell.stopLoss}`;
+                        const scenario = scenariosData.allScenarios[key];
+                        if (!scenario || !scenario.breakdown) return null;
+                        
+                        return (
+                          <div className="mt-6 bg-slate-800/50 rounded-xl p-4 border border-purple-500/50">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-bold text-purple-400">
+                                Breakdown: {selectedCell.threshold}¢ Threshold + {selectedCell.stopLoss === 0 ? 'No' : `${selectedCell.stopLoss}¢`} Stop-Loss
+                              </h4>
+                              <button 
+                                onClick={() => setSelectedCell(null)}
+                                className="text-slate-400 hover:text-white text-sm px-2 py-1 rounded hover:bg-slate-700"
+                              >
+                                ✕ Close
+                              </button>
+                            </div>
+                            
+                            {/* Summary stats */}
+                            <div className="grid grid-cols-5 gap-4 mb-4 text-sm">
+                              <div className="bg-slate-900 rounded-lg p-3">
+                                <div className="text-slate-500 text-xs">Events</div>
+                                <div className="text-white font-bold">{scenario.totalEvents}</div>
+                              </div>
+                              <div className="bg-slate-900 rounded-lg p-3">
+                                <div className="text-slate-500 text-xs">Wins</div>
+                                <div className="text-emerald-400 font-bold">{scenario.wins}</div>
+                              </div>
+                              <div className="bg-slate-900 rounded-lg p-3">
+                                <div className="text-slate-500 text-xs">Stopped</div>
+                                <div className="text-amber-400 font-bold">{scenario.winsStoppedOut + scenario.lossesSaved}</div>
+                              </div>
+                              <div className="bg-slate-900 rounded-lg p-3">
+                                <div className="text-slate-500 text-xs">SL Saved</div>
+                                <div className="text-emerald-400 font-bold">+${(scenario.stopLossRecovery / 100).toFixed(0)}</div>
+                              </div>
+                              <div className="bg-slate-900 rounded-lg p-3">
+                                <div className="text-slate-500 text-xs">P&L</div>
+                                <div className={`font-bold ${scenario.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {scenario.pnl >= 0 ? '+' : ''}${(scenario.pnl / 100).toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Game-by-game breakdown */}
+                            <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                              <table className="w-full text-xs">
+                                <thead className="sticky top-0 bg-slate-800">
+                                  <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
+                                    <th className="text-left py-2 px-2">Event</th>
+                                    <th className="text-center py-2 px-2">Side</th>
+                                    <th className="text-right py-2 px-2">Entry</th>
+                                    <th className="text-right py-2 px-2">Low</th>
+                                    <th className="text-center py-2 px-2">Actual</th>
+                                    <th className="text-center py-2 px-2">With SL</th>
+                                    <th className="text-right py-2 px-2">Cost</th>
+                                    <th className="text-right py-2 px-2">Actual P&L</th>
+                                    <th className="text-right py-2 px-2">Sim P&L</th>
+                                    <th className="text-right py-2 px-2">Δ</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {scenario.breakdown.map((event, idx) => {
+                                    const delta = event.simulated_pnl - event.actual_pnl;
+                                    return (
+                                      <tr 
+                                        key={event.event_ticker} 
+                                        className={`border-b border-slate-700 ${idx % 2 === 0 ? 'bg-slate-900/30' : ''}`}
+                                      >
+                                        <td className="py-2 px-2 max-w-48 truncate" title={event.event_title}>
+                                          {event.event_title}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                          <span className={event.side === 'YES' ? 'text-emerald-400' : 'text-red-400'}>
+                                            {event.side}
+                                          </span>
+                                        </td>
+                                        <td className="py-2 px-2 text-right font-mono">{event.entry_price}¢</td>
+                                        <td className="py-2 px-2 text-right font-mono">
+                                          {event.min_price !== null ? (
+                                            <span className={event.min_price < (selectedCell.stopLoss || 999) ? 'text-amber-400' : 'text-slate-400'}>
+                                              {event.min_price}¢
+                                            </span>
+                                          ) : '—'}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                          {event.actual_result === 'won' ? (
+                                            <span className="text-emerald-400">✓ Won</span>
+                                          ) : (
+                                            <span className="text-red-400">✗ Lost</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                          {event.simulated_result === 'won' && (
+                                            <span className="text-emerald-400">✓ Win</span>
+                                          )}
+                                          {event.simulated_result === 'stopped' && event.actual_result === 'lost' && (
+                                            <span className="text-emerald-400">💰 Saved</span>
+                                          )}
+                                          {event.simulated_result === 'stopped' && event.actual_result === 'won' && (
+                                            <span className="text-amber-400">😢 Missed</span>
+                                          )}
+                                          {event.simulated_result === 'lost' && (
+                                            <span className="text-red-400">✗ Loss</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-2 text-right font-mono text-slate-400">
+                                          ${(event.cost / 100).toFixed(2)}
+                                        </td>
+                                        <td className={`py-2 px-2 text-right font-mono ${event.actual_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {event.actual_pnl >= 0 ? '+' : ''}${(event.actual_pnl / 100).toFixed(2)}
+                                        </td>
+                                        <td className={`py-2 px-2 text-right font-mono ${event.simulated_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {event.simulated_pnl >= 0 ? '+' : ''}${(event.simulated_pnl / 100).toFixed(2)}
+                                        </td>
+                                        <td className={`py-2 px-2 text-right font-mono font-bold ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {delta >= 0 ? '+' : ''}${(delta / 100).toFixed(2)}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : (
                     <div className="text-center py-8 text-slate-500">No data available</div>
