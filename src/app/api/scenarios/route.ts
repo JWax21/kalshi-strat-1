@@ -108,8 +108,9 @@ interface ScenarioResult {
   totalBets: number;
   totalEvents: number;
   wins: number;
-  losses: number;
+  losses: number; // True losses (entry < SL)
   winsStoppedOut: number; // Wins that would have been sold due to stop-loss dip
+  lossesSaved: number; // Losses saved by stop-loss
   winRate: number;
   totalCost: number;
   totalPayout: number;
@@ -212,8 +213,9 @@ export async function GET(request: Request) {
 
       // Calculate wins/losses by unique events
       let wins = 0;
-      let losses = 0;
-      let winsStoppedOut = 0; // Wins we would have sold due to stop-loss
+      let losses = 0; // True losses (entry < SL, shouldn't happen with 85-95 thresholds)
+      let winsStoppedOut = 0; // Wins we would have sold due to stop-loss dip
+      let lossesSaved = 0; // Losses we saved by exiting at stop-loss
       let totalCost = 0;
       let totalPayout = 0;
       let stopLossRecovery = 0;
@@ -324,14 +326,12 @@ export async function GET(request: Request) {
             });
           }
         } else if (result.hasLost) {
-          losses++;
-          
-          // For losses, calculate stop-loss recovery
-          // The price definitely dropped through stop-loss on the way to 0
+          // For losses with a stop-loss, we exit at 75¢ instead of riding to 0
+          // So these become "stopped" events, not losses
           
           const avgEntryPrice = eventOrders.reduce((sum, o) => sum + (o.executed_price_cents || o.price_cents || 0), 0) / eventOrders.length;
           let eventSimulatedPayout = 0;
-          let wouldStopLoss = false;
+          let wouldStopLoss = avgEntryPrice > stopLossValue; // Would SL trigger?
           
           for (const order of eventOrders) {
             const entryPrice = order.executed_price_cents || order.price_cents || 0;
@@ -339,25 +339,29 @@ export async function GET(request: Request) {
             
             if (entryPrice > stopLossValue) {
               // We exit at stop-loss instead of riding to 0
-              // Original loss = cost paid (got 0 back)
-              // With stop-loss, we sell at stopLossValue, getting back stopLoss * units
               const costPaid = order.executed_cost_cents || order.cost_cents || 0;
               const stopLossReturn = (stopLossValue / 100) * units * 100;
               
-              stopLossRecovery += stopLossReturn; // What we got back
+              stopLossRecovery += stopLossReturn;
               totalCost += costPaid;
               totalPayout += stopLossReturn;
               eventSimulatedPayout += stopLossReturn;
-              wouldStopLoss = true;
             } else {
-              // Entry was below stop-loss, so stop-loss wouldn't trigger
+              // Entry was below stop-loss, so stop-loss wouldn't trigger - true loss
               totalCost += order.executed_cost_cents || order.cost_cents || 0;
-              // No payout - we lost
             }
           }
           
-          // Add breakdown entry for loss
-          // With stop-loss, this becomes a "stopped" result (we exit at 75¢ instead of riding to 0)
+          // Count as stopped (not loss) if SL would have triggered
+          if (wouldStopLoss) {
+            // This is a SAVED loss - we exited at 75¢ instead of riding to 0
+            lossesSaved++;
+          } else {
+            // True loss - entry was below SL so it wouldn't trigger
+            losses++;
+          }
+          
+          // Add breakdown entry
           breakdown.push({
             event_ticker: eventTicker,
             event_title: eventOrders[0]?.event_title || eventTicker,
@@ -367,7 +371,7 @@ export async function GET(request: Request) {
             actual_result: 'lost',
             min_price: 0, // It went to 0
             would_stop: wouldStopLoss,
-            simulated_result: wouldStopLoss ? 'stopped' : 'lost', // With SL, losses become stops (unless entry < SL)
+            simulated_result: wouldStopLoss ? 'stopped' : 'lost',
             cost: eventCost,
             actual_payout: 0,
             simulated_payout: Math.round(eventSimulatedPayout),
@@ -378,7 +382,7 @@ export async function GET(request: Request) {
         }
       }
 
-      const totalEvents = wins + losses + winsStoppedOut;
+      const totalEvents = wins + losses + winsStoppedOut + lossesSaved;
       const effectiveWinRate = totalEvents > 0 ? (wins / totalEvents) * 100 : 0;
       const pnl = totalPayout - totalCost;
       const roi = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
@@ -399,6 +403,7 @@ export async function GET(request: Request) {
         wins,
         losses,
         winsStoppedOut,
+        lossesSaved,
         winRate: Math.round(effectiveWinRate * 10) / 10,
         totalCost: Math.round(totalCost),
         totalPayout: Math.round(totalPayout),
@@ -514,6 +519,7 @@ export async function GET(request: Request) {
         wins,
         losses,
         winsStoppedOut: 0,
+        lossesSaved: 0,
         winRate: Math.round(winRate * 10) / 10,
         totalCost: Math.round(totalCost),
         totalPayout: Math.round(totalPayout),
@@ -543,4 +549,5 @@ export async function GET(request: Request) {
     );
   }
 }
+
 

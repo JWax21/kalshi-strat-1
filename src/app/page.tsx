@@ -427,6 +427,7 @@ export default function Dashboard() {
       wins: number;
       losses: number;
       winsStoppedOut: number;
+      lossesSaved: number;
       winRate: number;
       totalCost: number;
       totalPayout: number;
@@ -444,6 +445,7 @@ export default function Dashboard() {
       wins: number;
       losses: number;
       winsStoppedOut: number;
+      lossesSaved: number;
       winRate: number;
       totalCost: number;
       totalPayout: number;
@@ -3607,7 +3609,7 @@ export default function Dashboard() {
                             <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
                               <th className="text-left py-3 px-2">Threshold</th>
                               <th className="text-right py-3 px-2">Events</th>
-                              <th className="text-center py-3 px-2">W/L/Stopped</th>
+                              <th className="text-center py-3 px-2">W / Stopped</th>
                               <th className="text-right py-3 px-2">P&L (No SL)</th>
                               <th className="text-right py-3 px-2">SL Saved</th>
                               <th className="text-right py-3 px-2">Wins Stopped</th>
@@ -3645,12 +3647,12 @@ export default function Dashboard() {
                                   <td className="py-2 px-2 text-right text-slate-300 font-mono">{scenario.totalEvents}</td>
                                   <td className="py-2 px-2 text-center">
                                     <span className="text-emerald-400">{scenario.wins}W</span>
-                                    <span className="text-slate-500">/</span>
-                                    <span className="text-red-400">{scenario.losses}L</span>
-                                    {scenario.winsStoppedOut > 0 && (
+                                    <span className="text-slate-500"> / </span>
+                                    <span className="text-amber-400">{scenario.winsStoppedOut + scenario.lossesSaved}S</span>
+                                    {scenario.losses > 0 && (
                                       <>
-                                        <span className="text-slate-500">/</span>
-                                        <span className="text-amber-400">{scenario.winsStoppedOut}S</span>
+                                        <span className="text-slate-500"> / </span>
+                                        <span className="text-red-400">{scenario.losses}L</span>
                                       </>
                                     )}
                                   </td>
