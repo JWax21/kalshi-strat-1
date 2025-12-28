@@ -84,6 +84,24 @@ async function getMinPriceForOrder(order: any): Promise<number | null> {
   }
 }
 
+interface EventBreakdown {
+  event_ticker: string;
+  event_title: string;
+  side: string;
+  entry_price: number;
+  would_bet: boolean;
+  actual_result: 'won' | 'lost';
+  min_price: number | null;
+  would_stop: boolean;
+  simulated_result: 'won' | 'stopped' | 'lost';
+  cost: number;
+  actual_payout: number;
+  simulated_payout: number;
+  actual_pnl: number;
+  simulated_pnl: number;
+  market_close_time: string | null;
+}
+
 interface ScenarioResult {
   threshold: number;
   stopLoss: number | null;
@@ -99,6 +117,7 @@ interface ScenarioResult {
   missedWinProfit: number; // Profit missed from stopped-out wins
   pnl: number;
   roi: number;
+  breakdown: EventBreakdown[];
 }
 
 // GET - Analyze different threshold scenarios
@@ -199,6 +218,7 @@ export async function GET(request: Request) {
       let totalPayout = 0;
       let stopLossRecovery = 0;
       let missedWinProfit = 0; // Profit we would have missed from stopped-out wins
+      const breakdown: EventBreakdown[] = [];
 
       for (const [eventTicker, result] of Object.entries(eventResults)) {
         const eventOrders = result.orders;
@@ -231,6 +251,7 @@ export async function GET(request: Request) {
             // We would have sold at stop-loss price, getting back stopLoss * units per dollar
             // Original payout = units * 100 (win pays $1 per contract)
             // With stop-loss, we'd get stopLoss * units instead
+            let eventSimulatedPayout = 0;
             for (const order of eventOrders) {
               const units = order.units || 0;
               const originalPayout = order.actual_payout_cents || order.potential_payout_cents || 0;
@@ -240,23 +261,77 @@ export async function GET(request: Request) {
               // We get back stopLossReturn instead of full payout
               totalPayout += stopLossReturn;
               totalCost += costPaid;
+              eventSimulatedPayout += stopLossReturn;
               
               // Missed profit = what we would have made minus what we actually got
               const actualProfit = originalPayout - costPaid;
               const stopLossProfit = stopLossReturn - costPaid;
               missedWinProfit += (actualProfit - stopLossProfit);
             }
+            
+            // Get min price for this event
+            let eventMinPrice: number | null = null;
+            for (const order of eventOrders) {
+              const minPrice = orderMinPrices.get(order.id);
+              if (minPrice !== null && minPrice !== undefined) {
+                if (eventMinPrice === null || minPrice < eventMinPrice) {
+                  eventMinPrice = minPrice;
+                }
+              }
+            }
+            
+            // Add breakdown entry for stopped-out win
+            breakdown.push({
+              event_ticker: eventTicker,
+              event_title: eventOrders[0]?.event_title || eventTicker,
+              side: eventOrders[0]?.side || 'YES',
+              entry_price: Math.round(avgEntryPrice),
+              would_bet: true,
+              actual_result: 'won',
+              min_price: eventMinPrice,
+              would_stop: true,
+              simulated_result: 'stopped',
+              cost: eventCost,
+              actual_payout: eventPayout,
+              simulated_payout: Math.round(eventSimulatedPayout),
+              actual_pnl: eventPayout - eventCost,
+              simulated_pnl: Math.round(eventSimulatedPayout) - eventCost,
+              market_close_time: eventOrders[0]?.market_close_time || null,
+            });
           } else {
             // This win held through - we get full payout
             wins++;
             totalCost += eventCost;
             totalPayout += eventPayout;
+            
+            // Add breakdown entry for win
+            breakdown.push({
+              event_ticker: eventTicker,
+              event_title: eventOrders[0]?.event_title || eventTicker,
+              side: eventOrders[0]?.side || 'YES',
+              entry_price: Math.round(avgEntryPrice),
+              would_bet: true,
+              actual_result: 'won',
+              min_price: null, // Not relevant for wins that held
+              would_stop: false,
+              simulated_result: 'won',
+              cost: eventCost,
+              actual_payout: eventPayout,
+              simulated_payout: eventPayout,
+              actual_pnl: eventPayout - eventCost,
+              simulated_pnl: eventPayout - eventCost,
+              market_close_time: eventOrders[0]?.market_close_time || null,
+            });
           }
         } else if (result.hasLost) {
           losses++;
           
           // For losses, calculate stop-loss recovery
           // The price definitely dropped through stop-loss on the way to 0
+          
+          const avgEntryPrice = eventOrders.reduce((sum, o) => sum + (o.executed_price_cents || o.price_cents || 0), 0) / eventOrders.length;
+          let eventSimulatedPayout = 0;
+          let wouldStopLoss = false;
           
           for (const order of eventOrders) {
             const entryPrice = order.executed_price_cents || order.price_cents || 0;
@@ -268,17 +343,37 @@ export async function GET(request: Request) {
               // With stop-loss, we sell at stopLossValue, getting back stopLoss * units
               const costPaid = order.executed_cost_cents || order.cost_cents || 0;
               const stopLossReturn = (stopLossValue / 100) * units * 100;
-              const lossWithStopLoss = costPaid - stopLossReturn;
               
               stopLossRecovery += stopLossReturn; // What we got back
               totalCost += costPaid;
               totalPayout += stopLossReturn;
+              eventSimulatedPayout += stopLossReturn;
+              wouldStopLoss = true;
             } else {
               // Entry was below stop-loss, so stop-loss wouldn't trigger
               totalCost += order.executed_cost_cents || order.cost_cents || 0;
               // No payout - we lost
             }
           }
+          
+          // Add breakdown entry for loss
+          breakdown.push({
+            event_ticker: eventTicker,
+            event_title: eventOrders[0]?.event_title || eventTicker,
+            side: eventOrders[0]?.side || 'YES',
+            entry_price: Math.round(avgEntryPrice),
+            would_bet: true,
+            actual_result: 'lost',
+            min_price: 0, // It went to 0
+            would_stop: wouldStopLoss,
+            simulated_result: 'lost',
+            cost: eventCost,
+            actual_payout: 0,
+            simulated_payout: Math.round(eventSimulatedPayout),
+            actual_pnl: -eventCost,
+            simulated_pnl: Math.round(eventSimulatedPayout) - eventCost,
+            market_close_time: eventOrders[0]?.market_close_time || null,
+          });
         }
       }
 
@@ -286,6 +381,14 @@ export async function GET(request: Request) {
       const effectiveWinRate = totalEvents > 0 ? (wins / totalEvents) * 100 : 0;
       const pnl = totalPayout - totalCost;
       const roi = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
+
+      // Sort breakdown by market close time (most recent first)
+      breakdown.sort((a, b) => {
+        if (!a.market_close_time && !b.market_close_time) return 0;
+        if (!a.market_close_time) return 1;
+        if (!b.market_close_time) return -1;
+        return new Date(b.market_close_time).getTime() - new Date(a.market_close_time).getTime();
+      });
 
       scenarios.push({
         threshold,
@@ -302,6 +405,7 @@ export async function GET(request: Request) {
         missedWinProfit: Math.round(missedWinProfit),
         pnl: Math.round(pnl),
         roi: Math.round(roi * 10) / 10,
+        breakdown,
       });
     }
 
@@ -332,23 +436,69 @@ export async function GET(request: Request) {
       let losses = 0;
       let totalCost = 0;
       let totalPayout = 0;
+      const breakdownNoSL: EventBreakdown[] = [];
 
-      for (const result of Object.values(eventResults)) {
+      for (const [eventTicker, result] of Object.entries(eventResults)) {
         const eventOrders = result.orders;
         const eventCost = eventOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
         const eventPayout = eventOrders
           .filter(o => o.result_status === 'won')
           .reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+        const avgEntryPrice = eventOrders.reduce((sum, o) => sum + (o.executed_price_cents || o.price_cents || 0), 0) / eventOrders.length;
 
         if (result.hasWon) {
           wins++;
           totalCost += eventCost;
           totalPayout += eventPayout;
+          
+          breakdownNoSL.push({
+            event_ticker: eventTicker,
+            event_title: eventOrders[0]?.event_title || eventTicker,
+            side: eventOrders[0]?.side || 'YES',
+            entry_price: Math.round(avgEntryPrice),
+            would_bet: true,
+            actual_result: 'won',
+            min_price: null,
+            would_stop: false,
+            simulated_result: 'won',
+            cost: eventCost,
+            actual_payout: eventPayout,
+            simulated_payout: eventPayout,
+            actual_pnl: eventPayout - eventCost,
+            simulated_pnl: eventPayout - eventCost,
+            market_close_time: eventOrders[0]?.market_close_time || null,
+          });
         } else if (result.hasLost) {
           losses++;
           totalCost += eventCost;
+          
+          breakdownNoSL.push({
+            event_ticker: eventTicker,
+            event_title: eventOrders[0]?.event_title || eventTicker,
+            side: eventOrders[0]?.side || 'YES',
+            entry_price: Math.round(avgEntryPrice),
+            would_bet: true,
+            actual_result: 'lost',
+            min_price: 0,
+            would_stop: false,
+            simulated_result: 'lost',
+            cost: eventCost,
+            actual_payout: 0,
+            simulated_payout: 0,
+            actual_pnl: -eventCost,
+            simulated_pnl: -eventCost,
+            market_close_time: eventOrders[0]?.market_close_time || null,
+          });
         }
       }
+      
+      // Sort breakdown by market close time (most recent first)
+      breakdownNoSL.sort((a, b) => {
+        if (!a.market_close_time && !b.market_close_time) return 0;
+        if (!a.market_close_time) return 1;
+        if (!b.market_close_time) return -1;
+        return new Date(b.market_close_time).getTime() - new Date(a.market_close_time).getTime();
+      });
 
       const totalEvents = wins + losses;
       const winRate = totalEvents > 0 ? (wins / totalEvents) * 100 : 0;
@@ -370,6 +520,7 @@ export async function GET(request: Request) {
         missedWinProfit: 0,
         pnl: Math.round(pnl),
         roi: Math.round(roi * 10) / 10,
+        breakdown: breakdownNoSL,
       });
     }
 

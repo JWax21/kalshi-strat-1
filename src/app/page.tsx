@@ -400,6 +400,24 @@ export default function Dashboard() {
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   
   // Scenarios analysis state
+  interface EventBreakdown {
+    event_ticker: string;
+    event_title: string;
+    side: string;
+    entry_price: number;
+    would_bet: boolean;
+    actual_result: 'won' | 'lost';
+    min_price: number | null;
+    would_stop: boolean;
+    simulated_result: 'won' | 'stopped' | 'lost';
+    cost: number;
+    actual_payout: number;
+    simulated_payout: number;
+    actual_pnl: number;
+    simulated_pnl: number;
+    market_close_time: string | null;
+  }
+  
   const [scenariosData, setScenariosData] = useState<{
     scenarios: Array<{
       threshold: number;
@@ -416,6 +434,7 @@ export default function Dashboard() {
       missedWinProfit: number;
       pnl: number;
       roi: number;
+      breakdown: EventBreakdown[];
     }>;
     scenariosWithoutStopLoss: Array<{
       threshold: number;
@@ -432,9 +451,12 @@ export default function Dashboard() {
       missedWinProfit: number;
       pnl: number;
       roi: number;
+      breakdown: EventBreakdown[];
     }>;
     summary: { total_orders: number; days_analyzed: number; stop_loss_value: number };
   } | null>(null);
+  
+  const [selectedThreshold, setSelectedThreshold] = useState<number | null>(null);
   const [scenariosLoading, setScenariosLoading] = useState(false);
   
   // Stop-loss monitoring state
@@ -3599,11 +3621,21 @@ export default function Dashboard() {
                               const pnlWithoutSL = noStopLoss?.pnl || 0;
                               const improvement = scenario.pnl - pnlWithoutSL;
                               const isHighlighted = scenario.threshold >= 90 && scenario.threshold <= 92;
+                              const isSelected = selectedThreshold === scenario.threshold;
                               
                               return (
                                 <tr 
                                   key={scenario.threshold} 
-                                  className={`border-b border-slate-800 ${isHighlighted ? 'bg-purple-500/10' : idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
+                                  onClick={() => setSelectedThreshold(isSelected ? null : scenario.threshold)}
+                                  className={`border-b border-slate-800 cursor-pointer transition-colors ${
+                                    isSelected 
+                                      ? 'bg-purple-600/30 border-purple-500' 
+                                      : isHighlighted 
+                                        ? 'bg-purple-500/10 hover:bg-purple-500/20' 
+                                        : idx % 2 === 0 
+                                          ? 'bg-slate-800/20 hover:bg-slate-700/30' 
+                                          : 'hover:bg-slate-700/30'
+                                  }`}
                                 >
                                   <td className="py-2 px-2">
                                     <span className={`font-mono font-bold ${isHighlighted ? 'text-purple-400' : 'text-white'}`}>
@@ -3650,16 +3682,134 @@ export default function Dashboard() {
                       
                       <div className="mt-4 p-3 bg-slate-800/50 rounded-lg">
                         <div className="text-sm text-slate-400">
-                          <strong className="text-purple-400">💡 Analysis Notes (Using Real Price Data):</strong>
-                          <ul className="mt-2 space-y-1 text-xs">
-                            <li>• <strong>W/L/S</strong>: Wins / Losses / Wins that would have been stopped out</li>
-                            <li>• <strong>SL Saved</strong>: Amount recovered from losses that hit 75¢ stop-loss</li>
-                            <li>• <strong>Wins Stopped</strong>: Profit missed from wins where price dipped below 75¢ during game</li>
-                            <li>• <strong>Δ P&L</strong>: Net difference with stop-loss vs without</li>
-                            <li className="text-purple-300">• Uses real candlestick data to determine if prices hit stop-loss</li>
-                          </ul>
+                          <strong className="text-purple-400">💡 Click a row to see detailed breakdown • Using real candlestick data</strong>
                         </div>
                       </div>
+                      
+                      {/* Detailed Breakdown for Selected Threshold */}
+                      {selectedThreshold && (() => {
+                        const selectedScenario = scenariosData.scenarios.find(s => s.threshold === selectedThreshold);
+                        if (!selectedScenario || !selectedScenario.breakdown) return null;
+                        
+                        return (
+                          <div className="mt-6 bg-slate-900 rounded-xl p-4 border border-purple-500/50">
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-bold text-purple-400">
+                                Detailed Breakdown: {selectedThreshold}¢ Threshold + 75¢ Stop-Loss
+                              </h4>
+                              <button 
+                                onClick={() => setSelectedThreshold(null)}
+                                className="text-slate-400 hover:text-white text-sm"
+                              >
+                                ✕ Close
+                              </button>
+                            </div>
+                            
+                            <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                              <table className="w-full text-xs">
+                                <thead className="sticky top-0 bg-slate-900">
+                                  <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
+                                    <th className="text-left py-2 px-2">Event</th>
+                                    <th className="text-center py-2 px-2">Side</th>
+                                    <th className="text-right py-2 px-2">Entry</th>
+                                    <th className="text-right py-2 px-2">Low</th>
+                                    <th className="text-center py-2 px-2">Would Stop?</th>
+                                    <th className="text-center py-2 px-2">Result</th>
+                                    <th className="text-right py-2 px-2">Cost</th>
+                                    <th className="text-right py-2 px-2">Actual P&L</th>
+                                    <th className="text-right py-2 px-2">Sim P&L</th>
+                                    <th className="text-right py-2 px-2">Δ</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {selectedScenario.breakdown.map((event, idx) => {
+                                    const delta = event.simulated_pnl - event.actual_pnl;
+                                    return (
+                                      <tr 
+                                        key={event.event_ticker} 
+                                        className={`border-b border-slate-800 ${idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
+                                      >
+                                        <td className="py-2 px-2 max-w-48 truncate" title={event.event_title}>
+                                          {event.event_title}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                          <span className={event.side === 'YES' ? 'text-emerald-400' : 'text-red-400'}>
+                                            {event.side}
+                                          </span>
+                                        </td>
+                                        <td className="py-2 px-2 text-right font-mono">{event.entry_price}¢</td>
+                                        <td className="py-2 px-2 text-right font-mono">
+                                          {event.min_price !== null ? (
+                                            <span className={event.min_price < 75 ? 'text-amber-400' : 'text-slate-400'}>
+                                              {event.min_price}¢
+                                            </span>
+                                          ) : '—'}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                          {event.would_stop ? (
+                                            <span className="text-amber-400">⚠️ Yes</span>
+                                          ) : (
+                                            <span className="text-slate-500">No</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-2 text-center">
+                                          {event.simulated_result === 'won' && (
+                                            <span className="text-emerald-400">✓ Win</span>
+                                          )}
+                                          {event.simulated_result === 'stopped' && (
+                                            <span className="text-amber-400">⏹ Stopped</span>
+                                          )}
+                                          {event.simulated_result === 'lost' && (
+                                            <span className="text-red-400">✗ Loss</span>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-2 text-right font-mono text-slate-400">
+                                          ${(event.cost / 100).toFixed(2)}
+                                        </td>
+                                        <td className={`py-2 px-2 text-right font-mono ${event.actual_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {event.actual_pnl >= 0 ? '+' : ''}${(event.actual_pnl / 100).toFixed(2)}
+                                        </td>
+                                        <td className={`py-2 px-2 text-right font-mono ${event.simulated_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {event.simulated_pnl >= 0 ? '+' : ''}${(event.simulated_pnl / 100).toFixed(2)}
+                                        </td>
+                                        <td className={`py-2 px-2 text-right font-mono font-bold ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                          {delta >= 0 ? '+' : ''}${(delta / 100).toFixed(2)}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                            
+                            <div className="mt-4 pt-4 border-t border-slate-700 grid grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <div className="text-slate-500 text-xs">Events</div>
+                                <div className="text-white font-bold">{selectedScenario.breakdown.length}</div>
+                              </div>
+                              <div>
+                                <div className="text-slate-500 text-xs">Actual P&L</div>
+                                <div className={`font-bold ${selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  ${(selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0) / 100).toFixed(2)}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-slate-500 text-xs">Simulated P&L</div>
+                                <div className={`font-bold ${selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  ${(selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) / 100).toFixed(2)}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-slate-500 text-xs">Δ with SL</div>
+                                <div className={`font-bold ${(selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) - selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0)) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                  {(selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) - selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0)) >= 0 ? '+' : ''}
+                                  ${((selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) - selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0)) / 100).toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </>
                   ) : (
                     <div className="text-center py-8 text-slate-500">No data available</div>
