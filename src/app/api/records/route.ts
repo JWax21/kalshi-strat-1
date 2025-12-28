@@ -286,12 +286,14 @@ export async function GET(request: Request) {
         pnl_cents: totalPnl,
       },
       debug: {
+        deployment_time: '2025-12-28T23:15:00Z',
         total_orders_fetched: allOrders?.length || 0,
         dates_with_orders: Object.keys(ordersByDate).sort(),
         dec28_orders: ordersByDate['2025-12-28']?.length || 0,
         start_date_filter: startDateStr,
         all_dates_raw: [...new Set(allDatesRaw)].sort(),
         excluded_sample: excludedDates.slice(0, 10),
+        sample_placement_dates: allOrders?.slice(0, 5).map((o: any) => ({ ticker: o.ticker, placement_status_at: o.placement_status_at })),
       },
     });
   } catch (error) {
