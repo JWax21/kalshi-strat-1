@@ -423,9 +423,29 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     return { success: false, error: 'No markets with sufficient liquidity' };
   }
 
+  // CRITICAL: DEDUPLICATE - Only keep ONE market per event (the one with highest favorite odds)
+  // This prevents betting on both "Team A wins" and "Team B wins" for the same game
+  // which would guarantee a loss (one team MUST lose)
+  const eventBestMarket = new Map<string, typeof analyses[0]>();
+  for (const analysis of analyses) {
+    const eventTicker = analysis.market.event_ticker;
+    const existing = eventBestMarket.get(eventTicker);
+    if (!existing) {
+      eventBestMarket.set(eventTicker, analysis);
+    } else {
+      // Keep the one with higher favorite price (higher confidence)
+      if (analysis.price_cents > existing.price_cents) {
+        eventBestMarket.set(eventTicker, analysis);
+      }
+    }
+  }
+  
+  const deduplicatedAnalyses = Array.from(eventBestMarket.values());
+  console.log(`Deduplicated: ${analyses.length} markets -> ${deduplicatedAnalyses.length} unique events`);
+
   // Distribute capital based on liquidity
   const allocatedMarkets = distributeCapitalByLiquidity(
-    analyses,
+    deduplicatedAnalyses,
     availableCapitalCents,
     maxPositionPercent
   );

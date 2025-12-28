@@ -529,11 +529,18 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const totalPortfolio = availableBalance + totalExposure;
   const maxEventExposureCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
   
-  // Filter markets: exclude ones we've already bet on (same ticker)
-  // Check event exposure to ensure we don't exceed 3% per event
+  // Filter markets: exclude ones we've already bet on (same ticker OR same event)
+  // This prevents betting on both sides of the same game
   const preFilteredMarkets = filteredMarkets.filter(m => {
     // Never bet on the same ticker twice
     if (existingTickers.has(m.ticker)) return false;
+    
+    // CRITICAL: Never bet on a different market within the same event
+    // This prevents betting YES on "Team A wins" when we already bet YES on "Team B wins"
+    if (existingEventTickers.has(m.event_ticker)) {
+      console.log(`Skipping ${m.ticker} - already have position on event ${m.event_ticker}`);
+      return false;
+    }
     
     // Check remaining capacity for this event (allow partial fills up to 3%)
     const currentExposure = eventExposureCents.get(m.event_ticker) || 0;
