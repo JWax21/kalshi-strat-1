@@ -5,6 +5,8 @@ import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 // Helper to make authenticated Kalshi API calls
 async function kalshiFetch(endpoint: string): Promise<any> {
@@ -252,7 +254,7 @@ export async function GET(request: Request) {
     const totalLosses = records.reduce((sum, r) => sum + r.losses, 0);
     const totalPnl = records.reduce((sum, r) => sum + r.pnl_cents, 0);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       records,
       current_balance_cents: currentBalance,
@@ -268,8 +270,15 @@ export async function GET(request: Request) {
         orders_by_date_counts: Object.fromEntries(
           Object.entries(ordersByDate).map(([d, orders]) => [d, orders.length])
         ),
+        timestamp: new Date().toISOString(),
       },
     });
+    
+    // Prevent caching
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    response.headers.set('Pragma', 'no-cache');
+    
+    return response;
   } catch (error) {
     console.error('Error fetching records:', error);
     return NextResponse.json(
