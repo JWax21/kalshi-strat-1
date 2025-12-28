@@ -103,11 +103,13 @@ export async function GET(request: Request) {
     };
 
     // Get all orders with confirmed placement status
-    const { data: allOrders } = await supabase
+    const { data: allOrders, error: ordersError } = await supabase
       .from('orders')
       .select('*')
       .eq('placement_status', 'confirmed')
       .not('placement_status_at', 'is', null);
+
+    console.log(`[Records API] Total orders fetched: ${allOrders?.length || 0}, error: ${ordersError?.message || 'none'}`);
 
     const ordersByDate: Record<string, any[]> = {};
 
@@ -126,6 +128,9 @@ export async function GET(request: Request) {
         }
       });
     }
+    
+    console.log(`[Records API] Orders grouped into ${Object.keys(ordersByDate).length} dates: ${Object.keys(ordersByDate).sort().join(', ')}`);
+    console.log(`[Records API] Dec 28 orders: ${ordersByDate['2025-12-28']?.length || 0}`);
 
     // Build snapshot map for quick lookup
     const snapshotMap: Record<string, any> = {};
