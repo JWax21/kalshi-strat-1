@@ -399,6 +399,40 @@ export default function Dashboard() {
   const [whatIfData, setWhatIfData] = useState<WhatIfData | null>(null);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
   
+  // Scenarios analysis state
+  const [scenariosData, setScenariosData] = useState<{
+    scenarios: Array<{
+      threshold: number;
+      stopLoss: number | null;
+      totalBets: number;
+      totalEvents: number;
+      wins: number;
+      losses: number;
+      winRate: number;
+      totalCost: number;
+      totalPayout: number;
+      stopLossRecovery: number;
+      pnl: number;
+      roi: number;
+    }>;
+    scenariosWithoutStopLoss: Array<{
+      threshold: number;
+      stopLoss: number | null;
+      totalBets: number;
+      totalEvents: number;
+      wins: number;
+      losses: number;
+      winRate: number;
+      totalCost: number;
+      totalPayout: number;
+      stopLossRecovery: number;
+      pnl: number;
+      roi: number;
+    }>;
+    summary: { total_orders: number; days_analyzed: number; stop_loss_value: number };
+  } | null>(null);
+  const [scenariosLoading, setScenariosLoading] = useState(false);
+  
   // Stop-loss monitoring state
   const [stopLossStatus, setStopLossStatus] = useState<{
     timestamp: string;
@@ -758,6 +792,22 @@ export default function Dashboard() {
       setWhatIfLoading(false);
     }
   };
+
+  // Fetch scenarios analysis data
+  const fetchScenarios = async () => {
+    setScenariosLoading(true);
+    try {
+      const res = await fetch('/api/scenarios?days=90&stopLoss=75');
+      const data = await res.json();
+      if (data.success) {
+        setScenariosData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching scenarios:', err);
+    } finally {
+      setScenariosLoading(false);
+    }
+  };
   
   // Check stop-loss status (dry run)
   const checkStopLoss = async () => {
@@ -941,6 +991,7 @@ export default function Dashboard() {
       fetchLosses();
     } else if (activeTab === 'whatif') {
       fetchWhatIf();
+      fetchScenarios();
     }
   }, [activeTab]);
 
@@ -3510,6 +3561,106 @@ export default function Dashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* Threshold Scenarios Analysis */}
+                <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
+                  <div className="mb-4">
+                    <h3 className="text-lg font-medium text-white">📊 Threshold Scenarios Analysis</h3>
+                    <p className="text-sm text-slate-400 mt-1">
+                      What if we changed our investment threshold? Comparing thresholds 85¢-95¢ with a 75¢ stop-loss.
+                    </p>
+                  </div>
+                  
+                  {scenariosLoading ? (
+                    <div className="text-center py-8 text-slate-400">Loading scenarios...</div>
+                  ) : scenariosData ? (
+                    <>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
+                              <th className="text-left py-3 px-2">Threshold</th>
+                              <th className="text-right py-3 px-2">Bets</th>
+                              <th className="text-right py-3 px-2">Events</th>
+                              <th className="text-center py-3 px-2">W/L</th>
+                              <th className="text-right py-3 px-2">Win %</th>
+                              <th className="text-right py-3 px-2">Cost</th>
+                              <th className="text-right py-3 px-2">Payout</th>
+                              <th className="text-right py-3 px-2">P&L (No SL)</th>
+                              <th className="text-right py-3 px-2">SL Recovery</th>
+                              <th className="text-right py-3 px-2">P&L (75¢ SL)</th>
+                              <th className="text-right py-3 px-2">ROI</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {scenariosData.scenarios.map((scenario, idx) => {
+                              const noStopLoss = scenariosData.scenariosWithoutStopLoss.find(s => s.threshold === scenario.threshold);
+                              const pnlWithoutSL = noStopLoss?.pnl || 0;
+                              const improvement = scenario.pnl - pnlWithoutSL;
+                              const isHighlighted = scenario.threshold >= 90 && scenario.threshold <= 92;
+                              
+                              return (
+                                <tr 
+                                  key={scenario.threshold} 
+                                  className={`border-b border-slate-800 ${isHighlighted ? 'bg-purple-500/10' : idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
+                                >
+                                  <td className="py-2 px-2">
+                                    <span className={`font-mono font-bold ${isHighlighted ? 'text-purple-400' : 'text-white'}`}>
+                                      {scenario.threshold}¢
+                                    </span>
+                                  </td>
+                                  <td className="py-2 px-2 text-right text-slate-300 font-mono">{scenario.totalBets}</td>
+                                  <td className="py-2 px-2 text-right text-slate-300 font-mono">{scenario.totalEvents}</td>
+                                  <td className="py-2 px-2 text-center">
+                                    <span className="text-emerald-400">{scenario.wins}W</span>
+                                    <span className="text-slate-500">/</span>
+                                    <span className="text-red-400">{scenario.losses}L</span>
+                                  </td>
+                                  <td className={`py-2 px-2 text-right font-mono ${scenario.winRate >= 90 ? 'text-emerald-400' : scenario.winRate >= 80 ? 'text-amber-400' : 'text-red-400'}`}>
+                                    {scenario.winRate}%
+                                  </td>
+                                  <td className="py-2 px-2 text-right text-slate-400 font-mono">
+                                    ${(scenario.totalCost / 100).toLocaleString()}
+                                  </td>
+                                  <td className="py-2 px-2 text-right text-emerald-400 font-mono">
+                                    ${(scenario.totalPayout / 100).toLocaleString()}
+                                  </td>
+                                  <td className={`py-2 px-2 text-right font-mono ${pnlWithoutSL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {pnlWithoutSL >= 0 ? '+' : ''}${(pnlWithoutSL / 100).toLocaleString()}
+                                  </td>
+                                  <td className="py-2 px-2 text-right text-emerald-400 font-mono">
+                                    +${(scenario.stopLossRecovery / 100).toLocaleString()}
+                                  </td>
+                                  <td className={`py-2 px-2 text-right font-mono font-bold ${scenario.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {scenario.pnl >= 0 ? '+' : ''}${(scenario.pnl / 100).toLocaleString()}
+                                  </td>
+                                  <td className={`py-2 px-2 text-right font-mono ${scenario.roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {scenario.roi >= 0 ? '+' : ''}{scenario.roi}%
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      
+                      <div className="mt-4 p-3 bg-slate-800/50 rounded-lg">
+                        <div className="text-sm text-slate-400">
+                          <strong className="text-purple-400">💡 Analysis Notes:</strong>
+                          <ul className="mt-2 space-y-1 text-xs">
+                            <li>• <strong>Threshold</strong>: Minimum price to buy (e.g., 92¢ = only buy when favorite is at 92% or higher)</li>
+                            <li>• <strong>P&L (No SL)</strong>: Actual profit/loss without any stop-loss</li>
+                            <li>• <strong>SL Recovery</strong>: Amount saved by stop-loss at 75¢ (assumes price always drops through 75 before going to 0)</li>
+                            <li>• <strong>P&L (75¢ SL)</strong>: Estimated P&L if we had exited all losing positions at 75¢</li>
+                            <li className="text-purple-300">• Highlighted rows (90-92¢) represent typical high-confidence threshold range</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-slate-500">No data available</div>
+                  )}
+                </div>
 
                 {/* Note about data */}
                 <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 text-purple-300 text-sm">
