@@ -1,8 +1,88 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import crypto from 'crypto';
+import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Helper to make authenticated Kalshi API calls
+async function kalshiFetch(endpoint: string): Promise<any> {
+  const timestampMs = Date.now().toString();
+  const method = 'GET';
+  const pathWithoutQuery = endpoint.split('?')[0];
+  const fullPath = `/trade-api/v2${pathWithoutQuery}`;
+
+  const message = `${timestampMs}${method}${fullPath}`;
+  const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+  const signature = crypto.sign('sha256', Buffer.from(message), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  }).toString('base64');
+
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+    },
+  });
+
+  if (!response.ok) {
+    return null;
+  }
+
+  return response.json();
+}
+
+// Fetch min price for an order from candlestick data
+async function getMinPriceForOrder(order: any): Promise<number | null> {
+  try {
+    const seriesTicker = order.event_ticker?.split('-')[0] || '';
+    const marketTicker = order.ticker;
+    const userSide = order.side;
+    
+    if (!seriesTicker || !marketTicker) return null;
+    
+    // Get time range from placement to market close
+    const placementTime = order.placement_status_at 
+      ? Math.floor(new Date(order.placement_status_at).getTime() / 1000)
+      : null;
+    const closeTime = order.market_close_time 
+      ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
+      : Math.floor(Date.now() / 1000);
+    
+    const startTs = placementTime || closeTime - (48 * 60 * 60);
+    const endTs = closeTime;
+    
+    const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+    const response = await kalshiFetch(url);
+    
+    if (!response?.candlesticks || response.candlesticks.length === 0) {
+      return null;
+    }
+    
+    // Calculate min price for user's side
+    let minPrice = 100;
+    for (const c of response.candlesticks) {
+      const yesLow = c.price?.low ?? c.yes_bid?.low ?? 100;
+      const yesHigh = c.price?.high ?? c.yes_bid?.high ?? 0;
+      
+      // User's min depends on their side
+      const userMin = userSide === 'YES' ? yesLow : (yesHigh > 0 ? 100 - yesHigh : 100);
+      if (userMin > 0 && userMin < minPrice) {
+        minPrice = userMin;
+      }
+    }
+    
+    return minPrice < 100 ? minPrice : null;
+  } catch (e) {
+    return null;
+  }
+}
 
 interface ScenarioResult {
   threshold: number;
@@ -11,10 +91,12 @@ interface ScenarioResult {
   totalEvents: number;
   wins: number;
   losses: number;
+  winsStoppedOut: number; // Wins that would have been sold due to stop-loss dip
   winRate: number;
   totalCost: number;
   totalPayout: number;
   stopLossRecovery: number;
+  missedWinProfit: number; // Profit missed from stopped-out wins
   pnl: number;
   roi: number;
 }
@@ -47,6 +129,36 @@ export async function GET(request: Request) {
         summary: { total_orders: 0 },
       });
     }
+
+    // Fetch min prices for winning orders (we need to know if they dipped below stop-loss)
+    // Only fetch for won orders since we already know lost orders went to 0
+    const winningOrders = orders.filter(o => o.result_status === 'won');
+    const orderMinPrices = new Map<string, number | null>();
+    
+    console.log(`[Scenarios] Fetching min prices for ${winningOrders.length} winning orders...`);
+    
+    // Fetch in batches to avoid rate limits (max 10 concurrent)
+    const batchSize = 5;
+    for (let i = 0; i < winningOrders.length; i += batchSize) {
+      const batch = winningOrders.slice(i, i + batchSize);
+      const results = await Promise.all(
+        batch.map(async (order) => {
+          const minPrice = await getMinPriceForOrder(order);
+          return { id: order.id, minPrice };
+        })
+      );
+      
+      for (const result of results) {
+        orderMinPrices.set(result.id, result.minPrice);
+      }
+      
+      // Rate limit between batches
+      if (i + batchSize < winningOrders.length) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+    
+    console.log(`[Scenarios] Fetched min prices. Orders with data: ${[...orderMinPrices.values()].filter(v => v !== null).length}`);
 
     // Analyze scenarios for thresholds 85-95
     const thresholds = [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95];
@@ -82,9 +194,11 @@ export async function GET(request: Request) {
       // Calculate wins/losses by unique events
       let wins = 0;
       let losses = 0;
+      let winsStoppedOut = 0; // Wins we would have sold due to stop-loss
       let totalCost = 0;
       let totalPayout = 0;
       let stopLossRecovery = 0;
+      let missedWinProfit = 0; // Profit we would have missed from stopped-out wins
 
       for (const [eventTicker, result] of Object.entries(eventResults)) {
         const eventOrders = result.orders;
@@ -94,44 +208,82 @@ export async function GET(request: Request) {
           .reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
 
         if (result.hasWon) {
-          wins++;
-          totalCost += eventCost;
-          totalPayout += eventPayout;
+          // For wins, check if any order's min price was below stop-loss (using cached data)
+          // We look up min prices that were pre-fetched
+          
+          const avgEntryPrice = eventOrders.reduce((sum, o) => sum + (o.executed_price_cents || o.price_cents || 0), 0) / eventOrders.length;
+          
+          // Check if any order in this event has a min price below stop-loss
+          // Use the orderMinPrices map populated earlier
+          let wouldDip = false;
+          for (const order of eventOrders) {
+            const minPrice = orderMinPrices.get(order.id);
+            if (minPrice !== undefined && minPrice !== null && minPrice < stopLossValue) {
+              wouldDip = true;
+              break;
+            }
+          }
+          
+          if (wouldDip && avgEntryPrice > stopLossValue) {
+            // This win would have been stopped out!
+            winsStoppedOut++;
+            
+            // We would have sold at stop-loss price, getting back stopLoss * units per dollar
+            // Original payout = units * 100 (win pays $1 per contract)
+            // With stop-loss, we'd get stopLoss * units instead
+            for (const order of eventOrders) {
+              const units = order.units || 0;
+              const originalPayout = order.actual_payout_cents || order.potential_payout_cents || 0;
+              const costPaid = order.executed_cost_cents || order.cost_cents || 0;
+              const stopLossReturn = (stopLossValue / 100) * units * 100; // Selling at 75¢
+              
+              // We get back stopLossReturn instead of full payout
+              totalPayout += stopLossReturn;
+              totalCost += costPaid;
+              
+              // Missed profit = what we would have made minus what we actually got
+              const actualProfit = originalPayout - costPaid;
+              const stopLossProfit = stopLossReturn - costPaid;
+              missedWinProfit += (actualProfit - stopLossProfit);
+            }
+          } else {
+            // This win held through - we get full payout
+            wins++;
+            totalCost += eventCost;
+            totalPayout += eventPayout;
+          }
         } else if (result.hasLost) {
           losses++;
           
           // For losses, calculate stop-loss recovery
-          // If we had a stop-loss at 75, and entry was at e.g. 92, we'd recover:
-          // (entry - stopLoss) * units per order
-          // This assumes the price dropped through the stop-loss level before going to 0
+          // The price definitely dropped through stop-loss on the way to 0
           
           for (const order of eventOrders) {
             const entryPrice = order.executed_price_cents || order.price_cents || 0;
             const units = order.units || 0;
             
             if (entryPrice > stopLossValue) {
-              // Amount we would have saved by exiting at stop-loss instead of 0
-              // Original loss = entry_price * units (we paid this, got 0)
-              // With stop-loss, we exit at stopLossValue, so we get back: stopLossValue * units
-              // Recovery = stopLossValue * units (what we'd get back)
-              // But we still lost (entry - stopLoss) * units
-              // Net loss with stop-loss = (entry - stopLoss) * units instead of entry * units
-              // Recovery = entry * units - (entry - stopLoss) * units = stopLoss * units
-              const originalLoss = order.executed_cost_cents || order.cost_cents || 0;
-              const lossWithStopLoss = ((entryPrice - stopLossValue) / 100) * units;
-              const recovery = originalLoss - lossWithStopLoss;
-              stopLossRecovery += recovery;
-              totalCost += lossWithStopLoss; // Reduced loss
+              // We exit at stop-loss instead of riding to 0
+              // Original loss = cost paid (got 0 back)
+              // With stop-loss, we sell at stopLossValue, getting back stopLoss * units
+              const costPaid = order.executed_cost_cents || order.cost_cents || 0;
+              const stopLossReturn = (stopLossValue / 100) * units * 100;
+              const lossWithStopLoss = costPaid - stopLossReturn;
+              
+              stopLossRecovery += stopLossReturn; // What we got back
+              totalCost += costPaid;
+              totalPayout += stopLossReturn;
             } else {
-              // Entry was below stop-loss, so stop-loss wouldn't help
+              // Entry was below stop-loss, so stop-loss wouldn't trigger
               totalCost += order.executed_cost_cents || order.cost_cents || 0;
+              // No payout - we lost
             }
           }
         }
       }
 
-      const totalEvents = wins + losses;
-      const winRate = totalEvents > 0 ? (wins / totalEvents) * 100 : 0;
+      const totalEvents = wins + losses + winsStoppedOut;
+      const effectiveWinRate = totalEvents > 0 ? (wins / totalEvents) * 100 : 0;
       const pnl = totalPayout - totalCost;
       const roi = totalCost > 0 ? (pnl / totalCost) * 100 : 0;
 
@@ -142,10 +294,12 @@ export async function GET(request: Request) {
         totalEvents,
         wins,
         losses,
-        winRate: Math.round(winRate * 10) / 10,
+        winsStoppedOut,
+        winRate: Math.round(effectiveWinRate * 10) / 10,
         totalCost: Math.round(totalCost),
         totalPayout: Math.round(totalPayout),
         stopLossRecovery: Math.round(stopLossRecovery),
+        missedWinProfit: Math.round(missedWinProfit),
         pnl: Math.round(pnl),
         roi: Math.round(roi * 10) / 10,
       });
@@ -208,10 +362,12 @@ export async function GET(request: Request) {
         totalEvents,
         wins,
         losses,
+        winsStoppedOut: 0,
         winRate: Math.round(winRate * 10) / 10,
         totalCost: Math.round(totalCost),
         totalPayout: Math.round(totalPayout),
         stopLossRecovery: 0,
+        missedWinProfit: 0,
         pnl: Math.round(pnl),
         roi: Math.round(roi * 10) / 10,
       });

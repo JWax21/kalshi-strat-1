@@ -408,10 +408,12 @@ export default function Dashboard() {
       totalEvents: number;
       wins: number;
       losses: number;
+      winsStoppedOut: number;
       winRate: number;
       totalCost: number;
       totalPayout: number;
       stopLossRecovery: number;
+      missedWinProfit: number;
       pnl: number;
       roi: number;
     }>;
@@ -422,10 +424,12 @@ export default function Dashboard() {
       totalEvents: number;
       wins: number;
       losses: number;
+      winsStoppedOut: number;
       winRate: number;
       totalCost: number;
       totalPayout: number;
       stopLossRecovery: number;
+      missedWinProfit: number;
       pnl: number;
       roi: number;
     }>;
@@ -3580,16 +3584,13 @@ export default function Dashboard() {
                           <thead>
                             <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
                               <th className="text-left py-3 px-2">Threshold</th>
-                              <th className="text-right py-3 px-2">Bets</th>
                               <th className="text-right py-3 px-2">Events</th>
-                              <th className="text-center py-3 px-2">W/L</th>
-                              <th className="text-right py-3 px-2">Win %</th>
-                              <th className="text-right py-3 px-2">Cost</th>
-                              <th className="text-right py-3 px-2">Payout</th>
+                              <th className="text-center py-3 px-2">W/L/Stopped</th>
                               <th className="text-right py-3 px-2">P&L (No SL)</th>
-                              <th className="text-right py-3 px-2">SL Recovery</th>
+                              <th className="text-right py-3 px-2">SL Saved</th>
+                              <th className="text-right py-3 px-2">Wins Stopped</th>
                               <th className="text-right py-3 px-2">P&L (75¢ SL)</th>
-                              <th className="text-right py-3 px-2">ROI</th>
+                              <th className="text-right py-3 px-2">Δ P&L</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -3609,21 +3610,17 @@ export default function Dashboard() {
                                       {scenario.threshold}¢
                                     </span>
                                   </td>
-                                  <td className="py-2 px-2 text-right text-slate-300 font-mono">{scenario.totalBets}</td>
                                   <td className="py-2 px-2 text-right text-slate-300 font-mono">{scenario.totalEvents}</td>
                                   <td className="py-2 px-2 text-center">
                                     <span className="text-emerald-400">{scenario.wins}W</span>
                                     <span className="text-slate-500">/</span>
                                     <span className="text-red-400">{scenario.losses}L</span>
-                                  </td>
-                                  <td className={`py-2 px-2 text-right font-mono ${scenario.winRate >= 90 ? 'text-emerald-400' : scenario.winRate >= 80 ? 'text-amber-400' : 'text-red-400'}`}>
-                                    {scenario.winRate}%
-                                  </td>
-                                  <td className="py-2 px-2 text-right text-slate-400 font-mono">
-                                    ${(scenario.totalCost / 100).toLocaleString()}
-                                  </td>
-                                  <td className="py-2 px-2 text-right text-emerald-400 font-mono">
-                                    ${(scenario.totalPayout / 100).toLocaleString()}
+                                    {scenario.winsStoppedOut > 0 && (
+                                      <>
+                                        <span className="text-slate-500">/</span>
+                                        <span className="text-amber-400">{scenario.winsStoppedOut}S</span>
+                                      </>
+                                    )}
                                   </td>
                                   <td className={`py-2 px-2 text-right font-mono ${pnlWithoutSL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                     {pnlWithoutSL >= 0 ? '+' : ''}${(pnlWithoutSL / 100).toLocaleString()}
@@ -3631,11 +3628,18 @@ export default function Dashboard() {
                                   <td className="py-2 px-2 text-right text-emerald-400 font-mono">
                                     +${(scenario.stopLossRecovery / 100).toLocaleString()}
                                   </td>
+                                  <td className="py-2 px-2 text-right font-mono">
+                                    {scenario.missedWinProfit > 0 ? (
+                                      <span className="text-red-400">-${(scenario.missedWinProfit / 100).toLocaleString()}</span>
+                                    ) : (
+                                      <span className="text-slate-500">$0</span>
+                                    )}
+                                  </td>
                                   <td className={`py-2 px-2 text-right font-mono font-bold ${scenario.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                     {scenario.pnl >= 0 ? '+' : ''}${(scenario.pnl / 100).toLocaleString()}
                                   </td>
-                                  <td className={`py-2 px-2 text-right font-mono ${scenario.roi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {scenario.roi >= 0 ? '+' : ''}{scenario.roi}%
+                                  <td className={`py-2 px-2 text-right font-mono font-bold ${improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {improvement >= 0 ? '+' : ''}${(improvement / 100).toLocaleString()}
                                   </td>
                                 </tr>
                               );
@@ -3646,13 +3650,13 @@ export default function Dashboard() {
                       
                       <div className="mt-4 p-3 bg-slate-800/50 rounded-lg">
                         <div className="text-sm text-slate-400">
-                          <strong className="text-purple-400">💡 Analysis Notes:</strong>
+                          <strong className="text-purple-400">💡 Analysis Notes (Using Real Price Data):</strong>
                           <ul className="mt-2 space-y-1 text-xs">
-                            <li>• <strong>Threshold</strong>: Minimum price to buy (e.g., 92¢ = only buy when favorite is at 92% or higher)</li>
-                            <li>• <strong>P&L (No SL)</strong>: Actual profit/loss without any stop-loss</li>
-                            <li>• <strong>SL Recovery</strong>: Amount saved by stop-loss at 75¢ (assumes price always drops through 75 before going to 0)</li>
-                            <li>• <strong>P&L (75¢ SL)</strong>: Estimated P&L if we had exited all losing positions at 75¢</li>
-                            <li className="text-purple-300">• Highlighted rows (90-92¢) represent typical high-confidence threshold range</li>
+                            <li>• <strong>W/L/S</strong>: Wins / Losses / Wins that would have been stopped out</li>
+                            <li>• <strong>SL Saved</strong>: Amount recovered from losses that hit 75¢ stop-loss</li>
+                            <li>• <strong>Wins Stopped</strong>: Profit missed from wins where price dipped below 75¢ during game</li>
+                            <li>• <strong>Δ P&L</strong>: Net difference with stop-loss vs without</li>
+                            <li className="text-purple-300">• Uses real candlestick data to determine if prices hit stop-loss</li>
                           </ul>
                         </div>
                       </div>
