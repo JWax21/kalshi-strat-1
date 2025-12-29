@@ -2292,12 +2292,14 @@ export default function Dashboard() {
               const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
               const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
               const undecidedExposure = undecidedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              // Won profit = payout - cost paid (profit before fees)
+              // Won profit = payout - cost paid - fees
               const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
               const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const wonProfit = wonPayout - wonCost;
+              const wonFees = wonOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const wonProfit = wonPayout - wonCost - wonFees;
               const estimatedLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const estimatedPnl = wonProfit - estimatedLost;
+              const lostFees = lostOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const estimatedPnl = wonProfit - estimatedLost - lostFees;
               
               // Count by unique event_ticker
               const { wonEvents, lostEvents } = countByUniqueEvent(confirmedOrders);

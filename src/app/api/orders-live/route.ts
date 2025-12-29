@@ -144,11 +144,17 @@ export async function GET(request: Request) {
     // Undecided exposure = cost of orders still waiting for results (cash at risk)
     const resultUndecidedExposure = undecidedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
     // Estimated won = payout from orders marked "won" (may not be settled yet)
-    const resultEstimatedWon = wonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
+    const resultEstimatedWon = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+    // Cost of won orders
+    const resultWonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    // Fees on won orders
+    const resultWonFees = wonOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
     // Estimated lost = cost of orders marked "lost"
     const resultEstimatedLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-    // Estimated P&L based on results
-    const resultEstimatedPnl = resultEstimatedWon - resultEstimatedLost;
+    // Fees on lost orders
+    const resultLostFees = lostOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+    // Estimated P&L = (payout - cost - fees) for wins - (cost + fees) for losses
+    const resultEstimatedPnl = resultEstimatedWon - resultWonCost - resultWonFees - resultEstimatedLost - resultLostFees;
 
     // ===== SETTLEMENT-BASED FINANCIALS (ACTUALS) =====
     // Projected payout = from won orders still pending settlement
