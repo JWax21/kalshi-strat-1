@@ -50,22 +50,16 @@ export async function POST(request: Request) {
       });
     }
 
-    // Get balance AND calculate total portfolio for hard cap
+    // Get balance AND portfolio_value directly from Kalshi
+    // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
     let availableBalance = 0;
-    let totalExposureCents = 0;
+    let totalPortfolioCents = 0;
     try {
       const balanceData = await getBalance();
       availableBalance = balanceData.balance || 0;
-      
-      // Fetch existing positions to calculate total portfolio
-      const { data: existingOrders } = await supabase
-        .from('orders')
-        .select('cost_cents, executed_cost_cents')
-        .in('placement_status', ['placed', 'confirmed']);
-      
-      for (const order of existingOrders || []) {
-        totalExposureCents += order.executed_cost_cents || order.cost_cents || 0;
-      }
+      // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
+      totalPortfolioCents = balanceData.portfolio_value || availableBalance;
+      console.log(`Kalshi balance: available=${availableBalance}¢, portfolio_value=${totalPortfolioCents}¢`);
     } catch (e) {
       return NextResponse.json({ 
         success: false, 
@@ -74,13 +68,13 @@ export async function POST(request: Request) {
       });
     }
 
-    // Calculate total portfolio and hard cap (UNBREAKABLE 3% barrier)
-    const totalPortfolioCents = availableBalance + totalExposureCents;
+    // Calculate hard cap (UNBREAKABLE 3% barrier)
+    // CRITICAL: Use portfolio_value from Kalshi directly
     const MAX_POSITION_PERCENT = 0.03;
     const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet below 90 cents
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
-    console.log(`Force execute: ${orders.length} orders, balance: $${(availableBalance / 100).toFixed(2)}, portfolio: $${(totalPortfolioCents / 100).toFixed(2)}, 3% cap: $${(hardCapCents / 100).toFixed(2)}`);
+    console.log(`Force execute: ${orders.length} orders, balance: $${(availableBalance / 100).toFixed(2)}, portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (from Kalshi), 3% cap: $${(hardCapCents / 100).toFixed(2)}`);
 
     const results: any[] = [];
     let successCount = 0;

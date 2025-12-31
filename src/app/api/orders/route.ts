@@ -122,34 +122,29 @@ export async function POST(request: Request) {
         );
       }
       
-      // Calculate total portfolio
-      let availableBalance = 0;
-      let totalExposureCents = 0;
+      // Get portfolio_value directly from Kalshi
+      // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
+      let totalPortfolioCents = 0;
       
       try {
         const balanceData = await getBalance();
-        availableBalance = balanceData.balance || 0;
-        
-        // Fetch existing positions to calculate total portfolio
-        const { data: existingOrders } = await supabase
-          .from('orders')
-          .select('cost_cents, executed_cost_cents')
-          .in('placement_status', ['placed', 'confirmed']);
-        
-        for (const ord of existingOrders || []) {
-          totalExposureCents += ord.executed_cost_cents || ord.cost_cents || 0;
-        }
+        // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
+        totalPortfolioCents = balanceData.portfolio_value || balanceData.balance || 0;
+        console.log(`Kalshi portfolio_value: ${totalPortfolioCents}¢`);
       } catch (e) {
         console.error('Error fetching portfolio for hard cap check:', e);
+        return NextResponse.json(
+          { success: false, error: 'Could not fetch portfolio value from Kalshi' },
+          { status: 500 }
+        );
       }
       
-      const totalPortfolioCents = availableBalance + totalExposureCents;
       const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
       const orderCostCents = priceCents * parseInt(count);
       
       // HARD CAP GUARD
       if (orderCostCents > hardCapCents) {
-        const errorMsg = `HARD CAP BLOCKED: Order cost ${orderCostCents}¢ ($${(orderCostCents/100).toFixed(2)}) exceeds 3% of portfolio (${hardCapCents}¢ / $${(hardCapCents/100).toFixed(2)}). Portfolio: $${(totalPortfolioCents/100).toFixed(2)}`;
+        const errorMsg = `HARD CAP BLOCKED: Order cost ${orderCostCents}¢ ($${(orderCostCents/100).toFixed(2)}) exceeds 3% of portfolio (${hardCapCents}¢ / $${(hardCapCents/100).toFixed(2)}). Portfolio: $${(totalPortfolioCents/100).toFixed(2)} (from Kalshi)`;
         console.error(errorMsg);
         return NextResponse.json(
           { success: false, error: errorMsg },
@@ -157,7 +152,7 @@ export async function POST(request: Request) {
         );
       }
       
-      console.log(`Guards passed: price=${priceCents}¢ >= 90¢, cost=${orderCostCents}¢ <= ${hardCapCents}¢ (3% of ${totalPortfolioCents}¢)`);
+      console.log(`Guards passed: price=${priceCents}¢ >= 90¢, cost=${orderCostCents}¢ <= ${hardCapCents}¢ (3% of ${totalPortfolioCents}¢ from Kalshi)`);
     }
     
     console.log('Placing order:', order);

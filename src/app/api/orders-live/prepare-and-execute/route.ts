@@ -35,31 +35,21 @@ export async function POST(request: Request) {
     }
     console.log('Old batches cleared, proceeding with fresh preparation...');
 
-    // Step 2: Get available balance AND existing positions for total portfolio calculation
+    // Step 2: Get available balance AND portfolio_value directly from Kalshi
+    // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
     let availableBalance = 0;
-    let totalExposureCents = 0;
+    let totalPortfolioCents = 0;
     try {
       const balanceData = await getBalance();
       availableBalance = balanceData.balance || 0;
-      
-      // Fetch existing positions to calculate total portfolio value
-      const positionsData = await getBalance(); // getBalance returns balance, we need positions
-      // Note: We need to fetch positions separately - using supabase to get existing order costs
-      const { data: existingOrders } = await supabase
-        .from('orders')
-        .select('cost_cents, executed_cost_cents')
-        .in('placement_status', ['placed', 'confirmed']);
-      
-      for (const order of existingOrders || []) {
-        totalExposureCents += order.executed_cost_cents || order.cost_cents || 0;
-      }
+      // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
+      totalPortfolioCents = balanceData.portfolio_value || availableBalance;
+      console.log(`Kalshi balance: available=${availableBalance}¢, portfolio_value=${totalPortfolioCents}¢`);
     } catch (e) {
       return NextResponse.json({ success: false, error: 'Could not fetch balance' }, { status: 500 });
     }
 
-    // Calculate total portfolio (available + deployed) for 3% hard cap
-    const totalPortfolioCents = availableBalance + totalExposureCents;
-    console.log(`Portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (available: $${(availableBalance / 100).toFixed(2)}, deployed: $${(totalExposureCents / 100).toFixed(2)})`);
+    console.log(`Portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (from Kalshi), available: $${(availableBalance / 100).toFixed(2)}`);
 
     if (availableBalance < 100) { // Less than $1
       return NextResponse.json({ success: false, error: 'Insufficient balance' }, { status: 400 });

@@ -298,11 +298,16 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     };
   }
 
-  // Get available balance from Kalshi
+  // Get available balance AND portfolio_value directly from Kalshi
+  // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
   let availableCapitalCents = 0;
+  let totalPortfolioCents = 0;
   try {
     const balanceData = await kalshiFetch('/portfolio/balance');
     availableCapitalCents = balanceData?.balance || 0;
+    // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
+    totalPortfolioCents = balanceData?.portfolio_value || availableCapitalCents;
+    console.log(`Kalshi balance: available=${availableCapitalCents}¢, portfolio_value=${totalPortfolioCents}¢`);
   } catch (e) {
     console.error('Failed to fetch balance:', e);
     return { success: false, error: 'Failed to fetch account balance from Kalshi' };
@@ -312,21 +317,7 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     return { success: false, error: 'No available capital to deploy' };
   }
 
-  // Get existing positions to calculate TOTAL portfolio value (not just cash)
-  let totalExistingExposureCents = 0;
-  try {
-    const positionsResponse = await kalshiFetch('/portfolio/positions');
-    const positions = positionsResponse.market_positions || [];
-    totalExistingExposureCents = positions.reduce((sum: number, p: any) => sum + (p.position_cost || 0), 0);
-  } catch (e) {
-    console.error('Failed to fetch positions for portfolio calculation:', e);
-    // Continue with just available capital if positions fetch fails
-  }
-
-  // CRITICAL: Total portfolio = available cash + existing positions
-  const totalPortfolioCents = availableCapitalCents + totalExistingExposureCents;
-
-  console.log(`Available capital: $${(availableCapitalCents / 100).toFixed(2)}, Deployed: $${(totalExistingExposureCents / 100).toFixed(2)}, Total Portfolio: $${(totalPortfolioCents / 100).toFixed(2)}`);
+  console.log(`Available capital: $${(availableCapitalCents / 100).toFixed(2)}, Total Portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (from Kalshi)`);
 
   // Fetch sports markets
   const sportsSeries = [

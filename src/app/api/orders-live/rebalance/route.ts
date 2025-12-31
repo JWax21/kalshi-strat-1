@@ -149,21 +149,21 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
 
   // Now redeploy the freed capital to existing confirmed positions
   if (availableCapitalCents > 0) {
-    // FIRST: Get TOTAL portfolio value from Kalshi positions (not just today's orders)
-    let totalExistingExposureCents = 0;
+    // CRITICAL: Get portfolio_value directly from Kalshi balance endpoint (the source of truth)
+    let totalPortfolioCents = availableCapitalCents; // fallback if fetch fails
     try {
-      const positionsResponse = await kalshiFetch('/portfolio/positions');
-      const positions = positionsResponse.market_positions || [];
-      totalExistingExposureCents = positions.reduce((sum: number, p: any) => sum + (p.position_cost || 0), 0);
+      const balanceData = await kalshiFetch('/portfolio/balance');
+      // portfolio_value = cash + all positions (from Kalshi directly)
+      totalPortfolioCents = balanceData.portfolio_value || availableCapitalCents;
+      console.log(`Kalshi portfolio_value: ${totalPortfolioCents}¢`);
     } catch (e) {
-      result.errors.push(`Failed to fetch positions for portfolio calculation: ${e}`);
+      result.errors.push(`Failed to fetch portfolio_value: ${e}`);
     }
     
-    // Calculate TOTAL portfolio value = cash + all positions
-    const totalPortfolioCents = availableCapitalCents + totalExistingExposureCents;
+    // Calculate hard cap using Kalshi's portfolio_value
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
-    console.log(`Rebalance: Portfolio=${totalPortfolioCents}¢ (cash=${availableCapitalCents}¢ + positions=${totalExistingExposureCents}¢), 3% cap=${hardCapCents}¢`);
+    console.log(`Rebalance: Portfolio=${totalPortfolioCents}¢ (from Kalshi), 3% cap=${hardCapCents}¢`);
 
     // Get today's batch
     const today = new Date().toISOString().split('T')[0];

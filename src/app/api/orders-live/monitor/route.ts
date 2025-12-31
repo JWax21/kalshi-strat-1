@@ -173,12 +173,17 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
 
   const today = new Date().toISOString().split('T')[0];
 
-  // Step 1: Get current balance
+  // Step 1: Get current balance AND portfolio_value from Kalshi
+  // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
   let availableBalance = 0;
+  let totalPortfolioValue = 0; // This is what Kalshi says the total portfolio is worth
   try {
     const balanceData = await getBalance();
     availableBalance = balanceData.balance || 0;
+    // portfolio_value = cash + all positions market value (from Kalshi directly)
+    totalPortfolioValue = balanceData.portfolio_value || availableBalance;
     result.capital.available_cents = availableBalance;
+    console.log(`Kalshi balance: available=${availableBalance}¢, portfolio_value=${totalPortfolioValue}¢`);
   } catch (e) {
     result.details.errors.push(`Failed to fetch balance: ${e}`);
     result.success = false;
@@ -202,16 +207,17 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     (kalshiOrdersResponse.orders || []).map((o: any) => [o.order_id, o])
   );
 
-  // Get our current positions to calculate existing exposure
+  // Get our current positions for event exposure tracking
   const positionsResponse = await kalshiFetch('/portfolio/positions');
   const currentPositions = new Map(
     (positionsResponse.market_positions || []).map((p: any) => [p.ticker, p])
   );
 
-  // Calculate total exposure (capital already deployed)
+  // Calculate deployed exposure from positions (for reporting purposes)
+  // Use market_exposure as the primary field, with position_cost as fallback
   let totalExposure = 0;
   for (const [, pos] of currentPositions) {
-    totalExposure += (pos as any).position_cost || 0;
+    totalExposure += (pos as any).market_exposure || (pos as any).position_cost || 0;
   }
   result.capital.deployed_cents = totalExposure;
   result.capital.remaining_cents = availableBalance;
@@ -407,8 +413,9 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       
       // RECALCULATE: Spread available capital evenly across all pending orders
       // Use 3% cap only if even distribution exceeds it
+      // CRITICAL: Use totalPortfolioValue from Kalshi (not manual calculation)
       const evenDistributionCents = Math.floor(availableBalance / pendingOrders.length);
-      const maxPositionCents = Math.floor((availableBalance + totalExposure) * MAX_POSITION_PERCENT);
+      const maxPositionCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
       const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
       
       console.log(`Capital redistribution: ${availableBalance}¢ / ${pendingOrders.length} orders = ${evenDistributionCents}¢ each (cap: ${maxPositionCents}¢, target: ${targetAllocationCents}¢)`);
@@ -461,8 +468,9 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       let capitalUsed = 0;
       
       // Calculate hard cap for portfolio (UNBREAKABLE 3% barrier)
-      const portfolioForHardCap = availableBalance + totalExposure;
-      const hardCapCents = Math.floor(portfolioForHardCap * MAX_POSITION_PERCENT);
+      // CRITICAL: Use totalPortfolioValue from Kalshi directly
+      const hardCapCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
+      console.log(`Hard cap: ${hardCapCents}¢ (3% of ${totalPortfolioValue}¢ portfolio from Kalshi)`);
       
       for (const { order, recalculatedUnits, recalculatedCost } of ordersToPlace) {
         const priceCents = order.price_cents;
@@ -701,9 +709,9 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   
   console.log(`Event exposures calculated: ${eventExposureCents.size} events`);
   
-  // Calculate total portfolio for 3% limit
-  const totalPortfolio = availableBalance + totalExposure;
-  const maxEventExposureCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
+  // Calculate 3% limit using Kalshi's portfolio_value (CRITICAL: use Kalshi value, not manual calculation)
+  const maxEventExposureCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
+  console.log(`3% event limit: ${maxEventExposureCents}¢ (3% of ${totalPortfolioValue}¢ portfolio from Kalshi)`);
   
   // Filter markets: exclude ones we've already bet on (same ticker OR same event)
   // This prevents betting on both sides of the same game
@@ -914,10 +922,11 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio
         // This is an UNBREAKABLE barrier - final safety check before placing
+        // CRITICAL: Use totalPortfolioValue from Kalshi directly
         // ========================================
-        const hardCapCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
+        const hardCapCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
         if (thisBetCost > hardCapCents) {
-          const errorMsg = `HARD CAP BLOCKED: ${market.ticker} cost ${thisBetCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolio}¢`;
+          const errorMsg = `HARD CAP BLOCKED: ${market.ticker} cost ${thisBetCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢ (from Kalshi)`;
           console.error(errorMsg);
           result.details.errors.push(errorMsg);
           continue; // Skip this order entirely

@@ -225,23 +225,20 @@ async function prepareForDay(
       .select('event_ticker, cost_cents, executed_cost_cents, placement_status')
       .in('placement_status', ['pending', 'placed', 'confirmed']);
     
-    // Calculate existing exposure per event from database
+    // Calculate existing exposure per event from database (for per-event limit tracking)
     const existingEventExposure = new Map<string, number>();
-    let totalExistingExposureCents = 0;
     for (const order of existingOrders || []) {
       const cost = order.executed_cost_cents || order.cost_cents || 0;
       const existing = existingEventExposure.get(order.event_ticker) || 0;
       existingEventExposure.set(order.event_ticker, existing + cost);
-      totalExistingExposureCents += cost;
     }
-    console.log(`Found existing exposure on ${existingEventExposure.size} events in database, total: ${totalExistingExposureCents}¢`);
+    console.log(`Found existing exposure on ${existingEventExposure.size} events in database`);
 
-    // Calculate position limits (3% of TOTAL PORTFOLIO, not just available capital)
-    // Total portfolio = available capital + deployed capital
+    // Calculate position limits (3% of TOTAL PORTFOLIO from Kalshi)
+    // CRITICAL: Use portfolio_value from Kalshi - the source of truth
     const maxPositionPercent = 0.03;
-    const totalPortfolioCents = availableCapitalCents + totalExistingExposureCents;
     const baseMaxPositionCents = Math.floor(totalPortfolioCents * maxPositionPercent);
-    console.log(`Portfolio: ${totalPortfolioCents}¢ (available: ${availableCapitalCents}¢, deployed: ${totalExistingExposureCents}¢), 3% cap: ${baseMaxPositionCents}¢`);
+    console.log(`Portfolio: ${totalPortfolioCents}¢ (from Kalshi), 3% cap: ${baseMaxPositionCents}¢`);
 
     // Group by event - ONLY KEEP ONE MARKET PER EVENT (highest odds favorite)
     // Also exclude events that are already at 3% exposure
@@ -461,11 +458,16 @@ export async function POST(request: Request) {
     const minOpenInterest = body.minOpenInterest || 50;  // Lower to include more markets
     const maxCloseWindowDays = body.maxCloseWindowDays || 15;
 
-    // Get available balance
+    // Get available balance AND portfolio_value directly from Kalshi
+    // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
     let availableCapitalCents = 0;
+    let totalPortfolioCents = 0;
     try {
       const balanceData = await kalshiFetch('/portfolio/balance');
       availableCapitalCents = balanceData?.balance || 0;
+      // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
+      totalPortfolioCents = balanceData?.portfolio_value || availableCapitalCents;
+      console.log(`Kalshi balance: available=${availableCapitalCents}¢, portfolio_value=${totalPortfolioCents}¢`);
     } catch (e) {
       return NextResponse.json({ success: false, error: 'Failed to fetch balance' }, { status: 500 });
     }

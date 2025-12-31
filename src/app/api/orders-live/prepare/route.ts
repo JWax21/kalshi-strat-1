@@ -185,29 +185,25 @@ async function prepareOrders(params: PrepareParams) {
     };
   }
 
-  // Get available balance from Kalshi
+  // Get available balance AND portfolio_value directly from Kalshi
+  // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
   let availableCapitalCents = 0;
-  let totalExposureCents = 0;
+  let totalPortfolioCents = 0;
   try {
     const balanceData = await kalshiFetch('/portfolio/balance');
     availableCapitalCents = balanceData?.balance || 0;
-    
-    // Fetch existing positions to calculate total portfolio value
-    const positionsData = await kalshiFetch('/portfolio/positions');
-    for (const pos of positionsData?.market_positions || []) {
-      totalExposureCents += pos.position_cost || 0;
-    }
+    // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
+    totalPortfolioCents = balanceData?.portfolio_value || availableCapitalCents;
+    console.log(`Kalshi balance: available=${availableCapitalCents}¢, portfolio_value=${totalPortfolioCents}¢`);
   } catch (e) {
-    console.error('Failed to fetch balance/positions:', e);
+    console.error('Failed to fetch balance:', e);
     return {
       success: false,
       error: 'Failed to fetch account balance from Kalshi',
     };
   }
 
-  // Calculate total portfolio (available + deployed)
-  const totalPortfolioCents = availableCapitalCents + totalExposureCents;
-  console.log(`Portfolio: ${totalPortfolioCents}¢ (available: ${availableCapitalCents}¢, deployed: ${totalExposureCents}¢)`);
+  console.log(`Portfolio: ${totalPortfolioCents}¢ (from Kalshi), available: ${availableCapitalCents}¢`);
 
   // Apply reserve if specified
   if (capitalReservePercent > 0) {
