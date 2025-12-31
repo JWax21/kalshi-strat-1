@@ -227,16 +227,21 @@ async function prepareForDay(
     
     // Calculate existing exposure per event from database
     const existingEventExposure = new Map<string, number>();
+    let totalExistingExposureCents = 0;
     for (const order of existingOrders || []) {
       const cost = order.executed_cost_cents || order.cost_cents || 0;
       const existing = existingEventExposure.get(order.event_ticker) || 0;
       existingEventExposure.set(order.event_ticker, existing + cost);
+      totalExistingExposureCents += cost;
     }
-    console.log(`Found existing exposure on ${existingEventExposure.size} events in database`);
+    console.log(`Found existing exposure on ${existingEventExposure.size} events in database, total: ${totalExistingExposureCents}¢`);
 
-    // Calculate position limits (3% of portfolio per event)
+    // Calculate position limits (3% of TOTAL PORTFOLIO, not just available capital)
+    // Total portfolio = available capital + deployed capital
     const maxPositionPercent = 0.03;
-    const baseMaxPositionCents = Math.floor(availableCapitalCents * maxPositionPercent);
+    const totalPortfolioCents = availableCapitalCents + totalExistingExposureCents;
+    const baseMaxPositionCents = Math.floor(totalPortfolioCents * maxPositionPercent);
+    console.log(`Portfolio: ${totalPortfolioCents}¢ (available: ${availableCapitalCents}¢, deployed: ${totalExistingExposureCents}¢), 3% cap: ${baseMaxPositionCents}¢`);
 
     // Group by event - ONLY KEEP ONE MARKET PER EVENT (highest odds favorite)
     // Also exclude events that are already at 3% exposure

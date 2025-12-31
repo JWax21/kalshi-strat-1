@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { placeOrder, getPositions, getBalance, KalshiOrder } from '@/lib/kalshi';
+import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 
 // Force Node.js runtime for crypto module
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const MAX_POSITION_PERCENT = 0.03; // 3% max per market - UNBREAKABLE
 
 // GET - Fetch positions and balance
 export async function GET() {
@@ -99,6 +102,49 @@ export async function POST(request: Request) {
     }
     if (no_price) {
       order.no_price = parseInt(no_price);
+    }
+    
+    // ========================================
+    // HARD CAP GUARD: NEVER exceed 3% of total portfolio (BUY orders only)
+    // This is an UNBREAKABLE barrier - final safety check before placing
+    // ========================================
+    if (action === 'buy') {
+      // Calculate total portfolio
+      let availableBalance = 0;
+      let totalExposureCents = 0;
+      
+      try {
+        const balanceData = await getBalance();
+        availableBalance = balanceData.balance || 0;
+        
+        // Fetch existing positions to calculate total portfolio
+        const { data: existingOrders } = await supabase
+          .from('orders')
+          .select('cost_cents, executed_cost_cents')
+          .in('placement_status', ['placed', 'confirmed']);
+        
+        for (const ord of existingOrders || []) {
+          totalExposureCents += ord.executed_cost_cents || ord.cost_cents || 0;
+        }
+      } catch (e) {
+        console.error('Error fetching portfolio for hard cap check:', e);
+      }
+      
+      const totalPortfolioCents = availableBalance + totalExposureCents;
+      const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+      const priceCents = yes_price ? parseInt(yes_price) : no_price ? parseInt(no_price) : 0;
+      const orderCostCents = priceCents * parseInt(count);
+      
+      if (orderCostCents > hardCapCents) {
+        const errorMsg = `HARD CAP BLOCKED: Order cost ${orderCostCents}¢ ($${(orderCostCents/100).toFixed(2)}) exceeds 3% of portfolio (${hardCapCents}¢ / $${(hardCapCents/100).toFixed(2)}). Portfolio: $${(totalPortfolioCents/100).toFixed(2)}`;
+        console.error(errorMsg);
+        return NextResponse.json(
+          { success: false, error: errorMsg },
+          { status: 400 }
+        );
+      }
+      
+      console.log(`Hard cap check passed: ${orderCostCents}¢ <= ${hardCapCents}¢ (3% of ${totalPortfolioCents}¢)`);
     }
     
     console.log('Placing order:', order);

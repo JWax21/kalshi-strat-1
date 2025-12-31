@@ -58,11 +58,22 @@ async function executeOrders() {
     };
   }
 
-  // Get available balance
+  // Get available balance AND calculate total portfolio for hard cap
   let availableBalance = 0;
+  let totalExposureCents = 0;
   try {
     const balanceData = await getBalance();
     availableBalance = balanceData.balance || 0; // In cents
+    
+    // Fetch existing positions to calculate total portfolio
+    const { data: existingOrders } = await supabase
+      .from('orders')
+      .select('cost_cents, executed_cost_cents')
+      .in('placement_status', ['placed', 'confirmed']);
+    
+    for (const order of existingOrders || []) {
+      totalExposureCents += order.executed_cost_cents || order.cost_cents || 0;
+    }
   } catch (e) {
     console.error('Error fetching balance:', e);
     return {
@@ -71,7 +82,12 @@ async function executeOrders() {
     };
   }
 
-  console.log(`Available balance: $${(availableBalance / 100).toFixed(2)}`);
+  // Calculate total portfolio and hard cap (UNBREAKABLE 3% barrier)
+  const totalPortfolioCents = availableBalance + totalExposureCents;
+  const MAX_POSITION_PERCENT = 0.03;
+  const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+
+  console.log(`Available balance: $${(availableBalance / 100).toFixed(2)}, Portfolio: $${(totalPortfolioCents / 100).toFixed(2)}, 3% cap: $${(hardCapCents / 100).toFixed(2)}`);
 
   // Calculate how many orders we can afford
   // Each order costs price_cents * units
@@ -108,6 +124,29 @@ async function executeOrders() {
 
   for (const order of ordersToPlace) {
     try {
+      // Calculate order cost
+      const orderCost = order.price_cents; // 1 unit per market
+      
+      // ========================================
+      // HARD CAP GUARD: NEVER exceed 3% of total portfolio
+      // This is an UNBREAKABLE barrier - final safety check before placing
+      // ========================================
+      if (orderCost > hardCapCents) {
+        const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${orderCost}¢ exceeds 3% of portfolio (${hardCapCents}¢)`;
+        console.error(errorMsg);
+        errors.push(errorMsg);
+        
+        // Mark as queued
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'queue',
+            placement_status_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+        continue;
+      }
+      
       // Build order payload
       const payload: any = {
         ticker: order.ticker,

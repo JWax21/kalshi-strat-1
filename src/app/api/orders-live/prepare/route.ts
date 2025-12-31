@@ -65,10 +65,13 @@ const MAX_POSITION_PERCENT = 0.03; // 3% max per market
  * 
  * Markets are sorted by open interest (highest first).
  * Higher OI markets get priority for extra units.
+ * 
+ * @param totalPortfolioCents - Total portfolio value for 3% cap calculation (available + deployed)
  */
 function distributeCapital(
   markets: any[],
-  availableCapitalCents: number
+  availableCapitalCents: number,
+  totalPortfolioCents: number
 ): MarketWithUnits[] {
   if (markets.length === 0 || availableCapitalCents <= 0) {
     return [];
@@ -80,11 +83,11 @@ function distributeCapital(
   // SPREAD FIRST: Calculate even distribution across all markets
   const evenDistributionCents = Math.floor(availableCapitalCents / sortedMarkets.length);
   
-  // 3% CAP SECOND: Only use 3% cap if even distribution exceeds it
-  const maxPositionCents = Math.floor(availableCapitalCents * MAX_POSITION_PERCENT);
+  // 3% CAP SECOND: Use 3% of TOTAL PORTFOLIO (available + deployed), not just available
+  const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
   const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
   
-  console.log(`Capital distribution: ${availableCapitalCents}¢ / ${sortedMarkets.length} markets = ${evenDistributionCents}¢ each (capped at ${maxPositionCents}¢ = ${targetAllocationCents}¢ target)`);
+  console.log(`Capital distribution: ${availableCapitalCents}¢ / ${sortedMarkets.length} markets = ${evenDistributionCents}¢ each (3% of ${totalPortfolioCents}¢ = ${maxPositionCents}¢ cap, target: ${targetAllocationCents}¢)`);
   
   // Calculate max units for each market based on target allocation
   const marketsWithLimits = sortedMarkets.map(market => ({
@@ -184,16 +187,27 @@ async function prepareOrders(params: PrepareParams) {
 
   // Get available balance from Kalshi
   let availableCapitalCents = 0;
+  let totalExposureCents = 0;
   try {
     const balanceData = await kalshiFetch('/portfolio/balance');
     availableCapitalCents = balanceData?.balance || 0;
+    
+    // Fetch existing positions to calculate total portfolio value
+    const positionsData = await kalshiFetch('/portfolio/positions');
+    for (const pos of positionsData?.market_positions || []) {
+      totalExposureCents += pos.position_cost || 0;
+    }
   } catch (e) {
-    console.error('Failed to fetch balance:', e);
+    console.error('Failed to fetch balance/positions:', e);
     return {
       success: false,
       error: 'Failed to fetch account balance from Kalshi',
     };
   }
+
+  // Calculate total portfolio (available + deployed)
+  const totalPortfolioCents = availableCapitalCents + totalExposureCents;
+  console.log(`Portfolio: ${totalPortfolioCents}¢ (available: ${availableCapitalCents}¢, deployed: ${totalExposureCents}¢)`);
 
   // Apply reserve if specified
   if (capitalReservePercent > 0) {
@@ -283,8 +297,8 @@ async function prepareOrders(params: PrepareParams) {
     };
   }
 
-  // Distribute capital across all markets
-  const allocatedMarkets = distributeCapital(enrichedMarkets, availableCapitalCents);
+  // Distribute capital across all markets (use total portfolio for 3% cap calculation)
+  const allocatedMarkets = distributeCapital(enrichedMarkets, availableCapitalCents, totalPortfolioCents);
 
   if (allocatedMarkets.length === 0) {
     return {

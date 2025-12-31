@@ -388,19 +388,21 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
 
   // Step 5: Execute PENDING orders for today's games (from prepare-week)
   // IMPORTANT: Recalculate units based on CURRENT available capital, not original estimates
+  // PRE-CHECK CAPITAL: Calculate total needed BEFORE placing any orders to avoid Kalshi rejections
   // Only execute after 6am ET
   if (isAfter6amET()) {
     const todayForPending = getTodayET();
+    // Fetch both 'pending' and 'queue' orders - queue orders are retried when capital frees up
     const { data: pendingOrders, error: pendingError } = await supabase
       .from('orders')
       .select('*, order_batches!inner(batch_date)')
-      .eq('placement_status', 'pending')
+      .in('placement_status', ['pending', 'queue'])
       .eq('order_batches.batch_date', todayForPending);
     
     if (pendingError) {
       result.details.errors.push(`Failed to fetch pending orders: ${pendingError.message}`);
     } else if (pendingOrders && pendingOrders.length > 0 && availableBalance > 0) {
-      console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending orders for today (${todayForPending}), available balance: ${availableBalance}¢`);
+      console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending/queued orders for today (${todayForPending}), available balance: ${availableBalance}¢`);
       
       // RECALCULATE: Spread available capital evenly across all pending orders
       // Use 3% cap only if even distribution exceeds it
@@ -410,26 +412,79 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       
       console.log(`Capital redistribution: ${availableBalance}¢ / ${pendingOrders.length} orders = ${evenDistributionCents}¢ each (cap: ${maxPositionCents}¢, target: ${targetAllocationCents}¢)`);
       
-      let capitalUsed = 0;
+      // PRE-CALCULATE: Determine which orders we can afford BEFORE placing any
+      // This prevents placing orders that Kalshi will reject due to insufficient funds
+      const ordersToPlace: Array<{order: any, recalculatedUnits: number, recalculatedCost: number}> = [];
+      const ordersToQueue: Array<{order: any, reason: string}> = [];
+      let projectedCapitalUsed = 0;
       
       for (const order of pendingOrders) {
-        // Skip if we've used all capital
-        const remainingCapital = availableBalance - capitalUsed;
+        const remainingCapital = availableBalance - projectedCapitalUsed;
+        const priceCents = order.price_cents;
+        
         if (remainingCapital <= 0) {
-          console.log(`Skipping ${order.ticker} - no remaining capital`);
+          ordersToQueue.push({ order, reason: 'No remaining capital' });
           continue;
         }
         
+        const maxUnitsForTarget = Math.floor(Math.min(targetAllocationCents, remainingCapital) / priceCents);
+        const recalculatedUnits = Math.max(maxUnitsForTarget, 1);
+        const recalculatedCost = recalculatedUnits * priceCents;
+        
+        if (recalculatedCost > remainingCapital) {
+          ordersToQueue.push({ order, reason: `Need ${recalculatedCost}¢, have ${remainingCapital}¢` });
+          continue;
+        }
+        
+        ordersToPlace.push({ order, recalculatedUnits, recalculatedCost });
+        projectedCapitalUsed += recalculatedCost;
+      }
+      
+      console.log(`Pre-check: ${ordersToPlace.length} orders to place, ${ordersToQueue.length} orders to queue`);
+      
+      // Mark orders that we can't afford as "queue" instead of trying to place them
+      for (const { order, reason } of ordersToQueue) {
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'queue',
+            placement_status_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+        
+        result.details.cancelled.push(`${order.ticker}: queued - ${reason}`);
+        console.log(`Queued ${order.ticker} - ${reason}`);
+      }
+      
+      // Now place the orders we know we can afford
+      let capitalUsed = 0;
+      
+      // Calculate hard cap for portfolio (UNBREAKABLE 3% barrier)
+      const portfolioForHardCap = availableBalance + totalExposure;
+      const hardCapCents = Math.floor(portfolioForHardCap * MAX_POSITION_PERCENT);
+      
+      for (const { order, recalculatedUnits, recalculatedCost } of ordersToPlace) {
+        const priceCents = order.price_cents;
+        
         try {
-          // RECALCULATE units based on current available capital
-          const priceCents = order.price_cents;
-          const maxUnitsForTarget = Math.floor(Math.min(targetAllocationCents, remainingCapital) / priceCents);
-          const recalculatedUnits = Math.max(maxUnitsForTarget, 1); // At least 1 unit
-          const recalculatedCost = recalculatedUnits * priceCents;
-          
-          if (recalculatedCost > remainingCapital) {
-            console.log(`Skipping ${order.ticker} - insufficient capital (need ${recalculatedCost}¢, have ${remainingCapital}¢)`);
-            continue;
+          // ========================================
+          // HARD CAP GUARD: NEVER exceed 3% of total portfolio
+          // This is an UNBREAKABLE barrier - final safety check before placing
+          // ========================================
+          if (recalculatedCost > hardCapCents) {
+            const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${recalculatedCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${portfolioForHardCap}¢`;
+            console.error(errorMsg);
+            result.details.errors.push(errorMsg);
+            
+            // Mark as queued instead of placing
+            await supabase
+              .from('orders')
+              .update({
+                placement_status: 'queue',
+                placement_status_at: new Date().toISOString(),
+              })
+              .eq('id', order.id);
+            continue; // Skip this order entirely
           }
           
           console.log(`Recalculated ${order.ticker}: ${order.units}u -> ${recalculatedUnits}u @ ${priceCents}¢ (cost: ${recalculatedCost}¢)`);
@@ -492,6 +547,19 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       console.log(`Capital used for pending orders: ${capitalUsed}¢, remaining: ${availableBalance}¢`);
     } else if (pendingOrders && pendingOrders.length > 0 && availableBalance <= 0) {
       console.log(`[${getCurrentTimeET()}] Found ${pendingOrders.length} pending orders but no available capital (${availableBalance}¢)`);
+      
+      // Mark all as queued since we have no capital
+      for (const order of pendingOrders) {
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'queue',
+            placement_status_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+      }
+      result.details.cancelled.push(`Queued ${pendingOrders.length} orders - no available capital`);
+      console.log(`Queued ${pendingOrders.length} orders - no available capital`);
     }
   }
 
@@ -556,10 +624,11 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   filteredMarkets = filteredMarkets.filter(m => !blacklistedTickers.has(m.ticker));
 
   // Get existing orders - check both ticker AND event_ticker to avoid double-dipping
+  // Include 'queue' status to avoid creating duplicate orders for markets already queued
   const { data: existingOrders } = await supabase
     .from('orders')
     .select('ticker, event_ticker')
-    .in('placement_status', ['pending', 'placed', 'confirmed']);
+    .in('placement_status', ['pending', 'placed', 'confirmed', 'queue']);
   
   const existingTickers = new Set((existingOrders || []).map(o => o.ticker));
   const existingEventTickers = new Set((existingOrders || []).map(o => o.event_ticker));
@@ -575,11 +644,11 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     eventExposureCents.set(order.event_ticker, existing);
   }
   
-  // Fetch full order details to get costs
+  // Fetch full order details to get costs (include queue orders for capital planning)
   const { data: ordersWithCosts } = await supabase
     .from('orders')
     .select('event_ticker, cost_cents, executed_cost_cents')
-    .in('placement_status', ['pending', 'placed', 'confirmed']);
+    .in('placement_status', ['pending', 'placed', 'confirmed', 'queue']);
   
   for (const order of ordersWithCosts || []) {
     const cost = order.executed_cost_cents || order.cost_cents || 0;
@@ -662,6 +731,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
 
   // Step 7: Deploy remaining capital to eligible markets (if any)
   // IMPORTANT: Only execute orders after 6am ET on the game day
+  // PRE-CHECK CAPITAL: Calculate total needed BEFORE placing any orders to avoid Kalshi rejections
   if (!isAfter6amET()) {
     console.log(`Skipping execution - before 6am ET (current: ${getCurrentTimeET()}). Found ${eligibleMarkets.length} eligible markets.`);
     result.details.errors.push(`Before 6am ET - execution paused. ${eligibleMarkets.length} markets ready.`);
@@ -717,16 +787,27 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     
     console.log(`Capital distribution: ${availableBalance}¢ / ${eligibleMarkets.length} markets = ${evenAllocationCents}¢ each (capped at ${maxEventExposureCents}¢ = ${targetAllocationCents}¢)`);
 
-    // Place orders on eligible markets
-    for (const market of eligibleMarkets) {
-      if (availableBalance <= 0) break;
+    // PRE-CALCULATE: Determine which orders we can afford BEFORE placing any
+    // This prevents placing orders that Kalshi will reject due to insufficient funds
+    interface MarketOrder {
+      market: KalshiMarket;
+      favoriteSide: 'YES' | 'NO';
+      priceCents: number;
+      units: number;
+      cost: number;
+    }
+    const ordersToPlace: MarketOrder[] = [];
+    const ordersToQueue: Array<{market: KalshiMarket, favoriteSide: 'YES' | 'NO', priceCents: number, reason: string}> = [];
+    let projectedCapitalUsed = 0;
+    const projectedEventExposure: Map<string, number> = new Map(eventExposureCents);
 
+    for (const market of eligibleMarkets) {
       const odds = getMarketOdds(market);
-      const favoriteSide = odds.yes >= odds.no ? 'YES' : 'NO';
+      const favoriteSide = (odds.yes >= odds.no ? 'YES' : 'NO') as 'YES' | 'NO';
       const priceCents = Math.round(Math.max(odds.yes, odds.no) * 100);
 
       // Calculate REMAINING CAPACITY for this event (3% - existing exposure)
-      const currentExposure = sessionEventExposure.get(market.event_ticker) || 0;
+      const currentExposure = projectedEventExposure.get(market.event_ticker) || 0;
       const remainingCapacity = maxEventExposureCents - currentExposure;
       
       if (remainingCapacity <= 0) {
@@ -740,23 +821,76 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         continue;
       }
       
-      if (availableBalance < priceCents) {
-        console.log(`Skipping ${market.ticker} - insufficient balance (${availableBalance}¢ < ${priceCents}¢)`);
+      const remainingBalance = availableBalance - projectedCapitalUsed;
+      if (remainingBalance < priceCents) {
+        // Queue this order instead of trying to place it
+        ordersToQueue.push({ market, favoriteSide, priceCents, reason: `Need ${priceCents}¢, have ${remainingBalance}¢` });
         continue;
       }
 
       // Calculate units: use EVEN DISTRIBUTION first, then cap by 3% and remaining capacity
-      // This ensures we spread across all markets instead of filling 3% on each and running out
       const targetForThisMarket = Math.min(targetAllocationCents, remainingCapacity);
       const maxUnitsForTarget = Math.floor(targetForThisMarket / priceCents);
-      const affordableUnits = Math.floor(availableBalance / priceCents);
+      const affordableUnits = Math.floor(remainingBalance / priceCents);
       const units = Math.min(maxUnitsForTarget, affordableUnits);
 
-      if (units <= 0) continue;
+      if (units <= 0) {
+        ordersToQueue.push({ market, favoriteSide, priceCents, reason: 'Cannot afford any units' });
+        continue;
+      }
       
       const thisBetCost = units * priceCents;
+      ordersToPlace.push({ market, favoriteSide, priceCents, units, cost: thisBetCost });
+      projectedCapitalUsed += thisBetCost;
+      
+      // Update projected event exposure for subsequent calculations
+      const newExposure = (projectedEventExposure.get(market.event_ticker) || 0) + thisBetCost;
+      projectedEventExposure.set(market.event_ticker, newExposure);
+    }
+    
+    console.log(`Pre-check: ${ordersToPlace.length} orders to place, ${ordersToQueue.length} orders to queue`);
 
+    // Save queued orders to DB with 'queue' status (so they can be placed when capital frees up)
+    for (const { market, favoriteSide, priceCents, reason } of ordersToQueue) {
+      await supabase
+        .from('orders')
+        .insert({
+          batch_id: batchId,
+          ticker: market.ticker,
+          event_ticker: market.event_ticker,
+          title: market.title,
+          side: favoriteSide,
+          price_cents: priceCents,
+          units: 1, // Minimum units for queue
+          cost_cents: priceCents,
+          potential_payout_cents: 100,
+          open_interest: market.open_interest,
+          market_close_time: market.close_time,
+          placement_status: 'queue',
+          placement_status_at: new Date().toISOString(),
+          result_status: 'undecided',
+          settlement_status: 'pending',
+        });
+      
+      result.details.cancelled.push(`${market.ticker}: queued - ${reason}`);
+      console.log(`Queued: ${market.ticker} - ${reason}`);
+    }
+
+    // Now place the orders we know we can afford
+    for (const { market, favoriteSide, priceCents, units, cost: thisBetCost } of ordersToPlace) {
       try {
+        // ========================================
+        // HARD CAP GUARD: NEVER exceed 3% of total portfolio
+        // This is an UNBREAKABLE barrier - final safety check before placing
+        // ========================================
+        const hardCapCents = Math.floor(totalPortfolio * MAX_POSITION_PERCENT);
+        if (thisBetCost > hardCapCents) {
+          const errorMsg = `HARD CAP BLOCKED: ${market.ticker} cost ${thisBetCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolio}¢`;
+          console.error(errorMsg);
+          result.details.errors.push(errorMsg);
+          continue; // Skip this order entirely
+        }
+        
         // Place order on Kalshi
         const payload: any = {
           ticker: market.ticker,

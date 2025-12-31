@@ -50,11 +50,22 @@ export async function POST(request: Request) {
       });
     }
 
-    // Get balance
+    // Get balance AND calculate total portfolio for hard cap
     let availableBalance = 0;
+    let totalExposureCents = 0;
     try {
       const balanceData = await getBalance();
       availableBalance = balanceData.balance || 0;
+      
+      // Fetch existing positions to calculate total portfolio
+      const { data: existingOrders } = await supabase
+        .from('orders')
+        .select('cost_cents, executed_cost_cents')
+        .in('placement_status', ['placed', 'confirmed']);
+      
+      for (const order of existingOrders || []) {
+        totalExposureCents += order.executed_cost_cents || order.cost_cents || 0;
+      }
     } catch (e) {
       return NextResponse.json({ 
         success: false, 
@@ -63,7 +74,12 @@ export async function POST(request: Request) {
       });
     }
 
-    console.log(`Force execute: ${orders.length} orders, balance: $${(availableBalance / 100).toFixed(2)}`);
+    // Calculate total portfolio and hard cap (UNBREAKABLE 3% barrier)
+    const totalPortfolioCents = availableBalance + totalExposureCents;
+    const MAX_POSITION_PERCENT = 0.03;
+    const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+    
+    console.log(`Force execute: ${orders.length} orders, balance: $${(availableBalance / 100).toFixed(2)}, portfolio: $${(totalPortfolioCents / 100).toFixed(2)}, 3% cap: $${(hardCapCents / 100).toFixed(2)}`);
 
     const results: any[] = [];
     let successCount = 0;
@@ -73,6 +89,30 @@ export async function POST(request: Request) {
     for (const order of orders) {
       // Check if we have enough balance for this order's units
       const orderCost = order.price_cents * order.units;
+      
+      // ========================================
+      // HARD CAP GUARD: NEVER exceed 3% of total portfolio
+      // This is an UNBREAKABLE barrier - final safety check before placing
+      // ========================================
+      if (orderCost > hardCapCents) {
+        results.push({
+          ticker: order.ticker,
+          status: 'blocked',
+          reason: `HARD CAP: Cost $${(orderCost/100).toFixed(2)} exceeds 3% of portfolio ($${(hardCapCents/100).toFixed(2)})`
+        });
+        
+        // Mark as queued
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'queue',
+            placement_status_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+        
+        skippedCount++;
+        continue;
+      }
       
       if (availableBalance < orderCost) {
         results.push({

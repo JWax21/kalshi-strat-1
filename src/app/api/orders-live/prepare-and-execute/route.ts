@@ -35,16 +35,31 @@ export async function POST(request: Request) {
     }
     console.log('Old batches cleared, proceeding with fresh preparation...');
 
-    // Step 2: Get available balance
+    // Step 2: Get available balance AND existing positions for total portfolio calculation
     let availableBalance = 0;
+    let totalExposureCents = 0;
     try {
       const balanceData = await getBalance();
       availableBalance = balanceData.balance || 0;
+      
+      // Fetch existing positions to calculate total portfolio value
+      const positionsData = await getBalance(); // getBalance returns balance, we need positions
+      // Note: We need to fetch positions separately - using supabase to get existing order costs
+      const { data: existingOrders } = await supabase
+        .from('orders')
+        .select('cost_cents, executed_cost_cents')
+        .in('placement_status', ['placed', 'confirmed']);
+      
+      for (const order of existingOrders || []) {
+        totalExposureCents += order.executed_cost_cents || order.cost_cents || 0;
+      }
     } catch (e) {
       return NextResponse.json({ success: false, error: 'Could not fetch balance' }, { status: 500 });
     }
 
-    console.log(`Available balance: $${(availableBalance / 100).toFixed(2)}`);
+    // Calculate total portfolio (available + deployed) for 3% hard cap
+    const totalPortfolioCents = availableBalance + totalExposureCents;
+    console.log(`Portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (available: $${(availableBalance / 100).toFixed(2)}, deployed: $${(totalExposureCents / 100).toFixed(2)})`);
 
     if (availableBalance < 100) { // Less than $1
       return NextResponse.json({ success: false, error: 'Insufficient balance' }, { status: 400 });
@@ -120,11 +135,12 @@ export async function POST(request: Request) {
     // Step 7: Distribute capital - SPREAD FIRST, 3% cap second
     // Calculate even distribution across all markets
     const evenDistributionCents = Math.floor(availableBalance / enrichedMarkets.length);
-    const maxPositionCents = Math.floor(availableBalance * MAX_POSITION_PERCENT);
+    // Use 3% of TOTAL PORTFOLIO (available + deployed), not just available
+    const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     // Use even distribution, capped at 3%
     const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
     
-    console.log(`Capital distribution: ${availableBalance}¢ / ${enrichedMarkets.length} markets = ${evenDistributionCents}¢ each (capped at ${maxPositionCents}¢ = ${targetAllocationCents}¢ target)`);
+    console.log(`Capital distribution: ${availableBalance}¢ / ${enrichedMarkets.length} markets = ${evenDistributionCents}¢ each (3% of ${totalPortfolioCents}¢ = ${maxPositionCents}¢ cap, target: ${targetAllocationCents}¢)`);
     
     type MarketAllocation = { market: typeof enrichedMarkets[0]; units: number; cost: number };
     const allocations: MarketAllocation[] = enrichedMarkets.map(m => ({
@@ -240,8 +256,36 @@ export async function POST(request: Request) {
     console.log(`Saved ${insertedOrders?.length || 0} orders to database`);
 
     // Now try to place each order on Kalshi
+    // HARD CAP: 3% of total portfolio is the absolute maximum
+    const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+    
     for (const order of insertedOrders || []) {
       try {
+        // ========================================
+        // HARD CAP GUARD: NEVER exceed 3% of total portfolio
+        // This is an UNBREAKABLE barrier - final safety check before placing
+        // ========================================
+        if (order.cost_cents > hardCapCents) {
+          const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${order.cost_cents}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolioCents}¢`;
+          console.error(errorMsg);
+          
+          // Mark as queued instead of placing
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'queue',
+              placement_status_at: new Date().toISOString(),
+            })
+            .eq('id', order.id);
+          
+          results.push({
+            ticker: order.ticker,
+            status: 'blocked',
+            reason: errorMsg,
+          });
+          continue;
+        }
+        
         const payload: any = {
           ticker: order.ticker,
           action: 'buy',
