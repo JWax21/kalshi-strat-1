@@ -136,21 +136,28 @@ function calculateLiquidityScore(
  * 1. Calculate even distribution = capital / number of markets
  * 2. Use 3% cap only when we don't have enough markets to deploy all capital
  * If betting both sides of same event, use half the position limit per side
+ * 
+ * @param analyses - Markets to consider
+ * @param availableCapitalCents - Cash available to deploy
+ * @param totalPortfolioCents - Total portfolio value (cash + positions) for 3% calculation
+ * @param maxPositionPercent - Max position as percentage of total portfolio
  */
 function distributeCapitalByLiquidity(
   analyses: LiquidityAnalysis[],
-  totalCapitalCents: number,
+  availableCapitalCents: number,
+  totalPortfolioCents: number,
   maxPositionPercent: number
 ): LiquidityAnalysis[] {
   if (analyses.length === 0) return [];
   
-  // SPREAD FIRST: Calculate even distribution across all markets
-  const evenDistributionCents = Math.floor(totalCapitalCents / analyses.length);
-  const baseMaxPositionCents = Math.floor(totalCapitalCents * maxPositionPercent);
+  // SPREAD FIRST: Calculate even distribution across all markets (based on AVAILABLE capital)
+  const evenDistributionCents = Math.floor(availableCapitalCents / analyses.length);
+  // 3% cap is based on TOTAL PORTFOLIO, not just available capital
+  const baseMaxPositionCents = Math.floor(totalPortfolioCents * maxPositionPercent);
   // 3% CAP SECOND: Only use 3% cap if even distribution exceeds it
   const baseTargetCents = Math.min(evenDistributionCents, baseMaxPositionCents);
   
-  console.log(`Capital distribution: ${totalCapitalCents}¢ / ${analyses.length} markets = ${evenDistributionCents}¢ each (capped at ${baseMaxPositionCents}¢ = ${baseTargetCents}¢ target)`);
+  console.log(`Capital distribution: ${availableCapitalCents}¢ / ${analyses.length} markets = ${evenDistributionCents}¢ each (3% cap of ${totalPortfolioCents}¢ = ${baseMaxPositionCents}¢, target = ${baseTargetCents}¢)`);
   
   // Group by event_ticker to detect when we're betting both sides
   const eventGroups = new Map<string, LiquidityAnalysis[]>();
@@ -178,7 +185,7 @@ function distributeCapitalByLiquidity(
   // Calculate total liquidity score for proportional allocation (used for ordering)
   const totalScore = analyses.reduce((sum, a) => sum + a.liquidity_score, 0);
   
-  let remainingCapital = totalCapitalCents;
+  let remainingCapital = availableCapitalCents;
   const results: LiquidityAnalysis[] = [];
   
   // Sort by liquidity score descending
@@ -305,7 +312,21 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
     return { success: false, error: 'No available capital to deploy' };
   }
 
-  console.log(`Available capital: $${(availableCapitalCents / 100).toFixed(2)}`);
+  // Get existing positions to calculate TOTAL portfolio value (not just cash)
+  let totalExistingExposureCents = 0;
+  try {
+    const positionsResponse = await kalshiFetch('/portfolio/positions');
+    const positions = positionsResponse.market_positions || [];
+    totalExistingExposureCents = positions.reduce((sum: number, p: any) => sum + (p.position_cost || 0), 0);
+  } catch (e) {
+    console.error('Failed to fetch positions for portfolio calculation:', e);
+    // Continue with just available capital if positions fetch fails
+  }
+
+  // CRITICAL: Total portfolio = available cash + existing positions
+  const totalPortfolioCents = availableCapitalCents + totalExistingExposureCents;
+
+  console.log(`Available capital: $${(availableCapitalCents / 100).toFixed(2)}, Deployed: $${(totalExistingExposureCents / 100).toFixed(2)}, Total Portfolio: $${(totalPortfolioCents / 100).toFixed(2)}`);
 
   // Fetch sports markets
   const sportsSeries = [
@@ -444,9 +465,11 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
   console.log(`Deduplicated: ${analyses.length} markets -> ${deduplicatedAnalyses.length} unique events`);
 
   // Distribute capital based on liquidity
+  // Pass both available capital (for deployment) and total portfolio (for 3% calculation)
   const allocatedMarkets = distributeCapitalByLiquidity(
     deduplicatedAnalyses,
     availableCapitalCents,
+    totalPortfolioCents,
     maxPositionPercent
   );
 

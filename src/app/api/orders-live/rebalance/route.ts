@@ -146,6 +146,22 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
 
   // Now redeploy the freed capital to existing confirmed positions
   if (availableCapitalCents > 0) {
+    // FIRST: Get TOTAL portfolio value from Kalshi positions (not just today's orders)
+    let totalExistingExposureCents = 0;
+    try {
+      const positionsResponse = await kalshiFetch('/portfolio/positions');
+      const positions = positionsResponse.market_positions || [];
+      totalExistingExposureCents = positions.reduce((sum: number, p: any) => sum + (p.position_cost || 0), 0);
+    } catch (e) {
+      result.errors.push(`Failed to fetch positions for portfolio calculation: ${e}`);
+    }
+    
+    // Calculate TOTAL portfolio value = cash + all positions
+    const totalPortfolioCents = availableCapitalCents + totalExistingExposureCents;
+    const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+    
+    console.log(`Rebalance: Portfolio=${totalPortfolioCents}¢ (cash=${availableCapitalCents}¢ + positions=${totalExistingExposureCents}¢), 3% cap=${hardCapCents}¢`);
+
     // Get today's batch
     const today = new Date().toISOString().split('T')[0];
     const { data: todayBatch } = await supabase
@@ -164,19 +180,12 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
         .order('open_interest', { ascending: false });
 
       if (confirmedOrders && confirmedOrders.length > 0) {
-        // Calculate total portfolio value for 3% limit
-        const totalPortfolioValue = confirmedOrders.reduce(
-          (sum, o) => sum + (o.executed_cost_cents || o.cost_cents), 0
-        ) + availableCapitalCents;
-
-        const maxPerMarketCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
-
         // Try to add units to existing positions (highest OI first)
         for (const order of confirmedOrders) {
           if (availableCapitalCents <= 0) break;
 
           const currentPositionValue = order.executed_cost_cents || order.cost_cents;
-          const roomToAdd = maxPerMarketCents - currentPositionValue;
+          const roomToAdd = hardCapCents - currentPositionValue;
 
           if (roomToAdd > 0) {
             const unitCost = order.price_cents;
@@ -186,6 +195,15 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
             );
 
             if (unitsToAdd > 0) {
+              const orderCostCents = unitsToAdd * unitCost;
+              const newPositionValue = currentPositionValue + orderCostCents;
+              
+              // HARD CAP GUARD: Verify the NEW position won't exceed 3%
+              if (newPositionValue > hardCapCents) {
+                console.log(`Skipping ${order.ticker} - new position ${newPositionValue}¢ would exceed 3% cap ${hardCapCents}¢`);
+                continue;
+              }
+              
               // Place additional order for this market
               try {
                 const orderResponse = await kalshiFetch('/portfolio/orders', 'POST', {
