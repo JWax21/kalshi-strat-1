@@ -13,6 +13,7 @@ const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
 const MIN_ODDS = 0.90; // Minimum favorite odds (90%)
+const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet on favorites below 90 cents
 const MAX_ODDS = 0.995; // Maximum favorite odds (99.5%)
 const MIN_OPEN_INTEREST = 50; // Minimum open interest
 
@@ -468,6 +469,27 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         
         try {
           // ========================================
+          // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
+          // This prevents betting on games where odds have dropped
+          // ========================================
+          if (priceCents < MIN_PRICE_CENTS) {
+            const errorMsg = `MIN PRICE BLOCKED: ${order.ticker} price ${priceCents}¢ below minimum ${MIN_PRICE_CENTS}¢ - odds dropped`;
+            console.error(errorMsg);
+            result.details.errors.push(errorMsg);
+            
+            // Cancel this order - odds have dropped below our threshold
+            await supabase
+              .from('orders')
+              .update({
+                placement_status: 'cancelled',
+                cancelled_at: new Date().toISOString(),
+                cancel_reason: `Price ${priceCents}¢ below minimum 90¢ - odds dropped`,
+              })
+              .eq('id', order.id);
+            continue;
+          }
+          
+          // ========================================
           // HARD CAP GUARD: NEVER exceed 3% of total portfolio
           // This is an UNBREAKABLE barrier - final safety check before placing
           // ========================================
@@ -879,6 +901,16 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     // Now place the orders we know we can afford
     for (const { market, favoriteSide, priceCents, units, cost: thisBetCost } of ordersToPlace) {
       try {
+        // ========================================
+        // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
+        // ========================================
+        if (priceCents < MIN_PRICE_CENTS) {
+          const errorMsg = `MIN PRICE BLOCKED: ${market.ticker} price ${priceCents}¢ below minimum ${MIN_PRICE_CENTS}¢`;
+          console.error(errorMsg);
+          result.details.errors.push(errorMsg);
+          continue;
+        }
+        
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio
         // This is an UNBREAKABLE barrier - final safety check before placing

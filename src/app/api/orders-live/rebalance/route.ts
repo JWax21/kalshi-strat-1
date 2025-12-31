@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { placeOrder } from '@/lib/kalshi';
 import crypto from 'crypto';
 import { KALSHI_CONFIG } from '@/lib/kalshi-config';
+import { v4 as uuidv4 } from 'uuid';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,6 +48,7 @@ async function kalshiFetch(endpoint: string, method: string = 'GET', body?: any)
 
 const STALE_ORDER_HOURS = 4;
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
+const MIN_PRICE_CENTS = 90; // NEVER bet on favorites below 90% odds
 
 interface RebalanceResult {
   cancelled: number;
@@ -189,6 +192,17 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
 
           if (roomToAdd > 0) {
             const unitCost = order.price_cents;
+            
+            // ========================================
+            // MIN PRICE GUARD: NEVER bet on favorites below 90% odds
+            // This prevents betting on games that have moved below our threshold
+            // ========================================
+            if (unitCost < MIN_PRICE_CENTS) {
+              console.log(`Skipping ${order.ticker} - price ${unitCost}¢ below minimum ${MIN_PRICE_CENTS}¢ (odds dropped)`);
+              result.errors.push(`${order.ticker}: price ${unitCost}¢ below 90¢ minimum - odds dropped`);
+              continue;
+            }
+            
             const unitsToAdd = Math.min(
               Math.floor(roomToAdd / unitCost),
               Math.floor(availableCapitalCents / unitCost)
@@ -204,15 +218,26 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
                 continue;
               }
               
-              // Place additional order for this market
+              // Place additional order using LIMIT order (not market order!)
+              // This ensures we only fill at our expected price, not worse
               try {
-                const orderResponse = await kalshiFetch('/portfolio/orders', 'POST', {
+                const orderPayload: any = {
                   ticker: order.ticker,
-                  action: 'buy',
-                  side: order.side.toLowerCase(),
-                  type: 'market',
+                  action: 'buy' as const,
+                  side: order.side.toLowerCase() as 'yes' | 'no',
+                  type: 'limit' as const,
                   count: unitsToAdd,
-                });
+                  client_order_id: uuidv4(),
+                };
+                
+                // Set the price based on side
+                if (order.side.toLowerCase() === 'yes') {
+                  orderPayload.yes_price = unitCost;
+                } else {
+                  orderPayload.no_price = unitCost;
+                }
+
+                const orderResponse = await placeOrder(orderPayload);
 
                 if (orderResponse?.order) {
                   const additionalCost = unitsToAdd * unitCost;

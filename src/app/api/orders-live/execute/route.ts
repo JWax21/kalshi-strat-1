@@ -85,6 +85,7 @@ async function executeOrders() {
   // Calculate total portfolio and hard cap (UNBREAKABLE 3% barrier)
   const totalPortfolioCents = availableBalance + totalExposureCents;
   const MAX_POSITION_PERCENT = 0.03;
+  const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet below 90 cents
   const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
 
   console.log(`Available balance: $${(availableBalance / 100).toFixed(2)}, Portfolio: $${(totalPortfolioCents / 100).toFixed(2)}, 3% cap: $${(hardCapCents / 100).toFixed(2)}`);
@@ -126,6 +127,26 @@ async function executeOrders() {
     try {
       // Calculate order cost
       const orderCost = order.price_cents; // 1 unit per market
+      
+      // ========================================
+      // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
+      // ========================================
+      if (order.price_cents < MIN_PRICE_CENTS) {
+        const errorMsg = `MIN PRICE BLOCKED: ${order.ticker} price ${order.price_cents}¢ below minimum ${MIN_PRICE_CENTS}¢`;
+        console.error(errorMsg);
+        errors.push(errorMsg);
+        
+        // Cancel - odds dropped below threshold
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'cancelled',
+            cancelled_at: new Date().toISOString(),
+            cancel_reason: `Price ${order.price_cents}¢ below minimum 90¢ - odds dropped`,
+          })
+          .eq('id', order.id);
+        continue;
+      }
       
       // ========================================
       // HARD CAP GUARD: NEVER exceed 3% of total portfolio

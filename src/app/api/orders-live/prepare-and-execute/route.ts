@@ -257,10 +257,36 @@ export async function POST(request: Request) {
 
     // Now try to place each order on Kalshi
     // HARD CAP: 3% of total portfolio is the absolute maximum
+    const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet below 90 cents
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
     for (const order of insertedOrders || []) {
       try {
+        // ========================================
+        // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
+        // ========================================
+        if (order.price_cents < MIN_PRICE_CENTS) {
+          const errorMsg = `MIN PRICE BLOCKED: ${order.ticker} price ${order.price_cents}¢ below minimum ${MIN_PRICE_CENTS}¢`;
+          console.error(errorMsg);
+          
+          // Cancel - odds too low
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'cancelled',
+              cancelled_at: new Date().toISOString(),
+              cancel_reason: `Price ${order.price_cents}¢ below minimum 90¢`,
+            })
+            .eq('id', order.id);
+          
+          results.push({
+            ticker: order.ticker,
+            status: 'blocked',
+            reason: errorMsg,
+          });
+          continue;
+        }
+        
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio
         // This is an UNBREAKABLE barrier - final safety check before placing
