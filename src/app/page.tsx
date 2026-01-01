@@ -2856,10 +2856,10 @@ export default function Dashboard() {
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">Portfolio</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds(¢) | Win%</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds(¢) | Win%</th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2886,12 +2886,11 @@ export default function Dashboard() {
                             <span className="text-slate-500">/</span>
                             <span className="text-amber-400">{record.pending}</span>
                           </td>
-                          <td className="p-4 text-right">
-                            {deployedCents > 0 ? (
-                              <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-xs font-mono">
-                                ${Math.round(deployedCents / 100).toLocaleString('en-US')}
-                              </span>
-                            ) : <span className="text-slate-600">—</span>}
+                          <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
+                          </td>
+                          <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
                           </td>
                           <td className="p-4 text-center font-mono text-sm">
                             {(() => {
@@ -2914,11 +2913,12 @@ export default function Dashboard() {
                               );
                             })()}
                           </td>
-                          <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
-                          </td>
-                          <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
+                          <td className="p-4 text-right">
+                            {deployedCents > 0 ? (
+                              <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-xs font-mono">
+                                ${Math.round(deployedCents / 100).toLocaleString('en-US')}
+                              </span>
+                            ) : <span className="text-slate-600">—</span>}
                           </td>
                         </tr>
                       );
