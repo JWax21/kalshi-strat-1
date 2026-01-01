@@ -2861,7 +2861,6 @@ export default function Dashboard() {
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds(¢) | Win%</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Source</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2921,11 +2920,6 @@ export default function Dashboard() {
                           </td>
                           <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                             {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
-                          </td>
-                          <td className="p-4 text-center">
-                            <span className={`px-2 py-0.5 rounded text-xs ${record.source === 'snapshot' ? 'bg-purple-500/20 text-purple-400' : 'bg-slate-700 text-slate-400'}`}>
-                              {record.source === 'snapshot' ? '📸' : '~'}
-                            </span>
                           </td>
                         </tr>
                       );
