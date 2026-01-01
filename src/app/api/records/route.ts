@@ -208,13 +208,18 @@ export async function GET(request: Request) {
       const dayPnl = payout - fees - wonCost - lostCost;
       
       // START values: 
-      // - First day (Dec 24): use STARTING values ($10,000)
+      // - Dec 24, 2025: ALWAYS use $10,000 (this is day 1)
       // - Other days: use previous day's snapshot END values
       let startCash: number;
       let startPositions: number;
       
-      if (i === 0) {
-        // First day starts with $10,000
+      if (date === '2025-12-24') {
+        // Dec 24 ALWAYS starts with $10,000 - this is our starting capital
+        startCash = STARTING_CASH;
+        startPositions = STARTING_POSITIONS;
+        console.log(`[Records] Dec 24 starting with $${STARTING_CASH/100}`);
+      } else if (i === 0) {
+        // If somehow Dec 24 isn't first, use starting values
         startCash = STARTING_CASH;
         startPositions = STARTING_POSITIONS;
       } else {

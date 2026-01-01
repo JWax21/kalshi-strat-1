@@ -502,7 +502,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           // This is an UNBREAKABLE barrier - final safety check before placing
           // ========================================
           if (recalculatedCost > hardCapCents) {
-            const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${recalculatedCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${portfolioForHardCap}¢`;
+            const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${recalculatedCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢`;
             console.error(errorMsg);
             result.details.errors.push(errorMsg);
             
