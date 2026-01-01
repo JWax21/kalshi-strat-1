@@ -196,10 +196,12 @@ export async function GET(request: Request) {
       const confirmedOrders = dayOrders.filter((o: any) => o.placement_status === 'confirmed');
       const wonOrders = confirmedOrders.filter((o: any) => o.result_status === 'won');
       const lostOrders = confirmedOrders.filter((o: any) => o.result_status === 'lost');
+      const pendingOrders = confirmedOrders.filter((o: any) => o.result_status === 'undecided');
       
       // Count individual orders (not unique events)
       const wonCount = wonOrders.length;
       const lostCount = lostOrders.length;
+      const pendingCount = pendingOrders.length;
       
       // Get P&L from orders
       const payout = wonOrders.reduce((sum: number, o: any) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
@@ -273,7 +275,7 @@ export async function GET(request: Request) {
         end_portfolio_cents: Math.round(endPortfolio),
         wins: wonCount,
         losses: lostCount,
-        pending: 0,
+        pending: pendingCount,
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
         avg_price_cents: Math.round(avgPrice),
