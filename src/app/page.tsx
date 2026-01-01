@@ -1815,6 +1815,57 @@ export default function Dashboard() {
               }
             })()}
 
+            {/* Flags Section - Show positions with cost > $400 or avg price < 90¢ */}
+            {positionsSubTab === 'active' && (() => {
+              const allOrders = orderBatches.flatMap(b => b.orders || []);
+              const activeOrders = allOrders.filter(o => 
+                o.placement_status === 'confirmed' && o.result_status === 'undecided'
+              );
+              const flaggedOrders = activeOrders.filter(o => {
+                const cost = o.executed_cost_cents || o.cost_cents || 0;
+                const avgPrice = o.price_cents || 0;
+                return cost > 40000 || avgPrice < 90; // Over $400 or below 90¢
+              });
+              
+              if (flaggedOrders.length === 0) return null;
+              
+              return (
+                <div className="mb-6 bg-amber-500/10 rounded-xl border border-amber-500/30 p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-amber-400 text-lg">⚠️</span>
+                    <h3 className="text-lg font-semibold text-amber-400">Flags ({flaggedOrders.length})</h3>
+                  </div>
+                  <div className="space-y-2">
+                    {flaggedOrders.map(order => {
+                      const cost = order.executed_cost_cents || order.cost_cents || 0;
+                      const avgPrice = order.price_cents || 0;
+                      const flags: string[] = [];
+                      if (cost > 40000) flags.push(`Cost: $${(cost / 100).toFixed(0)}`);
+                      if (avgPrice < 90) flags.push(`Avg: ${avgPrice}¢`);
+                      
+                      return (
+                        <div key={order.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2">
+                          <div className="flex items-center gap-3">
+                            <span className={`text-xs px-1.5 py-0.5 rounded ${order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                              {order.side}
+                            </span>
+                            <span className="text-white text-sm truncate max-w-[300px]">{order.title || order.ticker}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {flags.map((flag, i) => (
+                              <span key={i} className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">
+                                {flag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Positions Table */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
               <table className="w-full text-sm min-w-[1100px]">
