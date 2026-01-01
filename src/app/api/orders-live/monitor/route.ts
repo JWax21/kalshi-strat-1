@@ -757,7 +757,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   console.log(`Deduplicated: ${preFilteredMarkets.length} markets -> ${eligibleMarkets.length} unique events`);
   
   result.actions.new_markets_found = eligibleMarkets.length;
-  console.log(`Found ${eligibleMarkets.length} eligible markets (portfolio: ${totalPortfolio}¢, max per event: ${maxEventExposureCents}¢)`);
+  console.log(`Found ${eligibleMarkets.length} eligible markets (portfolio: ${totalPortfolioValue}¢, max per event: ${maxEventExposureCents}¢)`);
 
   // Step 7: Deploy remaining capital to eligible markets (if any)
   // IMPORTANT: Only execute orders after 6am ET on the game day
