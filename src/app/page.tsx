@@ -2855,8 +2855,7 @@ export default function Dashboard() {
                   <thead className="bg-slate-800/50">
                     <tr>
                       <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Start</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">End</th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Portfolio</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
                       <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
                       <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds(¢) | Win%</th>
@@ -2878,13 +2877,8 @@ export default function Dashboard() {
                             {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                           </td>
                           <td className="p-4 text-center font-mono">
-                            <span className="text-slate-300">${Math.round(record.start_cash_cents / 100).toLocaleString('en-US')}</span>
-                            <span className="text-slate-500 mx-1">|</span>
                             <span className="text-slate-400">${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}</span>
-                          </td>
-                          <td className="p-4 text-center font-mono">
-                            <span className="text-slate-300">${Math.round(record.end_cash_cents / 100).toLocaleString('en-US')}</span>
-                            <span className="text-slate-500 mx-1">|</span>
+                            <span className="text-slate-500 mx-2">→</span>
                             <span className="text-white">${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}</span>
                           </td>
                           <td className="p-4 text-center">
