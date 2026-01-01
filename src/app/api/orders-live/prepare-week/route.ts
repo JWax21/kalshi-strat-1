@@ -95,6 +95,7 @@ async function prepareForDay(
   targetDateStr: string,
   eligibleMarkets: KalshiMarket[], // Already filtered to be within this day's close window
   availableCapitalCents: number,
+  totalPortfolioCents: number, // For 3% limit calculation
   minOdds: number,
   maxOdds: number,
   minOpenInterest: number
@@ -546,6 +547,7 @@ export async function POST(request: Request) {
         batchDateStr,
         eligibleMarkets, // Only pass eligible markets (not already assigned)
         availableCapitalCents,
+        totalPortfolioCents, // For 3% limit calculation
         minOdds,
         maxOdds,
         minOpenInterest
