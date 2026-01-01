@@ -2888,27 +2888,29 @@ export default function Dashboard() {
                             <span className="text-slate-500">/</span>
                             <span className="text-amber-400">{record.pending}</span>
                           </td>
-                          <td className="p-4 text-right font-mono text-emerald-400">
+                          <td className="p-4 text-right">
                             {deployedCents > 0 ? (
-                              <>${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
-                            ) : '—'}
+                              <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-xs font-mono">
+                                ${Math.round(deployedCents / 100).toLocaleString('en-US')}
+                              </span>
+                            ) : <span className="text-slate-600">—</span>}
                           </td>
-                          <td className="p-4 text-center font-mono">
+                          <td className="p-4 text-center font-mono text-sm">
                             {(() => {
                               const odds = record.avg_price_cents;
                               const winPct = record.wins + record.losses > 0 
-                                ? Math.round((record.wins / (record.wins + record.losses)) * 100) 
+                                ? (record.wins / (record.wins + record.losses)) * 100 
                                 : null;
                               const oddsHigher = winPct !== null && odds > winPct;
                               const winHigher = winPct !== null && winPct > odds;
                               return (
                                 <>
                                   <span className={oddsHigher ? 'text-red-400' : 'text-slate-300'}>
-                                    {odds > 0 ? odds : '—'}
+                                    {odds > 0 ? odds.toFixed(2) : '—'}
                                   </span>
                                   <span className="text-slate-500 mx-1">|</span>
                                   <span className={winHigher ? 'text-emerald-400' : 'text-slate-300'}>
-                                    {winPct !== null ? winPct : '—'}
+                                    {winPct !== null ? winPct.toFixed(2) : '—'}
                                   </span>
                                 </>
                               );
