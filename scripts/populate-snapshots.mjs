@@ -17,11 +17,13 @@ const getGameDateFromTicker = (ticker) => {
 
 async function main() {
   console.log('=== POPULATING DAILY SNAPSHOTS ===\n');
-  console.log('Starting with $10,000 on Dec 24, 2025\n');
+  console.log('Starting with $10,000 on Dec 24, 2025 (START OF DAY)\n');
   
-  // Starting values: Dec 24, 2025 with $10,000 cash, $0 positions
+  // Starting values: Dec 24, 2025 START OF DAY with $10,000 cash, $0 positions
   const startDate = '2025-12-24';
-  const startingCashCents = 1000000; // $10,000
+  const STARTING_CASH = 1000000; // $10,000 in cents
+  const STARTING_POSITIONS = 0;
+  const STARTING_PORTFOLIO = STARTING_CASH + STARTING_POSITIONS;
   
   // Get all confirmed orders
   const { data: allOrders, error } = await supabase
@@ -73,62 +75,64 @@ async function main() {
   console.log('Dates to process:', allDates.join(', '));
   
   // Calculate snapshots day by day
-  // Model: 
-  // - Cash decreases when we PLACE orders (placement date)
-  // - Cash increases when orders SETTLE as wins (game date)
-  // - Positions = cost of orders that are placed but not yet settled
+  // START of each day = END of previous day
+  // Dec 24 START = $10,000 cash, $0 positions
   
-  let runningCash = startingCashCents;
+  let previousEndCash = STARTING_CASH;
+  let previousEndPositions = STARTING_POSITIONS;
   const snapshots = [];
   
   for (const date of allDates) {
+    // START of day = previous day's END
+    const startCash = previousEndCash;
+    const startPositions = previousEndPositions;
+    const startPortfolio = startCash + startPositions;
+    
+    // Orders DEPLOYED today (placed on this date)
+    const placedOrders = ordersByPlacementDate[date] || [];
+    const deployedCents = placedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+    
     // Orders that SETTLED today (game date = today)
     const settledOrders = ordersByGameDate[date] || [];
     const wonOrders = settledOrders.filter(o => o.result_status === 'won');
     const lostOrders = settledOrders.filter(o => o.result_status === 'lost');
-    
-    // Orders that were PLACED today (deployment)
-    const placedOrders = ordersByPlacementDate[date] || [];
-    const placedCost = placedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
     
     // Settlement returns from wins
     const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
     const wonFees = wonOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
     const lostFees = lostOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
     
-    // P&L calculation (based on game date)
+    // P&L calculation (based on game date settlements)
     const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
     const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
     const dayPnl = (wonPayout - wonCost - wonFees) - (lostCost + lostFees);
     
-    // Cash flow for today:
-    // - Decrease by orders placed today
-    // - Increase by payouts from wins that settled today
-    // (losses don't return any cash - the cost was already spent when placed)
-    const cashOutForPlacements = placedCost;
-    const cashInFromSettlements = wonPayout - wonFees; // Net payout after fees
+    // END of day cash:
+    // = Start cash
+    // - Deployed (orders placed today)
+    // + Settlements from wins (payout - fees)
+    // (lost orders: money was already deployed, now it's gone from positions)
+    const endCash = startCash - deployedCents + (wonPayout - wonFees);
     
-    const endCash = runningCash - cashOutForPlacements + cashInFromSettlements;
-    
-    // Positions = all orders that are placed but not yet settled (game date > today)
+    // END of day positions:
+    // = All orders that are placed on or before today AND game date > today
+    // + All orders for today's games that are still undecided
     const openPositions = allOrders.filter(o => {
       const gameDate = getGameDateFromTicker(o.ticker);
-      if (!gameDate) return false;
-      // Placed on or before today, game date is after today = still open
-      if (!o.placement_status_at) return false;
+      if (!gameDate || !o.placement_status_at) return false;
       const placedDate = new Date(o.placement_status_at).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      // Placed on or before today, game date is after today = still open
       return placedDate <= date && gameDate > date;
     });
     
-    // Also include orders placed today for games today that haven't settled yet (undecided)
     const todayUndecided = settledOrders.filter(o => o.result_status === 'undecided');
     
-    const positionsCents = [
+    const endPositions = [
       ...openPositions,
       ...todayUndecided
     ].reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
     
-    const portfolioValue = endCash + positionsCents;
+    const endPortfolio = endCash + endPositions;
     const wins = wonOrders.length;
     const losses = lostOrders.length;
     const pending = todayUndecided.length + openPositions.length;
@@ -136,8 +140,9 @@ async function main() {
     const snapshot = {
       snapshot_date: date,
       balance_cents: endCash,
-      positions_cents: positionsCents,
-      portfolio_value_cents: portfolioValue,
+      positions_cents: endPositions,
+      portfolio_value_cents: endPortfolio,
+      deployed_cents: deployedCents,
       wins,
       losses,
       pnl_cents: dayPnl,
@@ -146,10 +151,11 @@ async function main() {
     
     snapshots.push(snapshot);
     
-    console.log(`${date}: Cash=$${(endCash/100).toFixed(0)} | Pos=$${(positionsCents/100).toFixed(0)} | Total=$${(portfolioValue/100).toFixed(0)} | W=${wins} L=${losses} P=${pending} | P&L=$${(dayPnl/100).toFixed(2)}`);
+    console.log(`${date}: Start=$${(startPortfolio/100).toFixed(0)} → End=$${(endPortfolio/100).toFixed(0)} | Deploy=$${(deployedCents/100).toFixed(0)} | W=${wins} L=${losses} | P&L=$${(dayPnl/100).toFixed(2)}`);
     
-    // Update running cash for next day
-    runningCash = endCash;
+    // Update for next day
+    previousEndCash = endCash;
+    previousEndPositions = endPositions;
   }
   
   // Insert snapshots into database
