@@ -1331,7 +1331,7 @@ export default function Dashboard() {
             <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
             <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Deployment</button>
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Events</button>
-            <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Losses</button>
+            <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Analysis</button>
           </div>
           
           {activeTab === 'markets' && filteredMarkets.length > 0 && (
