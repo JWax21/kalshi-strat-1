@@ -39,11 +39,17 @@ async function kalshiFetch(endpoint: string): Promise<any> {
 }
 
 // POST - Capture a daily snapshot
+// Called at 5am ET daily to record:
+// - END values for previous day
+// - START values for current day (same as previous day's END)
 export async function POST(request: Request) {
   try {
-    const today = new Date().toISOString().split('T')[0];
-
-    // Get current balance from Kalshi
+    // At 5am ET, we're capturing the state at the END of the previous day
+    // and the START of the current day (they're the same values at this moment)
+    const nowET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const today = nowET; // Current date in ET
+    
+    // Get current balance from Kalshi (this is the live balance right now)
     let balanceCents = 0;
     try {
       const balanceData = await kalshiFetch('/portfolio/balance');
@@ -65,42 +71,14 @@ export async function POST(request: Request) {
       console.error('Failed to fetch positions:', e);
     }
 
-    // Get today's W-L and P&L from orders
-    const { data: batches } = await supabase
-      .from('order_batches')
-      .select('id')
-      .eq('batch_date', today);
-
-    let wins = 0;
-    let losses = 0;
-    let pnlCents = 0;
-
-    if (batches && batches.length > 0) {
-      const batchIds = batches.map(b => b.id);
-      const { data: orders } = await supabase
-        .from('orders')
-        .select('*')
-        .in('batch_id', batchIds)
-        .eq('placement_status', 'confirmed');
-
-      if (orders) {
-        const wonOrders = orders.filter(o => o.result_status === 'won');
-        const lostOrders = orders.filter(o => o.result_status === 'lost');
-
-        wins = wonOrders.length;
-        losses = lostOrders.length;
-
-        const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-        const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-        const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-        const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-        pnlCents = payout - fees - wonCost - lostCost;
-      }
-    }
-
     const portfolioValueCents = balanceCents + positionsCents;
 
-    // Upsert the snapshot (update if exists for today, insert if not)
+    // This snapshot represents:
+    // - The END of the previous day (all games settled)
+    // - The START of the current day (before any new activity)
+    // At 5am ET, all previous day's games should be settled
+    
+    // Save as today's snapshot (representing start of day)
     const { data: snapshot, error } = await supabase
       .from('daily_snapshots')
       .upsert({
@@ -108,9 +86,10 @@ export async function POST(request: Request) {
         balance_cents: balanceCents,
         positions_cents: positionsCents,
         portfolio_value_cents: portfolioValueCents,
-        wins,
-        losses,
-        pnl_cents: pnlCents,
+        wins: 0, // Will be updated throughout the day
+        losses: 0,
+        pnl_cents: 0,
+        pending: 0,
       }, {
         onConflict: 'snapshot_date',
       })
@@ -119,6 +98,8 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
+    console.log(`[Snapshot] ${today}: Cash=$${balanceCents/100}, Positions=$${positionsCents/100}, Portfolio=$${portfolioValueCents/100}`);
+
     return NextResponse.json({
       success: true,
       snapshot: {
@@ -126,9 +107,7 @@ export async function POST(request: Request) {
         balance: balanceCents / 100,
         positions: positionsCents / 100,
         portfolio_value: portfolioValueCents / 100,
-        wins,
-        losses,
-        pnl: pnlCents / 100,
+        message: 'Captured start-of-day snapshot at 5am ET',
       },
     });
   } catch (error) {
@@ -140,9 +119,78 @@ export async function POST(request: Request) {
   }
 }
 
-// GET - Fetch all snapshots
+// GET - Fetch all snapshots OR capture a new one (for cron)
+// If called by cron (Authorization header present), capture a new snapshot
+// Otherwise, fetch and return existing snapshots
 export async function GET(request: Request) {
   try {
+    const authHeader = request.headers.get('Authorization');
+    
+    // If this is a cron job call, capture a new snapshot
+    if (authHeader?.startsWith('Bearer ')) {
+      // Verify cron secret if configured
+      if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      
+      // Capture the snapshot (same logic as POST)
+      const nowET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const today = nowET;
+      
+      let balanceCents = 0;
+      try {
+        const balanceData = await kalshiFetch('/portfolio/balance');
+        balanceCents = balanceData?.balance || 0;
+      } catch (e) {
+        console.error('Failed to fetch balance:', e);
+        return NextResponse.json({ success: false, error: 'Failed to fetch balance' }, { status: 500 });
+      }
+
+      let positionsCents = 0;
+      try {
+        const positionsData = await kalshiFetch('/portfolio/positions');
+        const positions = positionsData?.market_positions || [];
+        positionsCents = positions.reduce((sum: number, p: any) => {
+          return sum + Math.abs(p.position_cost || p.market_exposure || 0);
+        }, 0);
+      } catch (e) {
+        console.error('Failed to fetch positions:', e);
+      }
+
+      const portfolioValueCents = balanceCents + positionsCents;
+
+      const { error } = await supabase
+        .from('daily_snapshots')
+        .upsert({
+          snapshot_date: today,
+          balance_cents: balanceCents,
+          positions_cents: positionsCents,
+          portfolio_value_cents: portfolioValueCents,
+          wins: 0,
+          losses: 0,
+          pnl_cents: 0,
+          pending: 0,
+        }, {
+          onConflict: 'snapshot_date',
+        });
+
+      if (error) throw error;
+
+      console.log(`[Cron Snapshot] ${today}: Cash=$${balanceCents/100}, Positions=$${positionsCents/100}, Portfolio=$${portfolioValueCents/100}`);
+
+      return NextResponse.json({
+        success: true,
+        message: `Captured 5am ET snapshot for ${today}`,
+        snapshot: {
+          date: today,
+          balance: balanceCents / 100,
+          positions: positionsCents / 100,
+          portfolio_value: portfolioValueCents / 100,
+        },
+      });
+    }
+    
+    // Regular GET - fetch existing snapshots
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '90');
 
@@ -162,7 +210,7 @@ export async function GET(request: Request) {
       snapshots: snapshots || [],
     });
   } catch (error) {
-    console.error('Error fetching snapshots:', error);
+    console.error('Error in snapshot endpoint:', error);
     return NextResponse.json(
       { success: false, error: String(error) },
       { status: 500 }
