@@ -52,6 +52,7 @@ interface DailyRecord {
   pnl_cents: number;
   roic_percent: number;
   avg_price_cents: number;
+  deployed_cents: number;
   source: 'snapshot' | 'calculated';
 }
 
@@ -261,6 +262,9 @@ export async function GET(request: Request) {
         ? confirmedOrders.reduce((sum: number, o: any) => sum + (o.price_cents || 0), 0) / confirmedOrders.length
         : 0;
       
+      // Get deployed_cents from snapshot (sum of all orders placed on this day)
+      const deployedCents = snapshot?.deployed_cents || 0;
+      
       records.push({
         date,
         start_cash_cents: Math.round(startCash),
@@ -273,6 +277,7 @@ export async function GET(request: Request) {
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
         avg_price_cents: Math.round(avgPrice),
+        deployed_cents: deployedCents,
         source: snapshot ? 'snapshot' : 'calculated',
       });
     }

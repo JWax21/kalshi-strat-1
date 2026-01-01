@@ -2869,15 +2869,8 @@ export default function Dashboard() {
                     {recordsData.records
                       .filter(record => record.date <= getTodayET())
                       .map((record, idx) => {
-                      // Get deployed amount for this day based on placement_status_at timestamp
-                      const allOrders = orderBatches.flatMap(b => b.orders || []);
-                      const confirmedOrders = allOrders.filter(o => {
-                        if (o.placement_status !== 'confirmed' || !o.placement_status_at) return false;
-                        const placedDate = getDateFromTimestampET(o.placement_status_at);
-                        return placedDate === record.date;
-                      });
-                      const deployedCents = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-                      const numEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
+                      // Get deployed amount from the record (stored in daily_snapshots)
+                      const deployedCents = (record as any).deployed_cents || 0;
                       
                       return (
                         <tr key={record.date} className={`border-t border-slate-800 ${idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/50'}`}>
@@ -2903,7 +2896,7 @@ export default function Dashboard() {
                           </td>
                           <td className="p-4 text-right font-mono text-emerald-400">
                             {deployedCents > 0 ? (
-                              <><span className="text-emerald-600">{numEvents}</span>|${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
+                              <>${Math.round(deployedCents / 100).toLocaleString('en-US')}</>
                             ) : '—'}
                           </td>
                           <td className="p-4 text-center font-mono">
