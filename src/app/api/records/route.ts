@@ -268,6 +268,11 @@ export async function GET(request: Request) {
       // Get deployed_cents from snapshot (sum of all orders placed on this day)
       const deployedCents = snapshot?.deployed_cents || 0;
       
+      // Debug: Log pending count for 2026-01-01
+      if (date === '2026-01-01') {
+        console.log(`[DEBUG] Jan 1 2026: dayOrders=${dayOrders.length}, confirmed=${confirmedOrders.length}, pending=${pendingCount}, won=${wonCount}`);
+      }
+      
       records.push({
         date,
         start_cash_cents: Math.round(startCash),
@@ -282,6 +287,8 @@ export async function GET(request: Request) {
         avg_price_cents: Math.round(avgPrice),
         deployed_cents: deployedCents,
         source: snapshot ? 'snapshot' : 'calculated',
+        _debug_dayOrders: date === '2026-01-01' ? dayOrders.length : undefined,
+        _debug_confirmedOrders: date === '2026-01-01' ? confirmedOrders.length : undefined,
       });
     }
 
