@@ -177,57 +177,75 @@ export async function GET(request: Request) {
       ...Object.keys(snapshotMap),
     ])].sort();
 
-    // Build records with start/end values
-    const records: DailyRecord[] = [];
-    let previousEndCash = currentBalance;
-    let previousEndPositions = currentPositions;
-
-    // Work backwards to estimate historical start values
-    for (let i = allDates.length - 1; i >= 0; i--) {
-      const date = allDates[i];
-      const dayOrders = ordersByDate[date] || [];
-      const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
-      const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
-      const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
-      
-      const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-      const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-      const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-      const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-      const dayPnl = payout - fees - wonCost - lostCost;
-      
-      // Subtract P&L to get previous day's end cash
-      previousEndCash = previousEndCash - dayPnl;
-    }
-
-    // Now build records going forward
-    let runningCash = previousEndCash;
+    // Build records using stored snapshots
+    // Dec 24, 2025 started with $10,000 cash, $0 positions
+    const STARTING_CASH = 1000000; // $10,000 in cents
+    const STARTING_POSITIONS = 0;
+    const STARTING_PORTFOLIO = STARTING_CASH + STARTING_POSITIONS;
     
-    for (const date of allDates) {
+    const records: DailyRecord[] = [];
+    
+    // Sort dates ascending for proper start/end calculation
+    const sortedDates = [...allDates].sort();
+    
+    for (let i = 0; i < sortedDates.length; i++) {
+      const date = sortedDates[i];
       const snapshot = snapshotMap[date];
       const dayOrders = ordersByDate[date] || [];
-      const confirmedOrders = dayOrders.filter(o => o.placement_status === 'confirmed');
-      const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
-      const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
+      const confirmedOrders = dayOrders.filter((o: any) => o.placement_status === 'confirmed');
+      const wonOrders = confirmedOrders.filter((o: any) => o.result_status === 'won');
+      const lostOrders = confirmedOrders.filter((o: any) => o.result_status === 'lost');
       
       // Count individual orders (not unique events)
       const wonCount = wonOrders.length;
       const lostCount = lostOrders.length;
       
-      const payout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-      const fees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-      const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-      const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+      // Get P&L from orders
+      const payout = wonOrders.reduce((sum: number, o: any) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
+      const fees = [...wonOrders, ...lostOrders].reduce((sum: number, o: any) => sum + (o.fee_cents || 0), 0);
+      const wonCost = wonOrders.reduce((sum: number, o: any) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+      const lostCost = lostOrders.reduce((sum: number, o: any) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
       const dayPnl = payout - fees - wonCost - lostCost;
       
-      const startCash = runningCash;
-      const endCash = startCash + dayPnl;
+      // START values: 
+      // - First day (Dec 24): use STARTING values ($10,000)
+      // - Other days: use previous day's snapshot END values
+      let startCash: number;
+      let startPositions: number;
       
-      // Use snapshot positions if available, otherwise current positions
-      const endPositions = snapshot ? snapshot.positions_cents : currentPositions;
-      const startPositions = endPositions; // Approximate - positions at start roughly same
+      if (i === 0) {
+        // First day starts with $10,000
+        startCash = STARTING_CASH;
+        startPositions = STARTING_POSITIONS;
+      } else {
+        // Get previous day's snapshot for start values
+        const prevDate = sortedDates[i - 1];
+        const prevSnapshot = snapshotMap[prevDate];
+        if (prevSnapshot) {
+          startCash = prevSnapshot.balance_cents || 0;
+          startPositions = prevSnapshot.positions_cents || 0;
+        } else {
+          // Fallback to starting values if no snapshot
+          startCash = STARTING_CASH;
+          startPositions = STARTING_POSITIONS;
+        }
+      }
       
       const startPortfolio = startCash + startPositions;
+      
+      // END values: use snapshot if available
+      let endCash: number;
+      let endPositions: number;
+      
+      if (snapshot) {
+        endCash = snapshot.balance_cents || 0;
+        endPositions = snapshot.positions_cents || 0;
+      } else {
+        // Calculate from start + P&L if no snapshot
+        endCash = startCash + dayPnl;
+        endPositions = startPositions;
+      }
+      
       const endPortfolio = endCash + endPositions;
       
       // Calculate ROIC
@@ -235,7 +253,7 @@ export async function GET(request: Request) {
       
       // Calculate average price of contracts bet on that day
       const avgPrice = confirmedOrders.length > 0
-        ? confirmedOrders.reduce((sum, o) => sum + (o.price_cents || 0), 0) / confirmedOrders.length
+        ? confirmedOrders.reduce((sum: number, o: any) => sum + (o.price_cents || 0), 0) / confirmedOrders.length
         : 0;
       
       records.push({
@@ -246,14 +264,12 @@ export async function GET(request: Request) {
         end_portfolio_cents: Math.round(endPortfolio),
         wins: wonCount,
         losses: lostCount,
-        pending: 0, // Pending shown as total, not per-day
+        pending: 0,
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
         avg_price_cents: Math.round(avgPrice),
         source: snapshot ? 'snapshot' : 'calculated',
       });
-      
-      runningCash = endCash;
     }
 
     // Sort by date descending (most recent first)
