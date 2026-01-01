@@ -48,7 +48,7 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'records' | 'orders' | 'markets' | 'positions' | 'losses' | 'whatif';
+type Tab = 'records' | 'orders' | 'markets' | 'positions' | 'losses';
 
 interface DailyRecord {
   date: string;
@@ -1040,7 +1040,7 @@ export default function Dashboard() {
       fetchRecords();
     } else if (activeTab === 'losses') {
       fetchLosses();
-    } else if (activeTab === 'whatif') {
+      // Also fetch whatif data for the What If Analysis section within Losses tab
       fetchWhatIf();
       fetchScenarios();
     }
@@ -1329,10 +1329,9 @@ export default function Dashboard() {
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
             <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
             <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
-            <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Losses</button>
-            <button onClick={() => setActiveTab('whatif')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'whatif' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}>What If</button>
-            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Schedule</button>
+            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Deployment</button>
             <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Events</button>
+            <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Losses</button>
           </div>
           
           {activeTab === 'markets' && filteredMarkets.length > 0 && (
@@ -3367,17 +3366,13 @@ export default function Dashboard() {
                 No losses found in the last 90 days. 🎉
               </div>
             )}
-          </div>
-        )}
 
-        {/* What If Tab */}
-        {activeTab === 'whatif' && (
-          <div className="py-8">
-            {/* Header */}
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold text-white">What If Analysis</h2>
-              <p className="text-slate-400 text-sm mt-1">Simulate automatic stop-loss selling with historical price data</p>
-            </div>
+            {/* What If Analysis Section */}
+            <div className="mt-12 pt-8 border-t border-slate-700">
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-white">What If Analysis</h2>
+                <p className="text-slate-400 text-sm mt-1">Simulate automatic stop-loss selling with historical price data</p>
+              </div>
 
             {whatIfLoading && !whatIfData ? (
               <div className="text-center py-12 text-slate-400">
@@ -4072,6 +4067,7 @@ export default function Dashboard() {
                 No settled orders to analyze yet.
               </div>
             )}
+            </div>
           </div>
         )}
 
