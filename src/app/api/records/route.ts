@@ -278,7 +278,7 @@ export async function GET(request: Request) {
         pending: pendingCount,
         pnl_cents: dayPnl,
         roic_percent: Math.round(roic * 100) / 100,
-        avg_price_cents: Math.round(avgPrice) + 1000, // TEMP DEBUG: should show 1094 not 94
+        avg_price_cents: Math.round(avgPrice),
         deployed_cents: deployedCents,
         source: snapshot ? 'snapshot' : 'calculated',
       });
