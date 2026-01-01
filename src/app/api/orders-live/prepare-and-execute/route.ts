@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getMarkets, filterHighOddsMarkets, getMarketOdds, getBalance, placeOrder, KalshiMarket } from '@/lib/kalshi';
+import { getMarkets, filterHighOddsMarkets, getMarketOdds, getBalance, placeOrder, KalshiMarket, kalshiFetch } from '@/lib/kalshi';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -50,6 +50,19 @@ export async function POST(request: Request) {
     }
 
     console.log(`Portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (from Kalshi), available: $${(availableBalance / 100).toFixed(2)}`);
+
+    // Get current positions to check existing exposure for each ticker
+    // CRITICAL: Must check TOTAL exposure (existing + new) against 3% cap
+    let currentPositions = new Map<string, any>();
+    try {
+      const positionsData = await kalshiFetch('/portfolio/positions');
+      currentPositions = new Map(
+        (positionsData.market_positions || []).map((p: any) => [p.ticker, p])
+      );
+      console.log(`Fetched ${currentPositions.size} current positions for exposure check`);
+    } catch (e) {
+      console.error('Error fetching positions (will proceed without existing exposure check):', e);
+    }
 
     if (availableBalance < 100) { // Less than $1
       return NextResponse.json({ success: false, error: 'Insufficient balance' }, { status: 400 });
@@ -280,9 +293,16 @@ export async function POST(request: Request) {
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio
         // This is an UNBREAKABLE barrier - final safety check before placing
+        // CRITICAL: Check TOTAL exposure (existing + new), not just new order
         // ========================================
-        if (order.cost_cents > hardCapCents) {
-          const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${order.cost_cents}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolioCents}¢`;
+        const existingPosition = currentPositions.get(order.ticker);
+        const existingExposureCents = existingPosition 
+          ? (existingPosition.market_exposure || 0) 
+          : 0;
+        const totalPositionCost = existingExposureCents + order.cost_cents;
+        
+        if (totalPositionCost > hardCapCents) {
+          const errorMsg = `HARD CAP BLOCKED: ${order.ticker} total ${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${order.cost_cents}¢) exceeds 3% cap (${hardCapCents}¢). Portfolio: ${totalPortfolioCents}¢`;
           console.error(errorMsg);
           
           // Mark as queued instead of placing

@@ -500,9 +500,16 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           // ========================================
           // HARD CAP GUARD: NEVER exceed 3% of total portfolio
           // This is an UNBREAKABLE barrier - final safety check before placing
+          // CRITICAL: Check TOTAL position (existing + new), not just new order
           // ========================================
-          if (recalculatedCost > hardCapCents) {
-            const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${recalculatedCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢`;
+          const existingPosition = currentPositions.get(order.ticker);
+          const existingExposureCents = existingPosition 
+            ? ((existingPosition as any).market_exposure || 0) 
+            : 0;
+          const totalPositionCost = existingExposureCents + recalculatedCost;
+          
+          if (totalPositionCost > hardCapCents) {
+            const errorMsg = `HARD CAP BLOCKED: ${order.ticker} total ${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${recalculatedCost}¢) exceeds 3% cap (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢`;
             console.error(errorMsg);
             result.details.errors.push(errorMsg);
             
@@ -922,11 +929,17 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio
         // This is an UNBREAKABLE barrier - final safety check before placing
-        // CRITICAL: Use totalPortfolioValue from Kalshi directly
+        // CRITICAL: Check TOTAL position (existing + new), not just new order
         // ========================================
         const hardCapCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
-        if (thisBetCost > hardCapCents) {
-          const errorMsg = `HARD CAP BLOCKED: ${market.ticker} cost ${thisBetCost}¢ exceeds 3% of portfolio (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢ (from Kalshi)`;
+        const existingPosition = currentPositions.get(market.ticker);
+        const existingExposureCents = existingPosition 
+          ? ((existingPosition as any).market_exposure || 0) 
+          : 0;
+        const totalPositionCost = existingExposureCents + thisBetCost;
+        
+        if (totalPositionCost > hardCapCents) {
+          const errorMsg = `HARD CAP BLOCKED: ${market.ticker} total ${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${thisBetCost}¢) exceeds 3% cap (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢`;
           console.error(errorMsg);
           result.details.errors.push(errorMsg);
           continue; // Skip this order entirely

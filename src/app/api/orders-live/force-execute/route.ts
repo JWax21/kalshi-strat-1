@@ -68,6 +68,19 @@ export async function POST(request: Request) {
       });
     }
 
+    // Get current positions to check existing exposure for each ticker
+    // CRITICAL: Must check TOTAL exposure (existing + new) against 3% cap
+    let currentPositions = new Map<string, any>();
+    try {
+      const positionsData = await kalshiFetch('/portfolio/positions');
+      currentPositions = new Map(
+        (positionsData.market_positions || []).map((p: any) => [p.ticker, p])
+      );
+      console.log(`Fetched ${currentPositions.size} current positions for exposure check`);
+    } catch (e) {
+      console.error('Error fetching positions (will proceed without existing exposure check):', e);
+    }
+
     // Calculate hard cap (UNBREAKABLE 3% barrier)
     // CRITICAL: Use portfolio_value from Kalshi directly
     const MAX_POSITION_PERCENT = 0.03;
@@ -112,12 +125,19 @@ export async function POST(request: Request) {
       // ========================================
       // HARD CAP GUARD: NEVER exceed 3% of total portfolio
       // This is an UNBREAKABLE barrier - final safety check before placing
+      // CRITICAL: Check TOTAL exposure (existing + new), not just new order
       // ========================================
-      if (orderCost > hardCapCents) {
+      const existingPosition = currentPositions.get(order.ticker);
+      const existingExposureCents = existingPosition 
+        ? (existingPosition.market_exposure || 0) 
+        : 0;
+      const totalPositionCost = existingExposureCents + orderCost;
+      
+      if (totalPositionCost > hardCapCents) {
         results.push({
           ticker: order.ticker,
           status: 'blocked',
-          reason: `HARD CAP: Cost $${(orderCost/100).toFixed(2)} exceeds 3% of portfolio ($${(hardCapCents/100).toFixed(2)})`
+          reason: `HARD CAP: Total $${(totalPositionCost/100).toFixed(2)} (existing $${(existingExposureCents/100).toFixed(2)} + new $${(orderCost/100).toFixed(2)}) exceeds 3% cap ($${(hardCapCents/100).toFixed(2)})`
         });
         
         // Mark as queued

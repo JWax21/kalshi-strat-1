@@ -160,6 +160,20 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
       result.errors.push(`Failed to fetch portfolio_value: ${e}`);
     }
     
+    // CRITICAL: Fetch ACTUAL positions from Kalshi (not DB which may be stale)
+    // This is the source of truth for existing exposure per ticker
+    let actualPositions = new Map<string, number>();
+    try {
+      const positionsData = await kalshiFetch('/portfolio/positions');
+      for (const p of positionsData.market_positions || []) {
+        // market_exposure is the actual cost/exposure in cents
+        actualPositions.set(p.ticker, p.market_exposure || 0);
+      }
+      console.log(`Fetched ${actualPositions.size} actual positions from Kalshi`);
+    } catch (e) {
+      result.errors.push(`Failed to fetch positions: ${e}`);
+    }
+    
     // Calculate hard cap using Kalshi's portfolio_value
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
@@ -187,8 +201,15 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
         for (const order of confirmedOrders) {
           if (availableCapitalCents <= 0) break;
 
-          const currentPositionValue = order.executed_cost_cents || order.cost_cents;
+          // CRITICAL: Use ACTUAL Kalshi exposure, not stale DB values
+          // This prevents stacking when multiple cron jobs run
+          const actualExposure = actualPositions.get(order.ticker) || 0;
+          const currentPositionValue = actualExposure > 0 ? actualExposure : (order.executed_cost_cents || order.cost_cents);
           const roomToAdd = hardCapCents - currentPositionValue;
+          
+          if (actualExposure > 0) {
+            console.log(`${order.ticker}: Using Kalshi exposure ${actualExposure}¢ (DB: ${order.executed_cost_cents || order.cost_cents}¢)`);
+          }
 
           if (roomToAdd > 0) {
             const unitCost = order.price_cents;

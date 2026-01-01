@@ -76,6 +76,19 @@ async function executeOrders() {
     };
   }
 
+  // Get current positions to check existing exposure for each ticker
+  // CRITICAL: Must check TOTAL exposure (existing + new) against 3% cap
+  let currentPositions = new Map<string, any>();
+  try {
+    const positionsData = await kalshiFetch('/portfolio/positions');
+    currentPositions = new Map(
+      (positionsData.market_positions || []).map((p: any) => [p.ticker, p])
+    );
+    console.log(`Fetched ${currentPositions.size} current positions for exposure check`);
+  } catch (e) {
+    console.error('Error fetching positions (will proceed without existing exposure check):', e);
+  }
+
   // Calculate hard cap (UNBREAKABLE 3% barrier)
   // CRITICAL: Use portfolio_value from Kalshi directly
   const MAX_POSITION_PERCENT = 0.03;
@@ -145,9 +158,16 @@ async function executeOrders() {
       // ========================================
       // HARD CAP GUARD: NEVER exceed 3% of total portfolio
       // This is an UNBREAKABLE barrier - final safety check before placing
+      // CRITICAL: Check TOTAL exposure (existing + new), not just new order
       // ========================================
-      if (orderCost > hardCapCents) {
-        const errorMsg = `HARD CAP BLOCKED: ${order.ticker} cost ${orderCost}¢ exceeds 3% of portfolio (${hardCapCents}¢)`;
+      const existingPosition = currentPositions.get(order.ticker);
+      const existingExposureCents = existingPosition 
+        ? (existingPosition.market_exposure || 0) 
+        : 0;
+      const totalPositionCost = existingExposureCents + orderCost;
+      
+      if (totalPositionCost > hardCapCents) {
+        const errorMsg = `HARD CAP BLOCKED: ${order.ticker} total ${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${orderCost}¢) exceeds 3% cap (${hardCapCents}¢)`;
         console.error(errorMsg);
         errors.push(errorMsg);
         
