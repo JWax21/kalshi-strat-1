@@ -2741,6 +2741,38 @@ export default function Dashboard() {
                     );
                   })()}
                 </div>
+                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  <div className="text-xs text-slate-500 uppercase mb-2">Odds | Win%</div>
+                  {(() => {
+                    const allRecords = recordsData.records || [];
+                    const totalWins = allRecords.reduce((sum, r) => sum + r.wins, 0);
+                    const totalLosses = allRecords.reduce((sum, r) => sum + r.losses, 0);
+                    const totalGames = totalWins + totalLosses;
+                    
+                    // Calculate weighted average odds across all records
+                    const recordsWithOdds = allRecords.filter(r => r.avg_price_cents > 0 && (r.wins + r.losses) > 0);
+                    const weightedOdds = recordsWithOdds.length > 0
+                      ? recordsWithOdds.reduce((sum, r) => sum + r.avg_price_cents * (r.wins + r.losses), 0) / 
+                        recordsWithOdds.reduce((sum, r) => sum + (r.wins + r.losses), 0)
+                      : 0;
+                    
+                    const winPct = totalGames > 0 ? (totalWins / totalGames) * 100 : 0;
+                    const oddsHigher = weightedOdds > winPct;
+                    const winHigher = winPct > weightedOdds;
+                    
+                    return (
+                      <div className="text-lg font-mono">
+                        <span className={oddsHigher ? 'text-red-400' : 'text-slate-300'}>
+                          {weightedOdds > 0 ? weightedOdds.toFixed(2) : '—'}
+                        </span>
+                        <span className="text-slate-500 mx-1">|</span>
+                        <span className={winHigher ? 'text-emerald-400' : 'text-slate-300'}>
+                          {totalGames > 0 ? winPct.toFixed(2) : '—'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <button
                   onClick={() => setShowRulesModal(true)}
                   className="bg-slate-900 rounded-xl p-4 border border-slate-800 hover:border-slate-600 transition-colors flex items-center gap-2"
