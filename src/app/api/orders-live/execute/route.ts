@@ -1,9 +1,43 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { getBalance, placeOrder } from '@/lib/kalshi';
+import crypto from 'crypto';
+import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Helper to make authenticated Kalshi API calls
+async function kalshiFetch(endpoint: string): Promise<any> {
+  const timestampMs = Date.now().toString();
+  const method = 'GET';
+  const pathWithoutQuery = endpoint.split('?')[0];
+  const fullPath = `/trade-api/v2${pathWithoutQuery}`;
+
+  const message = `${timestampMs}${method}${fullPath}`;
+  const privateKey = crypto.createPrivateKey(KALSHI_CONFIG.privateKey);
+  const signature = crypto.sign('sha256', Buffer.from(message), {
+    key: privateKey,
+    padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+    saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+  }).toString('base64');
+
+  const response = await fetch(`${KALSHI_CONFIG.baseUrl}${endpoint}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'KALSHI-ACCESS-KEY': KALSHI_CONFIG.apiKey,
+      'KALSHI-ACCESS-SIGNATURE': signature,
+      'KALSHI-ACCESS-TIMESTAMP': timestampMs,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kalshi API error: ${response.status}`);
+  }
+
+  return response.json();
+}
 
 async function executeOrders() {
   // Get today's date
