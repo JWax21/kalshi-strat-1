@@ -558,43 +558,12 @@ export default function Dashboard() {
   // Candlestick analysis state
   const [candlestickData, setCandlestickData] = useState<{
     success: boolean;
-    summary: {
-      total_wins: number;
-      processed: number;
-      with_candlesticks: number;
-      hit_50: number;
-      hit_60: number;
-      hit_70: number;
-      hit_80: number;
-      hit_50_pct: string;
-      hit_60_pct: string;
-      hit_70_pct: string;
-      hit_80_pct: string;
-    };
-    wins_hit_50: Array<{
-      ticker: string;
-      title: string;
-      side: string;
-      entry_price: number;
-      min_price: number | null;
-      hit_50: boolean;
-      cost_cents: number;
-      payout_cents: number;
+    total_wins: number;
+    thresholds: Array<{
+      low: number;
+      count: number;
+      pct: string;
     }>;
-    all_results: Array<{
-      ticker: string;
-      title: string;
-      side: string;
-      entry_price: number;
-      min_price: number | null;
-      hit_50: boolean;
-      hit_60: boolean;
-      hit_70: boolean;
-      hit_80: boolean;
-      cost_cents: number;
-      payout_cents: number;
-    }>;
-    errors: string[];
   } | null>(null);
   const [candlestickLoading, setCandlestickLoading] = useState(false);
 
@@ -4363,7 +4332,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Pattern Analysis */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                       {/* By League */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
@@ -4424,33 +4393,6 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      {/* By Day of Week */}
-                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                        <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Losses by Day
-                        </h3>
-                        <div className="space-y-2">
-                          {Object.entries(lossesData.summary.by_day_of_week)
-                            .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                            .map(([day, data]) => (
-                              <div
-                                key={day}
-                                className="flex justify-between items-center"
-                              >
-                                <span className="text-white">{day}</span>
-                                <div className="text-right">
-                                  <span className="text-red-400 font-mono">
-                                    -${(data.lost_cents / 100).toLocaleString()}
-                                  </span>
-                                  <span className="text-slate-500 text-xs ml-2">
-                                    ({data.count})
-                                  </span>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      </div>
-
                       {/* By Venue (Home/Away) */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
@@ -4471,41 +4413,6 @@ export default function Dashboard() {
                                     {venue === "away" && "✈️"}
                                     {venue === "neutral" && "⚖️"}
                                     {venue}
-                                  </span>
-                                  <div className="text-right">
-                                    <span className="text-red-400 font-mono">
-                                      -$
-                                      {(data.lost_cents / 100).toLocaleString()}
-                                    </span>
-                                    <span className="text-slate-500 text-xs ml-2">
-                                      ({data.count})
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                        </div>
-                      </div>
-
-                      {/* By Timing (Pre-game vs Live) */}
-                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                        <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Pre-Game vs Live
-                        </h3>
-                        <div className="space-y-2">
-                          {lossesData.summary.by_timing &&
-                            Object.entries(lossesData.summary.by_timing)
-                              .filter(([, data]) => data.count > 0)
-                              .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                              .map(([timing, data]) => (
-                                <div
-                                  key={timing}
-                                  className="flex justify-between items-center"
-                                >
-                                  <span className="text-white capitalize flex items-center gap-2">
-                                    {timing === "pre-game" && "📅"}
-                                    {timing === "live" && "🔴"}
-                                    {timing === "unknown" && "❓"}
-                                    {timing}
                                   </span>
                                   <div className="text-right">
                                     <span className="text-red-400 font-mono">
@@ -5130,7 +5037,9 @@ export default function Dashboard() {
                         <thead>
                           <tr className="text-slate-400 border-b border-slate-700">
                             <th className="text-left py-2 px-3">Low (≤)</th>
-                            <th className="text-right py-2 px-3">Number of Teams</th>
+                            <th className="text-right py-2 px-3">
+                              Number of Teams
+                            </th>
                             <th className="text-right py-2 px-3">% of Wins</th>
                           </tr>
                         </thead>
