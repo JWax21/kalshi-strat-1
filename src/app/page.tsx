@@ -5106,149 +5106,55 @@ export default function Dashboard() {
                     This may take a moment (~300 wins)
                   </p>
                 </div>
-              ) : candlestickData?.summary ? (
+              ) : candlestickData?.thresholds ? (
                 <>
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                  {/* Total Wins Card */}
+                  <div className="mb-6">
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 inline-block">
                       <div className="text-xs text-slate-500 uppercase mb-1">
-                        Total Wins
+                        Total Wins Analyzed
                       </div>
                       <div className="text-2xl font-bold text-emerald-400">
-                        {candlestickData.summary.total_wins}
-                      </div>
-                    </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">
-                        With Candlestick Data
-                      </div>
-                      <div className="text-2xl font-bold text-white">
-                        {candlestickData.summary.with_candlesticks}
-                      </div>
-                    </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-red-500/30">
-                      <div className="text-xs text-slate-500 uppercase mb-1">
-                        Hit ≤50¢
-                      </div>
-                      <div className="text-2xl font-bold text-red-400">
-                        {candlestickData.summary.hit_50}
-                      </div>
-                      <div className="text-xs text-red-400/70 mt-1">
-                        {candlestickData.summary.hit_50_pct}%
-                      </div>
-                    </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-amber-500/30">
-                      <div className="text-xs text-slate-500 uppercase mb-1">
-                        Hit ≤60¢
-                      </div>
-                      <div className="text-2xl font-bold text-amber-400">
-                        {candlestickData.summary.hit_60}
-                      </div>
-                      <div className="text-xs text-amber-400/70 mt-1">
-                        {candlestickData.summary.hit_60_pct}%
-                      </div>
-                    </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-yellow-500/30">
-                      <div className="text-xs text-slate-500 uppercase mb-1">
-                        Hit ≤70¢
-                      </div>
-                      <div className="text-2xl font-bold text-yellow-400">
-                        {candlestickData.summary.hit_70}
-                      </div>
-                      <div className="text-xs text-yellow-400/70 mt-1">
-                        {candlestickData.summary.hit_70_pct}%
+                        {candlestickData.total_wins}
                       </div>
                     </div>
                   </div>
 
-                  {/* Key Insight */}
-                  <div className="bg-gradient-to-r from-red-500/10 to-amber-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">⚠️</span>
-                      <div>
-                        <div className="text-white font-medium">
-                          {candlestickData.summary.hit_50} of{" "}
-                          {candlestickData.summary.with_candlesticks} wins (
-                          {candlestickData.summary.hit_50_pct}%) dropped to 50¢
-                          or below before winning
-                        </div>
-                        <div className="text-slate-400 text-sm">
-                          These would have been stopped out at a 50¢ stop-loss
-                          threshold
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Wins that hit 50 table */}
-                  {candlestickData.wins_hit_50.length > 0 && (
-                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <h3 className="text-sm font-medium text-slate-400 mb-3">
-                        Wins that dipped to ≤50¢ (
-                        {candlestickData.wins_hit_50.length} trades)
-                      </h3>
-                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                        <table className="w-full text-sm">
-                          <thead className="sticky top-0 bg-slate-900">
-                            <tr className="text-slate-400 border-b border-slate-700">
-                              <th className="text-left py-2 px-2">Market</th>
-                              <th className="text-center py-2 px-2">Side</th>
-                              <th className="text-right py-2 px-2">Entry</th>
-                              <th className="text-right py-2 px-2">Low</th>
-                              <th className="text-right py-2 px-2">Cost</th>
-                              <th className="text-right py-2 px-2">Payout</th>
-                              <th className="text-right py-2 px-2">Profit</th>
+                  {/* Threshold Summary Table */}
+                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                    <h3 className="text-sm font-medium text-slate-400 mb-3">
+                      Wins by Minimum Price Reached
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-slate-400 border-b border-slate-700">
+                            <th className="text-left py-2 px-3">Low (≤)</th>
+                            <th className="text-right py-2 px-3">Number of Teams</th>
+                            <th className="text-right py-2 px-3">% of Wins</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {candlestickData.thresholds.map((t) => (
+                            <tr
+                              key={t.low}
+                              className="border-b border-slate-800 hover:bg-slate-800/50"
+                            >
+                              <td className="py-2 px-3 font-mono text-white">
+                                {t.low}¢
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-amber-400">
+                                {t.count}
+                              </td>
+                              <td className="py-2 px-3 text-right font-mono text-slate-400">
+                                {t.pct}%
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {candlestickData.wins_hit_50.map((win) => (
-                              <tr
-                                key={win.ticker}
-                                className="border-b border-slate-800 hover:bg-slate-800/50"
-                              >
-                                <td
-                                  className="py-2 px-2 text-white max-w-[250px] truncate"
-                                  title={win.title}
-                                >
-                                  {win.title}
-                                </td>
-                                <td className="py-2 px-2 text-center">
-                                  <span
-                                    className={
-                                      win.side === "YES"
-                                        ? "text-emerald-400"
-                                        : "text-red-400"
-                                    }
-                                  >
-                                    {win.side}
-                                  </span>
-                                </td>
-                                <td className="py-2 px-2 text-right font-mono text-white">
-                                  {win.entry_price}¢
-                                </td>
-                                <td className="py-2 px-2 text-right font-mono text-red-400">
-                                  {win.min_price}¢
-                                </td>
-                                <td className="py-2 px-2 text-right font-mono text-slate-400">
-                                  ${(win.cost_cents / 100).toFixed(2)}
-                                </td>
-                                <td className="py-2 px-2 text-right font-mono text-slate-400">
-                                  ${(win.payout_cents / 100).toFixed(2)}
-                                </td>
-                                <td className="py-2 px-2 text-right font-mono text-emerald-400">
-                                  +$
-                                  {(
-                                    (win.payout_cents - win.cost_cents) /
-                                    100
-                                  ).toFixed(2)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
+                  </div>
                 </>
               ) : (
                 <div className="text-center py-12 text-slate-400">
