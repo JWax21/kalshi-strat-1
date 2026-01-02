@@ -359,6 +359,7 @@ export default function Dashboard() {
   // All other state hooks (must come before any conditional returns)
   const [activeTab, setActiveTab] = useState<Tab>('records');
   const [positionsSubTab, setPositionsSubTab] = useState<'active' | 'historical'>('active');
+  const [lossesSubTab, setLossesSubTab] = useState<'summary' | 'teams' | 'individual'>('summary');
   const [historicalDays, setHistoricalDays] = useState<7 | 30 | 90>(7);
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
@@ -2936,12 +2937,49 @@ export default function Dashboard() {
               <p className="text-slate-400 text-sm mt-1">Detailed breakdown of losing trades</p>
             </div>
 
+            {/* Sub-tab Toggle */}
+            <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg mb-6 w-fit">
+              <button
+                onClick={() => setLossesSubTab('summary')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  lossesSubTab === 'summary'
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Summary
+              </button>
+              <button
+                onClick={() => setLossesSubTab('teams')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  lossesSubTab === 'teams'
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Teams
+              </button>
+              <button
+                onClick={() => setLossesSubTab('individual')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                  lossesSubTab === 'individual'
+                    ? 'bg-red-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                }`}
+              >
+                Individual
+              </button>
+            </div>
+
             {lossesLoading && !lossesData ? (
               <div className="text-center py-12 text-slate-400">Loading loss data...</div>
             ) : lossesData?.losses && lossesData.losses.length > 0 ? (
               <>
-                {/* Summary Cards */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                {/* Summary Sub-Tab */}
+                {lossesSubTab === 'summary' && (
+                  <>
+                    {/* Summary Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                     <div className="text-xs text-slate-500 uppercase mb-1">Total Losses</div>
                     <div className="text-2xl font-bold text-red-400">{lossesData.summary.total_losses}</div>
@@ -3070,41 +3108,32 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
-
-                {/* Top Losing Teams */}
-                {lossesData.summary.top_losing_teams && lossesData.summary.top_losing_teams.length > 0 && (
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Teams We Lost Betting On (Most Frequent)</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {lossesData.summary.top_losing_teams.map(({ team, count }) => (
-                        <span key={team} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm">
-                          {team} <span className="text-red-300">({count})</span>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
+                  </>
                 )}
 
-                {/* Monthly Breakdown */}
-                {lossesData.summary.by_month && Object.keys(lossesData.summary.by_month).length > 0 && (
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Month</h3>
-                    <div className="flex flex-wrap gap-4">
-                      {Object.entries(lossesData.summary.by_month)
-                        .sort((a, b) => b[0].localeCompare(a[0]))
-                        .map(([month, data]) => (
-                          <div key={month} className="text-center">
-                            <div className="text-slate-400 text-xs">{month}</div>
-                            <div className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</div>
-                            <div className="text-slate-500 text-xs">{data.count} losses</div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                {/* Teams Sub-Tab */}
+                {lossesSubTab === 'teams' && (
+                  <>
+                    {lossesData.summary.top_losing_teams && lossesData.summary.top_losing_teams.length > 0 ? (
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">Teams We Lost Betting On (Most Frequent)</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {lossesData.summary.top_losing_teams.map(({ team, count }) => (
+                            <span key={team} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm">
+                              {team} <span className="text-red-300">({count})</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-slate-400">No team data available</div>
+                    )}
+                  </>
                 )}
 
-                {/* Detailed Losses Table */}
-                <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+                {/* Individual Sub-Tab */}
+                {lossesSubTab === 'individual' && (
+                  <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
                   <table className="w-full text-sm min-w-[1200px]">
                     <thead className="bg-slate-800/50">
                       <tr>
@@ -3355,6 +3384,7 @@ export default function Dashboard() {
                     </tbody>
                   </table>
                 </div>
+                )}
               </>
             ) : (
               <div className="text-center py-12 text-slate-400">

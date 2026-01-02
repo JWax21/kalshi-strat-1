@@ -103,7 +103,7 @@ function buildResponseFromCache(cached: any[]) {
     },
     wins_hit_50: winsHit50,
     all_results: allResults,
-    errors: [],
+    errors: [] as string[],
   };
 }
 
