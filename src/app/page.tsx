@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import Container from "@/app/_components/container";
 import { IoInformationCircleSharp } from "react-icons/io5";
 
@@ -17,9 +17,9 @@ interface Market {
   open_interest: number;
   liquidity_dollars: string;
   close_time: string;
-  expected_expiration_time?: string;  // Actual game end time
+  expected_expiration_time?: string; // Actual game end time
   calculated_odds: { yes: number; no: number };
-  favorite_side: 'YES' | 'NO';
+  favorite_side: "YES" | "NO";
   favorite_odds: number;
 }
 
@@ -48,7 +48,7 @@ interface EventsResponse {
   error?: string;
 }
 
-type Tab = 'records' | 'orders' | 'markets' | 'positions' | 'losses';
+type Tab = "records" | "orders" | "markets" | "positions" | "losses";
 
 interface DailyRecord {
   date: string;
@@ -62,7 +62,7 @@ interface DailyRecord {
   pnl_cents: number;
   roic_percent: number;
   avg_price_cents: number;
-  source: 'snapshot' | 'calculated';
+  source: "snapshot" | "calculated";
 }
 
 interface RecordsData {
@@ -93,11 +93,17 @@ interface LossEntry {
   placement_status_at: string;
   league: string;
   day_of_week: string;
-  venue: 'home' | 'away' | 'neutral';
-  bet_timing: 'pre-game' | 'live' | 'unknown';
+  venue: "home" | "away" | "neutral";
+  bet_timing: "pre-game" | "live" | "unknown";
   implied_odds_percent: number;
   fills: { price: number; count: number; created_time: string; side: string }[];
-  candlesticks: { ts: string; open: number; high: number; low: number; close: number }[];
+  candlesticks: {
+    ts: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  }[];
   max_price_cents: number | null;
   min_price_cents: number | null;
 }
@@ -106,7 +112,10 @@ interface LossesSummary {
   total_losses: number;
   total_lost_cents: number;
   avg_odds: number;
-  by_league: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number }>;
+  by_league: Record<
+    string,
+    { count: number; total_bets: number; lost_cents: number; avg_odds: number }
+  >;
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
   by_odds_range: Record<string, { count: number; lost_cents: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
@@ -129,7 +138,7 @@ interface WhatIfOrderAnalysis {
   units: number;
   entry_price_cents: number;
   cost_cents: number;
-  result_status: 'won' | 'lost';
+  result_status: "won" | "lost";
   price_history: { timestamp: string; yes_price: number; no_price: number }[];
   min_price_after_entry: number | null;
   max_price_after_entry: number | null;
@@ -178,7 +187,7 @@ interface LiveOrder {
   ticker: string;
   event_ticker: string;
   title: string;
-  side: 'YES' | 'NO';
+  side: "YES" | "NO";
   price_cents: number;
   units: number;
   cost_cents: number;
@@ -186,11 +195,11 @@ interface LiveOrder {
   open_interest: number;
   volume_24h: number | null;
   market_close_time: string;
-  placement_status: 'pending' | 'placed' | 'confirmed';
+  placement_status: "pending" | "placed" | "confirmed";
   placement_status_at: string | null;
-  result_status: 'undecided' | 'won' | 'lost';
+  result_status: "undecided" | "won" | "lost";
   result_status_at: string | null;
-  settlement_status: 'pending' | 'closed' | 'success';
+  settlement_status: "pending" | "closed" | "success";
   settlement_status_at: string | null;
   executed_price_cents: number | null;
   executed_cost_cents: number | null;
@@ -280,7 +289,7 @@ interface Orderbook {
 interface SelectedMarket {
   ticker: string;
   title: string;
-  favorite_side: 'YES' | 'NO';
+  favorite_side: "YES" | "NO";
   favorite_odds: number;
   count: number;
   orderbook?: Orderbook;
@@ -289,49 +298,93 @@ interface SelectedMarket {
 
 // Helper to get current date in Eastern Time (YYYY-MM-DD format)
 function getTodayET(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  });
 }
 
 // Helper to convert a UTC ISO timestamp to ET date (YYYY-MM-DD format)
 function getDateFromTimestampET(isoTimestamp: string): string {
-  return new Date(isoTimestamp).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  return new Date(isoTimestamp).toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  });
+}
+
+// Helper to get "trading day" from a timestamp with 5am ET cutoff
+// Orders placed before 5am ET count as the previous day
+function getTradingDayFromTimestamp(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+
+  // Get hours in ET
+  const etHour = parseInt(
+    date.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
+    })
+  );
+
+  // Get the calendar date in ET
+  const calendarDate = date.toLocaleDateString("en-CA", {
+    timeZone: "America/New_York",
+  });
+
+  // If before 5am ET, count as previous day
+  if (etHour < 5) {
+    return addDaysToDateET(calendarDate, -1);
+  }
+
+  return calendarDate;
 }
 
 // Helper to add days to an ET date string and return ET date string
 function addDaysToDateET(dateStr: string, days: number): string {
   // Parse the date as UTC noon to avoid timezone issues
-  const d = new Date(dateStr + 'T12:00:00Z');
+  const d = new Date(dateStr + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + days);
   // Return as YYYY-MM-DD
-  return d.toISOString().split('T')[0];
+  return d.toISOString().split("T")[0];
 }
 
 // Helper to format an ET date string for display
 function formatDateForDisplay(dateStr: string): string {
   // Parse as UTC noon to avoid timezone issues
-  const d = new Date(dateStr + 'T12:00:00Z');
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const d = new Date(dateStr + "T12:00:00Z");
+  return d.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 // Helper to count wins and losses by unique event_ticker
 // An event is considered "won" if ANY order for it won, "lost" only if ALL orders for it lost
-function countByUniqueEvent(orders: { event_ticker: string; result_status: string }[]): { wonEvents: number; lostEvents: number; wonEventTickers: Set<string>; lostEventTickers: Set<string> } {
-  const eventResults: Record<string, { hasWon: boolean; hasLost: boolean }> = {};
-  
+function countByUniqueEvent(
+  orders: { event_ticker: string; result_status: string }[]
+): {
+  wonEvents: number;
+  lostEvents: number;
+  wonEventTickers: Set<string>;
+  lostEventTickers: Set<string>;
+} {
+  const eventResults: Record<string, { hasWon: boolean; hasLost: boolean }> =
+    {};
+
   for (const order of orders) {
     if (!eventResults[order.event_ticker]) {
       eventResults[order.event_ticker] = { hasWon: false, hasLost: false };
     }
-    if (order.result_status === 'won') {
+    if (order.result_status === "won") {
       eventResults[order.event_ticker].hasWon = true;
-    } else if (order.result_status === 'lost') {
+    } else if (order.result_status === "lost") {
       eventResults[order.event_ticker].hasLost = true;
     }
   }
-  
+
   const wonEventTickers = new Set<string>();
   const lostEventTickers = new Set<string>();
-  
+
   for (const [eventTicker, result] of Object.entries(eventResults)) {
     if (result.hasWon) {
       wonEventTickers.add(eventTicker);
@@ -339,33 +392,37 @@ function countByUniqueEvent(orders: { event_ticker: string; result_status: strin
       lostEventTickers.add(eventTicker);
     }
   }
-  
+
   return {
     wonEvents: wonEventTickers.size,
     lostEvents: lostEventTickers.size,
     wonEventTickers,
-    lostEventTickers
+    lostEventTickers,
   };
 }
 
 export default function Dashboard() {
   // Auth state (must be first)
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authUsername, setAuthUsername] = useState('');
-  const [authPin, setAuthPin] = useState('');
-  const [authError, setAuthError] = useState('');
+  const [authUsername, setAuthUsername] = useState("");
+  const [authPin, setAuthPin] = useState("");
+  const [authError, setAuthError] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
   // All other state hooks (must come before any conditional returns)
-  const [activeTab, setActiveTab] = useState<Tab>('records');
-  const [positionsSubTab, setPositionsSubTab] = useState<'active' | 'historical'>('active');
-  const [lossesSubTab, setLossesSubTab] = useState<'summary' | 'teams' | 'individual'>('summary');
+  const [activeTab, setActiveTab] = useState<Tab>("records");
+  const [positionsSubTab, setPositionsSubTab] = useState<
+    "active" | "historical"
+  >("active");
+  const [lossesSubTab, setLossesSubTab] = useState<
+    "summary" | "teams" | "individual"
+  >("summary");
   const [historicalDays, setHistoricalDays] = useState<7 | 30 | 90>(7);
   const [marketsData, setMarketsData] = useState<MarketsResponse | null>(null);
   const [marketsLoading, setMarketsLoading] = useState(false);
   const [marketsError, setMarketsError] = useState<string | null>(null);
   const [loadingSeconds, setLoadingSeconds] = useState(0.0);
-  const [minOdds] = useState(0.90);
+  const [minOdds] = useState(0.9);
   const sportsOnlyMarkets = true;
   const [eventsData, setEventsData] = useState<EventsResponse | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -374,32 +431,37 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [displayOddsMin, setDisplayOddsMin] = useState(85);
   const [displayOddsMax, setDisplayOddsMax] = useState(99);
-  const [selectedSeries, setSelectedSeries] = useState<string>('All');
-  const [selectedGameDate, setSelectedGameDate] = useState<string>('all');
-  const [selectedMarkets, setSelectedMarkets] = useState<Map<string, SelectedMarket>>(new Map());
+  const [selectedSeries, setSelectedSeries] = useState<string>("All");
+  const [selectedGameDate, setSelectedGameDate] = useState<string>("all");
+  const [selectedMarkets, setSelectedMarkets] = useState<
+    Map<string, SelectedMarket>
+  >(new Map());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [orderCount, setOrderCount] = useState(1);
   const [orderBatches, setOrderBatches] = useState<OrderBatch[]>([]);
-  const [liveOrdersStats, setLiveOrdersStats] = useState<LiveOrdersStats | null>(null);
+  const [liveOrdersStats, setLiveOrdersStats] =
+    useState<LiveOrdersStats | null>(null);
   const [liveOrdersLoading, setLiveOrdersLoading] = useState(false);
-  const [dailySnapshots, setDailySnapshots] = useState<Record<string, number>>({});
+  const [dailySnapshots, setDailySnapshots] = useState<Record<string, number>>(
+    {}
+  );
   const [preparingOrders, setPreparingOrders] = useState(false);
-  
+
   // Records state
   const [recordsData, setRecordsData] = useState<RecordsData | null>(null);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [showRulesModal, setShowRulesModal] = useState(false);
-  
+
   // Losses state
   const [lossesData, setLossesData] = useState<LossesData | null>(null);
   const [lossesLoading, setLossesLoading] = useState(false);
-  
+
   // What-If simulation state
   const [stopLossPrice, setStopLossPrice] = useState(50); // Default 50 cents
   const [whatIfData, setWhatIfData] = useState<WhatIfData | null>(null);
   const [whatIfLoading, setWhatIfLoading] = useState(false);
-  
+
   // Scenarios analysis state
   interface EventBreakdown {
     event_ticker: string;
@@ -407,10 +469,10 @@ export default function Dashboard() {
     side: string;
     entry_price: number;
     would_bet: boolean;
-    actual_result: 'won' | 'lost';
+    actual_result: "won" | "lost";
     min_price: number | null;
     would_stop: boolean;
-    simulated_result: 'won' | 'stopped' | 'lost';
+    simulated_result: "won" | "stopped" | "lost";
     cost: number;
     actual_payout: number;
     simulated_payout: number;
@@ -418,7 +480,7 @@ export default function Dashboard() {
     simulated_pnl: number;
     market_close_time: string | null;
   }
-  
+
   const [scenariosData, setScenariosData] = useState<{
     scenarios: Array<{
       threshold: number;
@@ -461,30 +523,38 @@ export default function Dashboard() {
     stopLossValues: number[];
     thresholds: number[];
     optimal: { threshold: number; stopLoss: number; pnl: number };
-    allScenarios: Record<string, {
-      threshold: number;
-      stopLoss: number | null;
-      totalBets: number;
-      totalEvents: number;
-      wins: number;
-      losses: number;
-      winsStoppedOut: number;
-      lossesSaved: number;
-      winRate: number;
-      totalCost: number;
-      totalPayout: number;
-      stopLossRecovery: number;
-      missedWinProfit: number;
-      pnl: number;
-      roi: number;
-      breakdown: EventBreakdown[];
-    }>;
+    allScenarios: Record<
+      string,
+      {
+        threshold: number;
+        stopLoss: number | null;
+        totalBets: number;
+        totalEvents: number;
+        wins: number;
+        losses: number;
+        winsStoppedOut: number;
+        lossesSaved: number;
+        winRate: number;
+        totalCost: number;
+        totalPayout: number;
+        stopLossRecovery: number;
+        missedWinProfit: number;
+        pnl: number;
+        roi: number;
+        breakdown: EventBreakdown[];
+      }
+    >;
   } | null>(null);
-  
-  const [selectedThreshold, setSelectedThreshold] = useState<number | null>(null);
-  const [selectedCell, setSelectedCell] = useState<{ threshold: number; stopLoss: number } | null>(null);
+
+  const [selectedThreshold, setSelectedThreshold] = useState<number | null>(
+    null
+  );
+  const [selectedCell, setSelectedCell] = useState<{
+    threshold: number;
+    stopLoss: number;
+  } | null>(null);
   const [scenariosLoading, setScenariosLoading] = useState(false);
-  
+
   // Candlestick analysis state
   const [candlestickData, setCandlestickData] = useState<{
     success: boolean;
@@ -527,7 +597,7 @@ export default function Dashboard() {
     errors: string[];
   } | null>(null);
   const [candlestickLoading, setCandlestickLoading] = useState(false);
-  
+
   // Stop-loss monitoring state
   const [stopLossStatus, setStopLossStatus] = useState<{
     timestamp: string;
@@ -539,10 +609,10 @@ export default function Dashboard() {
     details: {
       ticker: string;
       title: string;
-      side: 'yes' | 'no';
+      side: "yes" | "no";
       currentOdds: number | null;
       validation: { isValid: boolean; confidence: string; issues: string[] };
-      action: 'sell' | 'hold' | 'error';
+      action: "sell" | "hold" | "error";
       reason: string;
     }[];
   } | null>(null);
@@ -554,61 +624,63 @@ export default function Dashboard() {
   const [reconcileResult, setReconcileResult] = useState<any>(null);
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [preparingWeek, setPreparingWeek] = useState(false);
-  
+
   // Calculate default day based on 4am ET cutoff
   // Before 4am ET = previous day, after 4am ET = current day
   const getDefaultDay = () => {
     const now = new Date();
     // Convert to ET (UTC-5 or UTC-4 depending on DST)
     // Get current hour in ET to check if before 4am
-    const etTimeStr = now.toLocaleString('en-US', { 
-      timeZone: 'America/New_York', 
-      hour: 'numeric', 
-      hour12: false 
+    const etTimeStr = now.toLocaleString("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      hour12: false,
     });
     const etHours = parseInt(etTimeStr);
-    
+
     // Get today's date in ET
     const todayET = getTodayET();
-    
+
     // If before 4am ET, use yesterday
     if (etHours < 4) {
       return addDaysToDateET(todayET, -1);
     }
     return todayET;
   };
-  
-  const [selectedDay, setSelectedDay] = useState<string | null>(getDefaultDay());
+
+  const [selectedDay, setSelectedDay] = useState<string | null>(
+    getDefaultDay()
+  );
   const [nextRefresh, setNextRefresh] = useState<number>(5 * 60);
 
   // Check for existing auth on mount
   useEffect(() => {
-    const savedAuth = sessionStorage.getItem('kalshi_auth');
-    if (savedAuth === 'true') {
+    const savedAuth = sessionStorage.getItem("kalshi_auth");
+    if (savedAuth === "true") {
       setIsAuthenticated(true);
     }
   }, []);
 
   const handleLogin = async () => {
     setAuthLoading(true);
-    setAuthError('');
-    
+    setAuthError("");
+
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: authUsername, pin: authPin }),
       });
       const data = await res.json();
-      
+
       if (data.success) {
         setIsAuthenticated(true);
-        sessionStorage.setItem('kalshi_auth', 'true');
+        sessionStorage.setItem("kalshi_auth", "true");
       } else {
-        setAuthError(data.error || 'Invalid credentials');
+        setAuthError(data.error || "Invalid credentials");
       }
     } catch (err) {
-      setAuthError('Authentication failed');
+      setAuthError("Authentication failed");
     } finally {
       setAuthLoading(false);
     }
@@ -616,9 +688,9 @@ export default function Dashboard() {
 
   const handleLogout = () => {
     setIsAuthenticated(false);
-    sessionStorage.removeItem('kalshi_auth');
-    setAuthUsername('');
-    setAuthPin('');
+    sessionStorage.removeItem("kalshi_auth");
+    setAuthUsername("");
+    setAuthPin("");
   };
 
   const fetchMarkets = useCallback(async () => {
@@ -627,18 +699,20 @@ export default function Dashboard() {
     try {
       // Use 17 days max_close_ts filter (15 days + 48 hours)
       const maxCloseHours = 17 * 24; // 17 days in hours
-      const categoryParam = sportsOnlyMarkets ? '&category=Sports' : '';
-      const pagesParam = sportsOnlyMarkets ? '' : '&pages=15'; // Sports uses series_ticker approach
-      const res = await fetch(`/api/markets?minOdds=${minOdds}&limit=1000&maxCloseHours=${maxCloseHours}${pagesParam}${categoryParam}`);
+      const categoryParam = sportsOnlyMarkets ? "&category=Sports" : "";
+      const pagesParam = sportsOnlyMarkets ? "" : "&pages=15"; // Sports uses series_ticker approach
+      const res = await fetch(
+        `/api/markets?minOdds=${minOdds}&limit=1000&maxCloseHours=${maxCloseHours}${pagesParam}${categoryParam}`
+      );
       const result: MarketsResponse = await res.json();
-      if (!result.success) throw new Error(result.error || 'Failed to fetch');
+      if (!result.success) throw new Error(result.error || "Failed to fetch");
       // Only update data after successful fetch (keep old data until new arrives)
       setMarketsData(result);
       setLastUpdated(new Date());
       setNextRefresh(5 * 60); // Reset countdown
     } catch (err) {
       // Keep old data on error, just show error message
-      setMarketsError(err instanceof Error ? err.message : 'Unknown error');
+      setMarketsError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setMarketsLoading(false);
     }
@@ -648,14 +722,16 @@ export default function Dashboard() {
     setEventsLoading(true);
     setEventsError(null);
     try {
-      const url = sportsOnly ? `/api/events?limit=200&category=Sports` : `/api/events?limit=200`;
+      const url = sportsOnly
+        ? `/api/events?limit=200&category=Sports`
+        : `/api/events?limit=200`;
       const res = await fetch(url);
       const result: EventsResponse = await res.json();
-      if (!result.success) throw new Error(result.error || 'Failed to fetch');
+      if (!result.success) throw new Error(result.error || "Failed to fetch");
       setEventsData(result);
       setLastUpdated(new Date());
     } catch (err) {
-      setEventsError(err instanceof Error ? err.message : 'Unknown error');
+      setEventsError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setEventsLoading(false);
     }
@@ -663,9 +739,9 @@ export default function Dashboard() {
 
   const handleRefresh = async () => {
     // Tab-aware refresh
-    if (activeTab === 'orders') {
+    if (activeTab === "orders") {
       await refreshAll();
-    } else if (activeTab === 'records') {
+    } else if (activeTab === "records") {
       await fetchRecords();
     } else {
       fetchMarkets();
@@ -678,18 +754,22 @@ export default function Dashboard() {
       const res = await fetch(`/api/orderbook/${ticker}`);
       const data = await res.json();
       if (data.success) {
-        setSelectedMarkets(prev => {
+        setSelectedMarkets((prev) => {
           const newMap = new Map(prev);
           const market = newMap.get(ticker);
           if (market) {
-            newMap.set(ticker, { ...market, orderbook: data.orderbook, orderbookLoading: false });
+            newMap.set(ticker, {
+              ...market,
+              orderbook: data.orderbook,
+              orderbookLoading: false,
+            });
           }
           return newMap;
         });
       }
     } catch (err) {
-      console.error('Error fetching orderbook:', err);
-      setSelectedMarkets(prev => {
+      console.error("Error fetching orderbook:", err);
+      setSelectedMarkets((prev) => {
         const newMap = new Map(prev);
         const market = newMap.get(ticker);
         if (market) {
@@ -725,7 +805,7 @@ export default function Dashboard() {
   const selectAllMarkets = () => {
     const newSelected = new Map(selectedMarkets);
     const newTickers: string[] = [];
-    filteredMarkets.forEach(m => {
+    filteredMarkets.forEach((m) => {
       if (!newSelected.has(m.ticker)) {
         newSelected.set(m.ticker, {
           ticker: m.ticker,
@@ -754,47 +834,51 @@ export default function Dashboard() {
   // Submit batch order
   const submitBatchOrder = async () => {
     if (selectedMarkets.size === 0) return;
-    
+
     setOrderSubmitting(true);
     const results: { ticker: string; success: boolean; error?: string }[] = [];
-    
+
     for (const [ticker, market] of selectedMarkets) {
       // Price in cents (1-99), based on favorite odds
       const priceInCents = Math.round(market.favorite_odds * 100);
       const side = market.favorite_side.toLowerCase();
-      
+
       const payload: Record<string, any> = {
         ticker,
-        action: 'buy',
+        action: "buy",
         side,
         count: market.count,
-        type: 'limit', // Kalshi requires limit orders with price
+        type: "limit", // Kalshi requires limit orders with price
       };
-      
+
       // Set price based on which side we're buying
-      if (side === 'yes') {
+      if (side === "yes") {
         payload.yes_price = priceInCents;
       } else {
         payload.no_price = priceInCents;
       }
-      
-      console.log('Order payload:', payload);
+
+      console.log("Order payload:", payload);
       try {
-        const res = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
         const data = await res.json();
-        console.log('Order response:', { status: res.status, data });
+        console.log("Order response:", { status: res.status, data });
         results.push({ ticker, success: data.success, error: data.error });
       } catch (err) {
-        results.push({ ticker, success: false, error: err instanceof Error ? err.message : 'Unknown error' });
+        results.push({
+          ticker,
+          success: false,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
       }
     }
-    
+
     setOrderSubmitting(false);
-    const successCount = results.filter(r => r.success).length;
+    const successCount = results.filter((r) => r.success).length;
     alert(`Orders submitted: ${successCount}/${results.length} successful`);
     if (successCount > 0) {
       clearSelections();
@@ -804,27 +888,27 @@ export default function Dashboard() {
   // Handle Enter key for submitting orders
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && selectedMarkets.size > 0 && !orderSubmitting) {
+      if (e.key === "Enter" && selectedMarkets.size > 0 && !orderSubmitting) {
         submitBatchOrder();
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedMarkets, orderSubmitting]);
 
   // Fetch live orders data
   const fetchLiveOrders = async () => {
     setLiveOrdersLoading(true);
     try {
-      const res = await fetch('/api/orders-live?days=90');
+      const res = await fetch("/api/orders-live?days=90");
       const data = await res.json();
       if (data.success) {
         setOrderBatches(data.batches || []);
         setLiveOrdersStats(data.stats || null);
       }
-      
+
       // Also fetch daily snapshots for portfolio values
-      const snapshotRes = await fetch('/api/snapshot?days=90');
+      const snapshotRes = await fetch("/api/snapshot?days=90");
       const snapshotData = await snapshotRes.json();
       if (snapshotData.success && snapshotData.snapshots) {
         const snapshotMap: Record<string, number> = {};
@@ -834,7 +918,7 @@ export default function Dashboard() {
         setDailySnapshots(snapshotMap);
       }
     } catch (err) {
-      console.error('Error fetching live orders:', err);
+      console.error("Error fetching live orders:", err);
     } finally {
       setLiveOrdersLoading(false);
     }
@@ -844,13 +928,13 @@ export default function Dashboard() {
   const fetchRecords = async () => {
     setRecordsLoading(true);
     try {
-      const res = await fetch('/api/records?days=90');
+      const res = await fetch("/api/records?days=90");
       const data = await res.json();
       if (data.success) {
         setRecordsData(data);
       }
     } catch (err) {
-      console.error('Error fetching records:', err);
+      console.error("Error fetching records:", err);
     } finally {
       setRecordsLoading(false);
     }
@@ -860,13 +944,13 @@ export default function Dashboard() {
   const fetchLosses = async () => {
     setLossesLoading(true);
     try {
-      const res = await fetch('/api/losses?days=90');
+      const res = await fetch("/api/losses?days=90");
       const data = await res.json();
       if (data.success) {
         setLossesData(data);
       }
     } catch (err) {
-      console.error('Error fetching losses:', err);
+      console.error("Error fetching losses:", err);
     } finally {
       setLossesLoading(false);
     }
@@ -876,13 +960,13 @@ export default function Dashboard() {
   const fetchWhatIf = async () => {
     setWhatIfLoading(true);
     try {
-      const res = await fetch('/api/whatif?days=90');
+      const res = await fetch("/api/whatif?days=90");
       const data = await res.json();
       if (data.success) {
         setWhatIfData(data);
       }
     } catch (err) {
-      console.error('Error fetching what-if data:', err);
+      console.error("Error fetching what-if data:", err);
     } finally {
       setWhatIfLoading(false);
     }
@@ -892,54 +976,57 @@ export default function Dashboard() {
   const fetchScenarios = async () => {
     setScenariosLoading(true);
     try {
-      const res = await fetch('/api/scenarios?days=90&stopLoss=75');
+      const res = await fetch("/api/scenarios?days=90&stopLoss=75");
       const data = await res.json();
       if (data.success) {
         setScenariosData(data);
       }
     } catch (err) {
-      console.error('Error fetching scenarios:', err);
+      console.error("Error fetching scenarios:", err);
     } finally {
       setScenariosLoading(false);
     }
   };
-  
+
   // Fetch candlestick analysis data
   const fetchCandlestickAnalysis = async () => {
     setCandlestickLoading(true);
     try {
-      const res = await fetch('/api/candlestick-analysis');
+      const res = await fetch("/api/candlestick-analysis");
       const data = await res.json();
       if (data.success) {
         setCandlestickData(data);
       }
     } catch (err) {
-      console.error('Error fetching candlestick analysis:', err);
+      console.error("Error fetching candlestick analysis:", err);
     } finally {
       setCandlestickLoading(false);
     }
   };
-  
+
   // Check stop-loss status (dry run)
   const checkStopLoss = async () => {
     setStopLossLoading(true);
     setStopLossError(null);
     try {
-      const res = await fetch('/api/stop-loss', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/stop-loss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dryRun: true }),
       });
       const data = await res.json();
       setStopLossStatus(data);
-      
+
       // Check for critical alerts
-      if (data.data_errors > 0 || data.alerts?.some((a: string) => a.includes('SUSPICIOUS'))) {
+      if (
+        data.data_errors > 0 ||
+        data.alerts?.some((a: string) => a.includes("SUSPICIOUS"))
+      ) {
         setStopLossError(`⚠️ ${data.data_errors} data errors detected!`);
       }
     } catch (err) {
-      console.error('Error checking stop-loss:', err);
-      setStopLossError('Failed to check stop-loss status');
+      console.error("Error checking stop-loss:", err);
+      setStopLossError("Failed to check stop-loss status");
     } finally {
       setStopLossLoading(false);
     }
@@ -949,20 +1036,30 @@ export default function Dashboard() {
   const prepareOrders = async (forToday: boolean = false) => {
     setPreparingOrders(true);
     try {
-      const res = await fetch('/api/orders-live/prepare', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unitSizeCents: 100, minOdds: 0.90, maxOdds: 0.995, minOpenInterest: 1000, forToday }),
+      const res = await fetch("/api/orders-live/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          unitSizeCents: 100,
+          minOdds: 0.9,
+          maxOdds: 0.995,
+          minOpenInterest: 1000,
+          forToday,
+        }),
       });
       const data = await res.json();
       if (data.success) {
-        alert(`Prepared ${data.batch.total_orders} orders for ${forToday ? 'today' : 'tomorrow'}`);
+        alert(
+          `Prepared ${data.batch.total_orders} orders for ${
+            forToday ? "today" : "tomorrow"
+          }`
+        );
         fetchLiveOrders();
       } else {
         alert(`Error: ${data.error}`);
       }
     } catch (err) {
-      alert('Error preparing orders');
+      alert("Error preparing orders");
     } finally {
       setPreparingOrders(false);
     }
@@ -970,27 +1067,49 @@ export default function Dashboard() {
 
   // Prepare orders for the next 7 days
   const prepareWeek = async () => {
-    if (!confirm('Prepare orders for the next 7 days? This will create batches for each day.')) return;
+    if (
+      !confirm(
+        "Prepare orders for the next 7 days? This will create batches for each day."
+      )
+    )
+      return;
     setPreparingWeek(true);
     try {
-      const res = await fetch('/api/orders-live/prepare-week', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days: 7, minOdds: 0.90, maxOdds: 0.995, minOpenInterest: 100 }),
+      const res = await fetch("/api/orders-live/prepare-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          days: 7,
+          minOdds: 0.9,
+          maxOdds: 0.995,
+          minOpenInterest: 100,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         const summary = data.summary;
-        const dayResults = data.days.map((d: any) => 
-          `${d.date}: ${d.skipped ? 'Already exists' : d.orders_prepared + ' orders ($' + d.total_cost_dollars + ')'}`
-        ).join('\n');
-        alert(`Prepared ${summary.total_orders} orders across ${summary.days_prepared} days\n\n${dayResults}`);
+        const dayResults = data.days
+          .map(
+            (d: any) =>
+              `${d.date}: ${
+                d.skipped
+                  ? "Already exists"
+                  : d.orders_prepared +
+                    " orders ($" +
+                    d.total_cost_dollars +
+                    ")"
+              }`
+          )
+          .join("\n");
+        alert(
+          `Prepared ${summary.total_orders} orders across ${summary.days_prepared} days\n\n${dayResults}`
+        );
         fetchLiveOrders();
       } else {
         alert(`Error: ${data.error}`);
       }
     } catch (err) {
-      alert('Error preparing week');
+      alert("Error preparing week");
     } finally {
       setPreparingWeek(false);
     }
@@ -998,19 +1117,26 @@ export default function Dashboard() {
 
   // Execute today's orders
   const executeTodayOrders = async () => {
-    if (!confirm('Execute all pending orders for today? This will place real orders!')) return;
+    if (
+      !confirm(
+        "Execute all pending orders for today? This will place real orders!"
+      )
+    )
+      return;
     setExecutingOrders(true);
     try {
-      const res = await fetch('/api/orders-live/execute', { method: 'POST' });
+      const res = await fetch("/api/orders-live/execute", { method: "POST" });
       const data = await res.json();
       if (data.success) {
-        alert(`Executed: ${data.stats.placed} placed, ${data.stats.confirmed} confirmed, ${data.stats.skipped} skipped`);
+        alert(
+          `Executed: ${data.stats.placed} placed, ${data.stats.confirmed} confirmed, ${data.stats.skipped} skipped`
+        );
         fetchLiveOrders();
       } else {
         alert(`Error: ${data.error}`);
       }
     } catch (err) {
-      alert('Error executing orders');
+      alert("Error executing orders");
     } finally {
       setExecutingOrders(false);
     }
@@ -1020,16 +1146,20 @@ export default function Dashboard() {
   const updateOrderStatuses = async () => {
     setUpdatingStatuses(true);
     try {
-      const res = await fetch('/api/orders-live/update-status', { method: 'POST' });
+      const res = await fetch("/api/orders-live/update-status", {
+        method: "POST",
+      });
       const data = await res.json();
       if (data.success) {
-        alert(`Updated ${data.stats.updated} orders: ${data.stats.won} won, ${data.stats.lost} lost`);
+        alert(
+          `Updated ${data.stats.updated} orders: ${data.stats.won} won, ${data.stats.lost} lost`
+        );
         fetchLiveOrders();
       } else {
         alert(`Error: ${data.error}`);
       }
     } catch (err) {
-      alert('Error updating statuses');
+      alert("Error updating statuses");
     } finally {
       setUpdatingStatuses(false);
     }
@@ -1040,15 +1170,15 @@ export default function Dashboard() {
     setReconcilingOrders(true);
     setReconcileResult(null);
     try {
-      const res = await fetch('/api/orders-live/reconcile', { method: 'POST' });
+      const res = await fetch("/api/orders-live/reconcile", { method: "POST" });
       const data = await res.json();
       if (data.success) {
         setReconcileResult(data);
       } else {
-        console.error('Reconcile error:', data.error);
+        console.error("Reconcile error:", data.error);
       }
     } catch (err) {
-      console.error('Error reconciling orders:', err);
+      console.error("Error reconciling orders:", err);
     } finally {
       setReconcilingOrders(false);
     }
@@ -1060,15 +1190,15 @@ export default function Dashboard() {
     setRefreshingAll(true);
     try {
       // 1. Update statuses from Kalshi
-      await fetch('/api/orders-live/update-status', { method: 'POST' });
+      await fetch("/api/orders-live/update-status", { method: "POST" });
       // 2. Reconcile orders (fees, settlements)
-      await fetch('/api/orders-live/reconcile', { method: 'POST' });
+      await fetch("/api/orders-live/reconcile", { method: "POST" });
       // 3. Monitor & optimize (improve stale orders, find new markets, deploy capital)
-      await fetch('/api/orders-live/monitor', { method: 'POST' });
+      await fetch("/api/orders-live/monitor", { method: "POST" });
       // 4. Fetch fresh data
       await fetchLiveOrders();
     } catch (err) {
-      console.error('Error refreshing:', err);
+      console.error("Error refreshing:", err);
     } finally {
       setRefreshingAll(false);
     }
@@ -1077,9 +1207,9 @@ export default function Dashboard() {
   // Toggle pause for a batch
   const togglePause = async (batchId: string, currentPaused: boolean) => {
     try {
-      const res = await fetch('/api/orders-live/pause', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/orders-live/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ batch_id: batchId, is_paused: !currentPaused }),
       });
       const data = await res.json();
@@ -1087,18 +1217,18 @@ export default function Dashboard() {
         fetchLiveOrders();
       }
     } catch (err) {
-      console.error('Error toggling pause:', err);
+      console.error("Error toggling pause:", err);
     }
   };
 
   // Fetch data when tab changes
   useEffect(() => {
-    if (activeTab === 'orders' || activeTab === 'positions') {
+    if (activeTab === "orders" || activeTab === "positions") {
       fetchLiveOrders();
       fetchRecords(); // Also fetch records for Capital Deployment table
-    } else if (activeTab === 'records') {
+    } else if (activeTab === "records") {
       fetchRecords();
-    } else if (activeTab === 'losses') {
+    } else if (activeTab === "losses") {
       fetchLosses();
       fetchCandlestickAnalysis();
     }
@@ -1108,20 +1238,20 @@ export default function Dashboard() {
   useEffect(() => {
     // Initial fetch on mount
     fetchMarkets();
-    
+
     // Set up 5-minute interval (300000ms)
     const interval = setInterval(() => {
-      console.log('Auto-refreshing markets...');
+      console.log("Auto-refreshing markets...");
       fetchMarkets();
     }, 5 * 60 * 1000);
-    
+
     return () => clearInterval(interval);
   }, [fetchMarkets]);
 
   // Calculate next refresh time
   useEffect(() => {
     const timer = setInterval(() => {
-      setNextRefresh(prev => prev <= 1 ? 5 * 60 : prev - 1);
+      setNextRefresh((prev) => (prev <= 1 ? 5 * 60 : prev - 1));
     }, 1000);
     return () => clearInterval(timer);
   }, [lastUpdated]);
@@ -1131,43 +1261,52 @@ export default function Dashboard() {
     if (marketsLoading) {
       setLoadingSeconds(0);
       const timer = setInterval(() => {
-        setLoadingSeconds(prev => prev + 0.1);
+        setLoadingSeconds((prev) => prev + 0.1);
       }, 100);
       return () => clearInterval(timer);
     }
   }, [marketsLoading]);
 
-  const formatPct = (v: number) => (v * 100).toFixed(1) + '%';
-  const formatVol = (v: number) => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(1)+'K' : v.toString();
-  const formatTime = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const formatPct = (v: number) => (v * 100).toFixed(1) + "%";
+  const formatVol = (v: number) =>
+    v >= 1e6
+      ? (v / 1e6).toFixed(1) + "M"
+      : v >= 1e3
+      ? (v / 1e3).toFixed(1) + "K"
+      : v.toString();
+  const formatTime = (iso: string) =>
+    new Date(iso).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
 
   // Map series tickers to colloquial tags
   const seriesTagMap: Record<string, string> = {
-    'KXNBAGAME': 'NBA',
-    'KXNFLGAME': 'NFL',
-    'KXMLBGAME': 'MLB',
-    'KXNHLGAME': 'NHL',
-    'KXNCAAMBGAME': 'NCAAM',
-    'KXNCAAWBGAME': 'NCAAW',
-    'KXNCAAFBGAME': 'NCAAF',
-    'KXNCAAFCSGAME': 'NCAAFCS',
-    'KXNCAAFGAME': 'NCAAF',
-    'KXEUROLEAGUEGAME': 'EuroLeague',
-    'KXNBLGAME': 'NBL',
-    'KXCRICKETTESTMATCH': 'Cricket',
-    'KXEFLCHAMPIONSHIPGAME': 'EFL',
-    'KXDOTA2GAME': 'Dota 2',
-    'KXUFCFIGHT': 'UFC',
+    KXNBAGAME: "NBA",
+    KXNFLGAME: "NFL",
+    KXMLBGAME: "MLB",
+    KXNHLGAME: "NHL",
+    KXNCAAMBGAME: "NCAAM",
+    KXNCAAWBGAME: "NCAAW",
+    KXNCAAFBGAME: "NCAAF",
+    KXNCAAFCSGAME: "NCAAFCS",
+    KXNCAAFGAME: "NCAAF",
+    KXEUROLEAGUEGAME: "EuroLeague",
+    KXNBLGAME: "NBL",
+    KXCRICKETTESTMATCH: "Cricket",
+    KXEFLCHAMPIONSHIPGAME: "EFL",
+    KXDOTA2GAME: "Dota 2",
+    KXUFCFIGHT: "UFC",
   };
 
   const getSeriesTag = (eventTicker: string): string => {
     // Extract series from event ticker (e.g., KXNBAGAME-25DEC10SASLAL -> KXNBAGAME)
-    const parts = eventTicker.split('-');
+    const parts = eventTicker.split("-");
     if (parts.length > 0) {
       const series = parts[0];
       return seriesTagMap[series] || series;
     }
-    return 'Other';
+    return "Other";
   };
 
   // Extract game date from event_ticker (most reliable for sports)
@@ -1179,30 +1318,39 @@ export default function Dashboard() {
     if (tickerMatch) {
       const [, seasonStr, monthStr, dayStr] = tickerMatch;
       const monthMap: Record<string, string> = {
-        'JAN': '01', 'FEB': '02', 'MAR': '03', 'APR': '04',
-        'MAY': '05', 'JUN': '06', 'JUL': '07', 'AUG': '08',
-        'SEP': '09', 'OCT': '10', 'NOV': '11', 'DEC': '12'
+        JAN: "01",
+        FEB: "02",
+        MAR: "03",
+        APR: "04",
+        MAY: "05",
+        JUN: "06",
+        JUL: "07",
+        AUG: "08",
+        SEP: "09",
+        OCT: "10",
+        NOV: "11",
+        DEC: "12",
       };
       const month = monthMap[monthStr];
       if (month) {
         return `20${seasonStr}-${month}-${dayStr}`;
       }
     }
-    
+
     // Fallback: use expected_expiration_time - 15 hours
     if (market.expected_expiration_time) {
       const expirationTime = new Date(market.expected_expiration_time);
       const gameDate = new Date(expirationTime.getTime() - 15 * 60 * 60 * 1000);
       const year = gameDate.getUTCFullYear();
-      const month = String(gameDate.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(gameDate.getUTCDate()).padStart(2, '0');
+      const month = String(gameDate.getUTCMonth() + 1).padStart(2, "0");
+      const day = String(gameDate.getUTCDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
     }
     // Fallback: close_time - 15 days
     if (market.close_time) {
       const closeDate = new Date(market.close_time);
       closeDate.setDate(closeDate.getDate() - 15);
-      return closeDate.toISOString().split('T')[0];
+      return closeDate.toISOString().split("T")[0];
     }
     return null;
   };
@@ -1211,20 +1359,22 @@ export default function Dashboard() {
   const getNext7Days = (): { label: string; value: string }[] => {
     const days: { label: string; value: string }[] = [];
     const todayET = getTodayET();
-    
+
     for (let i = 0; i < 7; i++) {
       const dateStr = addDaysToDateET(todayET, i);
       const label = formatDateForDisplay(dateStr);
       days.push({ label, value: dateStr });
     }
-    
+
     return days;
   };
 
   const gameDateOptions = getNext7Days();
 
   // Extract both teams from title like "Fisher at UMass Lowell Winner?"
-  const parseTeamsFromTitle = (title: string): { team1: string; team2: string } | null => {
+  const parseTeamsFromTitle = (
+    title: string
+  ): { team1: string; team2: string } | null => {
     // Try different patterns: "at", "vs", "@"
     const patterns = [
       /^(.+?)\s+at\s+(.+?)\s+Winner\??$/i,
@@ -1233,7 +1383,7 @@ export default function Dashboard() {
       /^(.+?)\s+at\s+(.+?)$/i,
       /^(.+?)\s+vs\.?\s+(.+?)$/i,
     ];
-    
+
     for (const pattern of patterns) {
       const match = title.match(pattern);
       if (match) {
@@ -1246,41 +1396,57 @@ export default function Dashboard() {
   // Get the favorite team name
   const getFavoriteTeam = (m: Market): string => {
     const teams = parseTeamsFromTitle(m.title);
-    
-    if (m.favorite_side === 'YES') {
+
+    if (m.favorite_side === "YES") {
       // YES is favorite - that's team1 (the first team in the title)
-      return m.yes_sub_title || (teams?.team1) || 'YES';
+      return m.yes_sub_title || teams?.team1 || "YES";
     } else {
       // NO is favorite - that's team2 (the second team, the opponent)
-      return teams?.team2 || m.no_sub_title || 'NO';
+      return teams?.team2 || m.no_sub_title || "NO";
     }
   };
 
   const loading = marketsLoading;
 
   // Get unique series from current markets
-  const availableSeries = ['All', ...Array.from(new Set(
-    (marketsData?.markets || []).map(m => getSeriesTag(m.event_ticker))
-  )).sort()];
-
+  const availableSeries = [
+    "All",
+    ...Array.from(
+      new Set(
+        (marketsData?.markets || []).map((m) => getSeriesTag(m.event_ticker))
+      )
+    ).sort(),
+  ];
 
   // Client-side filtered markets based on display odds slider, series filter, and game date
-  const filteredMarkets = marketsData?.markets.filter(m => {
-    const odds = m.favorite_odds * 100;
-    const matchesOdds = odds >= displayOddsMin && odds <= displayOddsMax;
-    const matchesSeries = selectedSeries === 'All' || getSeriesTag(m.event_ticker) === selectedSeries;
-    const gameDate = extractGameDate(m);
-    const matchesGameDate = selectedGameDate === 'all' || gameDate === selectedGameDate;
-    return matchesOdds && matchesSeries && matchesGameDate;
-  }) || [];
+  const filteredMarkets =
+    marketsData?.markets.filter((m) => {
+      const odds = m.favorite_odds * 100;
+      const matchesOdds = odds >= displayOddsMin && odds <= displayOddsMax;
+      const matchesSeries =
+        selectedSeries === "All" ||
+        getSeriesTag(m.event_ticker) === selectedSeries;
+      const gameDate = extractGameDate(m);
+      const matchesGameDate =
+        selectedGameDate === "all" || gameDate === selectedGameDate;
+      return matchesOdds && matchesSeries && matchesGameDate;
+    }) || [];
 
   // Open interest summary counts
   const oiSummary = {
-    '1 - 1K': filteredMarkets.filter(m => m.open_interest >= 1 && m.open_interest < 1000).length,
-    '1K - 10K': filteredMarkets.filter(m => m.open_interest >= 1000 && m.open_interest < 10000).length,
-    '10K - 100K': filteredMarkets.filter(m => m.open_interest >= 10000 && m.open_interest < 100000).length,
-    '100K - 1M': filteredMarkets.filter(m => m.open_interest >= 100000 && m.open_interest < 1000000).length,
-    '1M+': filteredMarkets.filter(m => m.open_interest >= 1000000).length,
+    "1 - 1K": filteredMarkets.filter(
+      (m) => m.open_interest >= 1 && m.open_interest < 1000
+    ).length,
+    "1K - 10K": filteredMarkets.filter(
+      (m) => m.open_interest >= 1000 && m.open_interest < 10000
+    ).length,
+    "10K - 100K": filteredMarkets.filter(
+      (m) => m.open_interest >= 10000 && m.open_interest < 100000
+    ).length,
+    "100K - 1M": filteredMarkets.filter(
+      (m) => m.open_interest >= 100000 && m.open_interest < 1000000
+    ).length,
+    "1M+": filteredMarkets.filter((m) => m.open_interest >= 1000000).length,
   };
 
   // Show login screen if not authenticated
@@ -1289,19 +1455,27 @@ export default function Dashboard() {
       <main className="min-h-screen bg-slate-950 flex items-center justify-center">
         <div className="bg-slate-900 rounded-2xl p-8 w-full max-w-md border border-slate-800 shadow-2xl">
           <div className="text-center mb-8">
-            <img src="/jl.png" alt="Logo" className="w-16 h-16 rounded-lg mx-auto mb-4" />
-            <h1 className="text-2xl font-bold text-white">Kalshi Favorites Fund</h1>
+            <img
+              src="/jl.png"
+              alt="Logo"
+              className="w-16 h-16 rounded-lg mx-auto mb-4"
+            />
+            <h1 className="text-2xl font-bold text-white">
+              Kalshi Favorites Fund
+            </h1>
             <p className="text-slate-400 mt-2">Enter credentials to continue</p>
           </div>
-          
+
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Username</label>
+              <label className="block text-sm text-slate-400 mb-1">
+                Username
+              </label>
               <input
                 type="text"
                 value={authUsername}
                 onChange={(e) => setAuthUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
                 placeholder="Enter username"
                 autoFocus
@@ -1313,24 +1487,24 @@ export default function Dashboard() {
                 type="password"
                 value={authPin}
                 onChange={(e) => setAuthPin(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
                 placeholder="Enter PIN"
               />
             </div>
-            
+
             {authError && (
               <div className="text-red-400 text-sm text-center py-2 bg-red-500/10 rounded-lg">
                 {authError}
               </div>
             )}
-            
+
             <button
               onClick={handleLogin}
               disabled={authLoading}
               className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 transition-colors disabled:opacity-50"
             >
-              {authLoading ? 'Verifying...' : 'Login'}
+              {authLoading ? "Verifying..." : "Login"}
             </button>
           </div>
         </div>
@@ -1347,23 +1521,44 @@ export default function Dashboard() {
               <img src="/jl.png" alt="Logo" className="w-12 h-12 rounded-lg" />
               <div>
                 <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
-                  Kalshi <span className="text-emerald-400">Favorites Fund</span>
+                  Kalshi{" "}
+                  <span className="text-emerald-400">Favorites Fund</span>
                 </h1>
-                <p className="text-slate-400 mt-1">Prediction Markets Scanner</p>
+                <p className="text-slate-400 mt-1">
+                  Prediction Markets Scanner
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <button 
-                onClick={handleRefresh} 
-                disabled={loading || refreshingAll || liveOrdersLoading || recordsLoading} 
+              <button
+                onClick={handleRefresh}
+                disabled={
+                  loading ||
+                  refreshingAll ||
+                  liveOrdersLoading ||
+                  recordsLoading
+                }
                 className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white hover:bg-slate-700 disabled:opacity-60"
               >
-                <svg className={`w-4 h-4 ${(loading || refreshingAll || liveOrdersLoading || recordsLoading) ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  className={`w-4 h-4 ${
+                    loading ||
+                    refreshingAll ||
+                    liveOrdersLoading ||
+                    recordsLoading
+                      ? "animate-spin"
+                      : ""
+                  }`}
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
                 </svg>
                 Refresh
               </button>
-              <button 
+              <button
                 onClick={handleLogout}
                 className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700"
               >
@@ -1374,10 +1569,21 @@ export default function Dashboard() {
           {lastUpdated && (
             <div className="text-xs text-slate-500 mt-3">
               <p>
-                Last updated: {lastUpdated.toLocaleTimeString()} • Next refresh in {Math.floor(nextRefresh / 60)}:{(nextRefresh % 60).toString().padStart(2, '0')}
-                {marketsLoading && <span className="text-emerald-400 ml-2">⟳ Fetching... {loadingSeconds.toFixed(1)}s</span>}
+                Last updated: {lastUpdated.toLocaleTimeString()} • Next refresh
+                in {Math.floor(nextRefresh / 60)}:
+                {(nextRefresh % 60).toString().padStart(2, "0")}
+                {marketsLoading && (
+                  <span className="text-emerald-400 ml-2">
+                    ⟳ Fetching... {loadingSeconds.toFixed(1)}s
+                  </span>
+                )}
               </p>
-              {marketsData && <p className="mt-1">Total markets fetched: {marketsData.total_markets.toLocaleString()}</p>}
+              {marketsData && (
+                <p className="mt-1">
+                  Total markets fetched:{" "}
+                  {marketsData.total_markets.toLocaleString()}
+                </p>
+              )}
             </div>
           )}
         </header>
@@ -1385,48 +1591,107 @@ export default function Dashboard() {
         {/* Main Tabs */}
         <div className="flex items-center justify-between mt-6">
           <div className="flex gap-1 bg-slate-900 p-1 rounded-lg">
-            <button onClick={() => setActiveTab('records')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'records' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Records</button>
-            <button onClick={() => setActiveTab('positions')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'positions' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Positions</button>
-            <button onClick={() => setActiveTab('orders')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'orders' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Deployment</button>
-            <button onClick={() => setActiveTab('markets')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'markets' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:text-white'}`}>Games</button>
-            <button onClick={() => setActiveTab('losses')} className={`px-6 py-2 rounded-md text-sm font-medium ${activeTab === 'losses' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}>Analysis</button>
+            <button
+              onClick={() => setActiveTab("records")}
+              className={`px-6 py-2 rounded-md text-sm font-medium ${
+                activeTab === "records"
+                  ? "bg-slate-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Records
+            </button>
+            <button
+              onClick={() => setActiveTab("positions")}
+              className={`px-6 py-2 rounded-md text-sm font-medium ${
+                activeTab === "positions"
+                  ? "bg-slate-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Positions
+            </button>
+            <button
+              onClick={() => setActiveTab("orders")}
+              className={`px-6 py-2 rounded-md text-sm font-medium ${
+                activeTab === "orders"
+                  ? "bg-slate-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Deployment
+            </button>
+            <button
+              onClick={() => setActiveTab("markets")}
+              className={`px-6 py-2 rounded-md text-sm font-medium ${
+                activeTab === "markets"
+                  ? "bg-slate-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Games
+            </button>
+            <button
+              onClick={() => setActiveTab("losses")}
+              className={`px-6 py-2 rounded-md text-sm font-medium ${
+                activeTab === "losses"
+                  ? "bg-red-600 text-white"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              Analysis
+            </button>
           </div>
-          
-          {activeTab === 'markets' && filteredMarkets.length > 0 && (
+
+          {activeTab === "markets" && filteredMarkets.length > 0 && (
             <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-400">{selectedMarkets.size} selected</span>
-              <button onClick={selectAllMarkets} className="px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700">Select All</button>
+              <span className="text-sm text-slate-400">
+                {selectedMarkets.size} selected
+              </span>
+              <button
+                onClick={selectAllMarkets}
+                className="px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-white hover:bg-slate-700"
+              >
+                Select All
+              </button>
               {selectedMarkets.size > 0 && (
-                <button onClick={clearSelections} className="px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700">Clear</button>
+                <button
+                  onClick={clearSelections}
+                  className="px-4 py-2 text-sm bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700"
+                >
+                  Clear
+                </button>
               )}
             </div>
           )}
         </div>
 
-        {activeTab === 'markets' && marketsData && (
+        {activeTab === "markets" && marketsData && (
           <div className="py-6 border-b border-slate-800">
             {/* Game Date Toggle Bar */}
             <div className="bg-slate-900 rounded-xl p-4 mb-4">
-              <div className="text-sm text-slate-400 mb-3">Filter by Game Date</div>
+              <div className="text-sm text-slate-400 mb-3">
+                Filter by Game Date
+              </div>
               <div className="flex flex-wrap gap-2">
                 <button
-                  onClick={() => setSelectedGameDate('all')}
+                  onClick={() => setSelectedGameDate("all")}
                   className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                    selectedGameDate === 'all'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                    selectedGameDate === "all"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
                   }`}
                 >
                   All
                 </button>
-                {gameDateOptions.map(day => (
+                {gameDateOptions.map((day) => (
                   <button
                     key={day.value}
                     onClick={() => setSelectedGameDate(day.value)}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                       selectedGameDate === day.value
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                        ? "bg-emerald-600 text-white"
+                        : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
                     }`}
                   >
                     {day.label}
@@ -1446,74 +1711,113 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody>
-                  {gameDateOptions.map(day => {
-                    const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m) === day.value) || [];
+                  {gameDateOptions.map((day) => {
+                    const dayMarkets =
+                      marketsData?.markets.filter(
+                        (m) => extractGameDate(m) === day.value
+                      ) || [];
                     // Count unique events (deduplicate by event_ticker)
-                    const uniqueEvents = new Set(dayMarkets.map(m => m.event_ticker));
+                    const uniqueEvents = new Set(
+                      dayMarkets.map((m) => m.event_ticker)
+                    );
                     // For high-odds, get unique events where at least one market qualifies
                     const highOddsEvents = new Set(
                       dayMarkets
-                        .filter(m => {
+                        .filter((m) => {
                           const odds = m.favorite_odds * 100;
-                          return odds >= displayOddsMin && odds <= displayOddsMax;
+                          return (
+                            odds >= displayOddsMin && odds <= displayOddsMax
+                          );
                         })
-                        .map(m => m.event_ticker)
+                        .map((m) => m.event_ticker)
                     );
                     return (
-                      <tr 
-                        key={day.value} 
-                        className={`border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/50 ${selectedGameDate === day.value ? 'bg-slate-800' : ''}`}
+                      <tr
+                        key={day.value}
+                        className={`border-b border-slate-800/50 cursor-pointer hover:bg-slate-800/50 ${
+                          selectedGameDate === day.value ? "bg-slate-800" : ""
+                        }`}
                         onClick={() => setSelectedGameDate(day.value)}
                       >
                         <td className="py-2 text-white">{day.label}</td>
-                        <td className="py-2 text-right text-white font-mono">{uniqueEvents.size}</td>
-                        <td className="py-2 text-right text-emerald-400 font-mono">{highOddsEvents.size}</td>
+                        <td className="py-2 text-right text-white font-mono">
+                          {uniqueEvents.size}
+                        </td>
+                        <td className="py-2 text-right text-emerald-400 font-mono">
+                          {highOddsEvents.size}
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   {(() => {
-                    const gameDateSet = new Set(gameDateOptions.map(d => d.value));
-                    const otherMarkets = marketsData?.markets.filter(m => {
-                      const gameDate = extractGameDate(m);
-                      return !gameDate || !gameDateSet.has(gameDate);
-                    }) || [];
-                    const otherEvents = new Set(otherMarkets.map(m => m.event_ticker));
+                    const gameDateSet = new Set(
+                      gameDateOptions.map((d) => d.value)
+                    );
+                    const otherMarkets =
+                      marketsData?.markets.filter((m) => {
+                        const gameDate = extractGameDate(m);
+                        return !gameDate || !gameDateSet.has(gameDate);
+                      }) || [];
+                    const otherEvents = new Set(
+                      otherMarkets.map((m) => m.event_ticker)
+                    );
                     const otherHighOddsEvents = new Set(
                       otherMarkets
-                        .filter(m => {
+                        .filter((m) => {
                           const odds = m.favorite_odds * 100;
-                          return odds >= displayOddsMin && odds <= displayOddsMax;
+                          return (
+                            odds >= displayOddsMin && odds <= displayOddsMax
+                          );
                         })
-                        .map(m => m.event_ticker)
+                        .map((m) => m.event_ticker)
                     );
                     // Calculate totals for 7-day window
                     const allEventsInWindow = new Set<string>();
                     const highOddsEventsInWindow = new Set<string>();
-                    gameDateOptions.forEach(day => {
-                      const dayMarkets = marketsData?.markets.filter(m => extractGameDate(m) === day.value) || [];
-                      dayMarkets.forEach(m => allEventsInWindow.add(m.event_ticker));
+                    gameDateOptions.forEach((day) => {
+                      const dayMarkets =
+                        marketsData?.markets.filter(
+                          (m) => extractGameDate(m) === day.value
+                        ) || [];
+                      dayMarkets.forEach((m) =>
+                        allEventsInWindow.add(m.event_ticker)
+                      );
                       dayMarkets
-                        .filter(m => {
+                        .filter((m) => {
                           const odds = m.favorite_odds * 100;
-                          return odds >= displayOddsMin && odds <= displayOddsMax;
+                          return (
+                            odds >= displayOddsMin && odds <= displayOddsMax
+                          );
                         })
-                        .forEach(m => highOddsEventsInWindow.add(m.event_ticker));
+                        .forEach((m) =>
+                          highOddsEventsInWindow.add(m.event_ticker)
+                        );
                     });
                     return (
                       <>
                         {otherEvents.size > 0 && (
                           <tr className="border-t border-slate-800 text-slate-500">
                             <td className="py-2">Other dates</td>
-                            <td className="py-2 text-right font-mono">{otherEvents.size}</td>
-                            <td className="py-2 text-right font-mono">{otherHighOddsEvents.size}</td>
+                            <td className="py-2 text-right font-mono">
+                              {otherEvents.size}
+                            </td>
+                            <td className="py-2 text-right font-mono">
+                              {otherHighOddsEvents.size}
+                            </td>
                           </tr>
                         )}
                         <tr className="border-t-2 border-slate-700">
-                          <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
-                          <td className="py-2 text-right text-white font-mono font-bold">{allEventsInWindow.size}</td>
-                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">{highOddsEventsInWindow.size}</td>
+                          <td className="py-2 text-slate-400 font-medium">
+                            Total (7 days)
+                          </td>
+                          <td className="py-2 text-right text-white font-mono font-bold">
+                            {allEventsInWindow.size}
+                          </td>
+                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">
+                            {highOddsEventsInWindow.size}
+                          </td>
                         </tr>
                       </>
                     );
@@ -1536,17 +1840,26 @@ export default function Dashboard() {
                 <tbody>
                   {(() => {
                     // Get markets filtered by selected game date
-                    const dateFilteredMarkets = selectedGameDate === 'all'
-                      ? (marketsData?.markets || [])
-                      : (marketsData?.markets || []).filter(m => extractGameDate(m) === selectedGameDate);
-                    
+                    const dateFilteredMarkets =
+                      selectedGameDate === "all"
+                        ? marketsData?.markets || []
+                        : (marketsData?.markets || []).filter(
+                            (m) => extractGameDate(m) === selectedGameDate
+                          );
+
                     // Group by series - count unique EVENTS (not markets)
-                    const seriesData: Record<string, { allEvents: Set<string>; highOddsEvents: Set<string> }> = {};
-                    
+                    const seriesData: Record<
+                      string,
+                      { allEvents: Set<string>; highOddsEvents: Set<string> }
+                    > = {};
+
                     for (const m of dateFilteredMarkets) {
                       const series = getSeriesTag(m.event_ticker);
                       if (!seriesData[series]) {
-                        seriesData[series] = { allEvents: new Set(), highOddsEvents: new Set() };
+                        seriesData[series] = {
+                          allEvents: new Set(),
+                          highOddsEvents: new Set(),
+                        };
                       }
                       seriesData[series].allEvents.add(m.event_ticker);
                       const odds = m.favorite_odds * 100;
@@ -1554,31 +1867,52 @@ export default function Dashboard() {
                         seriesData[series].highOddsEvents.add(m.event_ticker);
                       }
                     }
-                    
+
                     // Convert to counts and sort
-                    const seriesCounts = Object.entries(seriesData).map(([series, data]) => ({
-                      series,
-                      all: data.allEvents.size,
-                      highOdds: data.highOddsEvents.size,
-                    }));
+                    const seriesCounts = Object.entries(seriesData).map(
+                      ([series, data]) => ({
+                        series,
+                        all: data.allEvents.size,
+                        highOdds: data.highOddsEvents.size,
+                      })
+                    );
                     seriesCounts.sort((a, b) => b.all - a.all);
-                    
-                    const totalAll = seriesCounts.reduce((sum, d) => sum + d.all, 0);
-                    const totalHighOdds = seriesCounts.reduce((sum, d) => sum + d.highOdds, 0);
-                    
+
+                    const totalAll = seriesCounts.reduce(
+                      (sum, d) => sum + d.all,
+                      0
+                    );
+                    const totalHighOdds = seriesCounts.reduce(
+                      (sum, d) => sum + d.highOdds,
+                      0
+                    );
+
                     return (
                       <>
                         {seriesCounts.map(({ series, all, highOdds }) => (
-                          <tr key={series} className="border-b border-slate-800/50">
+                          <tr
+                            key={series}
+                            className="border-b border-slate-800/50"
+                          >
                             <td className="py-2 text-white">{series}</td>
-                            <td className="py-2 text-right text-white font-mono">{all}</td>
-                            <td className="py-2 text-right text-emerald-400 font-mono">{highOdds}</td>
+                            <td className="py-2 text-right text-white font-mono">
+                              {all}
+                            </td>
+                            <td className="py-2 text-right text-emerald-400 font-mono">
+                              {highOdds}
+                            </td>
                           </tr>
                         ))}
                         <tr className="border-t-2 border-slate-700">
-                          <td className="py-2 text-slate-400 font-medium">Total</td>
-                          <td className="py-2 text-right text-white font-mono font-bold">{totalAll}</td>
-                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">{totalHighOdds}</td>
+                          <td className="py-2 text-slate-400 font-medium">
+                            Total
+                          </td>
+                          <td className="py-2 text-right text-white font-mono font-bold">
+                            {totalAll}
+                          </td>
+                          <td className="py-2 text-right text-emerald-400 font-mono font-bold">
+                            {totalHighOdds}
+                          </td>
                         </tr>
                       </>
                     );
@@ -1590,8 +1924,12 @@ export default function Dashboard() {
             {/* Odds Range Slider with Tick Marks */}
             <div className="bg-slate-900 rounded-xl p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
-                <span className="text-sm text-slate-400">Filter Odds Range</span>
-                <span className="text-sm font-mono text-emerald-400">{displayOddsMin}% - {displayOddsMax}%</span>
+                <span className="text-sm text-slate-400">
+                  Filter Odds Range
+                </span>
+                <span className="text-sm font-mono text-emerald-400">
+                  {displayOddsMin}% - {displayOddsMax}%
+                </span>
               </div>
               <div className="flex flex-col gap-1">
                 {/* Dual range slider on same track */}
@@ -1599,11 +1937,11 @@ export default function Dashboard() {
                   {/* Track background */}
                   <div className="absolute top-2 left-0 right-0 h-2 bg-slate-700 rounded-lg" />
                   {/* Selected range highlight */}
-                  <div 
+                  <div
                     className="absolute top-2 h-2 bg-emerald-500/30 rounded-lg"
                     style={{
                       left: `${((displayOddsMin - 85) / 14) * 100}%`,
-                      right: `${((99 - displayOddsMax) / 14) * 100}%`
+                      right: `${((99 - displayOddsMax) / 14) * 100}%`,
                     }}
                   />
                   {/* Min slider */}
@@ -1612,7 +1950,11 @@ export default function Dashboard() {
                     min="85"
                     max="99"
                     value={displayOddsMin}
-                    onChange={(e) => setDisplayOddsMin(Math.min(parseInt(e.target.value), displayOddsMax - 1))}
+                    onChange={(e) =>
+                      setDisplayOddsMin(
+                        Math.min(parseInt(e.target.value), displayOddsMax - 1)
+                      )
+                    }
                     className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:bg-emerald-500 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-0"
                   />
                   {/* Max slider */}
@@ -1621,17 +1963,30 @@ export default function Dashboard() {
                     min="85"
                     max="99"
                     value={displayOddsMax}
-                    onChange={(e) => setDisplayOddsMax(Math.max(parseInt(e.target.value), displayOddsMin + 1))}
+                    onChange={(e) =>
+                      setDisplayOddsMax(
+                        Math.max(parseInt(e.target.value), displayOddsMin + 1)
+                      )
+                    }
                     className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer pointer-events-none [&::-webkit-slider-thumb]:pointer-events-auto [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-moz-range-thumb]:pointer-events-auto [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:bg-emerald-500 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-0"
                   />
                 </div>
                 {/* Tick marks and labels */}
                 <div className="relative h-6 mt-2">
                   <div className="absolute inset-x-0 flex justify-between">
-                    {[85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99].map(n => (
-                      <div key={n} className="flex flex-col items-center" style={{ width: '1px' }}>
+                    {[
+                      85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98,
+                      99,
+                    ].map((n) => (
+                      <div
+                        key={n}
+                        className="flex flex-col items-center"
+                        style={{ width: "1px" }}
+                      >
                         <div className="w-px h-2 bg-slate-600" />
-                        <span className="text-[10px] text-slate-500 font-mono mt-0.5">{n}</span>
+                        <span className="text-[10px] text-slate-500 font-mono mt-0.5">
+                          {n}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -1641,31 +1996,45 @@ export default function Dashboard() {
 
             {/* Open Interest Summary Table */}
             <div className="bg-slate-900 rounded-xl p-4">
-              <h3 className="text-sm text-slate-400 mb-3">Open Interest Distribution</h3>
+              <h3 className="text-sm text-slate-400 mb-3">
+                Open Interest Distribution
+              </h3>
               <div className="space-y-2 text-sm">
                 <div className="flex border-b border-slate-800 pb-2">
                   <span className="w-24 text-slate-400">1 - 1K</span>
-                  <span className="font-mono text-white">{oiSummary['1 - 1K']}</span>
+                  <span className="font-mono text-white">
+                    {oiSummary["1 - 1K"]}
+                  </span>
                 </div>
                 <div className="flex border-b border-slate-800 pb-2">
                   <span className="w-24 text-slate-400">1K - 10K</span>
-                  <span className="font-mono text-white">{oiSummary['1K - 10K']}</span>
+                  <span className="font-mono text-white">
+                    {oiSummary["1K - 10K"]}
+                  </span>
                 </div>
                 <div className="flex border-b border-slate-800 pb-2">
                   <span className="w-24 text-slate-400">10K - 100K</span>
-                  <span className="font-mono text-white">{oiSummary['10K - 100K']}</span>
+                  <span className="font-mono text-white">
+                    {oiSummary["10K - 100K"]}
+                  </span>
                 </div>
                 <div className="flex border-b border-slate-800 pb-2">
                   <span className="w-24 text-slate-400">100K - 1M</span>
-                  <span className="font-mono text-white">{oiSummary['100K - 1M']}</span>
+                  <span className="font-mono text-white">
+                    {oiSummary["100K - 1M"]}
+                  </span>
                 </div>
                 <div className="flex border-b border-slate-800 pb-2">
                   <span className="w-24 text-slate-400">1M+</span>
-                  <span className="font-mono text-white">{oiSummary['1M+']}</span>
+                  <span className="font-mono text-white">
+                    {oiSummary["1M+"]}
+                  </span>
                 </div>
                 <div className="flex border-t-2 border-slate-600 pt-2">
                   <span className="w-24 text-white font-medium">Total</span>
-                  <span className="font-mono text-white font-bold">{filteredMarkets.length}</span>
+                  <span className="font-mono text-white font-bold">
+                    {filteredMarkets.length}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1673,10 +2042,12 @@ export default function Dashboard() {
         )}
 
         {/* Series Toggle Bar - Below divider */}
-        {activeTab === 'markets' && marketsData && (
+        {activeTab === "markets" && marketsData && (
           <div className="py-4">
             <div className="bg-slate-900 rounded-xl p-4">
-              <div className="text-sm text-slate-400 mb-3">Filter by League</div>
+              <div className="text-sm text-slate-400 mb-3">
+                Filter by League
+              </div>
               <div className="flex flex-wrap gap-2">
                 {availableSeries.map((series) => (
                   <button
@@ -1684,8 +2055,8 @@ export default function Dashboard() {
                     onClick={() => setSelectedSeries(series)}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                       selectedSeries === series
-                        ? 'bg-emerald-500 text-slate-950'
-                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
+                        ? "bg-emerald-500 text-slate-950"
+                        : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
                     }`}
                   >
                     {series}
@@ -1696,70 +2067,141 @@ export default function Dashboard() {
           </div>
         )}
 
-        {activeTab === 'markets' && (
-        <div className="py-8">
-              {marketsLoading && !marketsData ? (
-                <div className="flex flex-col items-center py-20 text-slate-400"><div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" /><p className="mt-4">Loading markets... <span className="font-mono text-emerald-400">{loadingSeconds.toFixed(1)}s</span></p></div>
-              ) : marketsError ? (
-                <div className="text-center py-20"><p className="text-red-400 text-xl">Error: {marketsError}</p><button onClick={fetchMarkets} className="mt-4 bg-emerald-500 text-slate-950 px-6 py-3 rounded-lg">Try Again</button></div>
-              ) : filteredMarkets.length === 0 ? (
-                <div className="text-center py-20 text-slate-400"><p className="text-xl">No markets found in the {displayOddsMin}% - {displayOddsMax}% range</p></div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredMarkets.map((m) => (
-                    <article key={m.ticker} className={`bg-slate-900 border rounded-xl p-5 transition-colors ${selectedMarkets.has(m.ticker) ? 'border-emerald-500 bg-emerald-500/5' : 'border-slate-800 hover:border-emerald-500/50'}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded">{getSeriesTag(m.event_ticker)}</span>
-                          <h3 className="text-sm font-semibold text-white leading-snug">{m.title}</h3>
+        {activeTab === "markets" && (
+          <div className="py-8">
+            {marketsLoading && !marketsData ? (
+              <div className="flex flex-col items-center py-20 text-slate-400">
+                <div className="w-10 h-10 border-4 border-slate-700 border-t-emerald-400 rounded-full animate-spin" />
+                <p className="mt-4">
+                  Loading markets...{" "}
+                  <span className="font-mono text-emerald-400">
+                    {loadingSeconds.toFixed(1)}s
+                  </span>
+                </p>
+              </div>
+            ) : marketsError ? (
+              <div className="text-center py-20">
+                <p className="text-red-400 text-xl">Error: {marketsError}</p>
+                <button
+                  onClick={fetchMarkets}
+                  className="mt-4 bg-emerald-500 text-slate-950 px-6 py-3 rounded-lg"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : filteredMarkets.length === 0 ? (
+              <div className="text-center py-20 text-slate-400">
+                <p className="text-xl">
+                  No markets found in the {displayOddsMin}% - {displayOddsMax}%
+                  range
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredMarkets.map((m) => (
+                  <article
+                    key={m.ticker}
+                    className={`bg-slate-900 border rounded-xl p-5 transition-colors ${
+                      selectedMarkets.has(m.ticker)
+                        ? "border-emerald-500 bg-emerald-500/5"
+                        : "border-slate-800 hover:border-emerald-500/50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white bg-blue-600 px-2 py-1 rounded">
+                          {getSeriesTag(m.event_ticker)}
+                        </span>
+                        <h3 className="text-sm font-semibold text-white leading-snug">
+                          {m.title}
+                        </h3>
+                      </div>
+                      <button
+                        onClick={() => toggleMarketSelection(m)}
+                        className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                          selectedMarkets.has(m.ticker)
+                            ? "bg-emerald-500 text-slate-950"
+                            : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                        }`}
+                      >
+                        {selectedMarkets.has(m.ticker) ? "✓" : "+"}
+                      </button>
+                    </div>
+                    {m.subtitle && (
+                      <p className="text-xs text-slate-500 mb-2">
+                        {m.subtitle}
+                      </p>
+                    )}
+                    <div className="mb-4">
+                      <span className="text-xs text-slate-500 uppercase">
+                        Favorite
+                      </span>
+                      <div className="font-semibold text-emerald-400">
+                        {getFavoriteTeam(m)} @ {formatPct(m.favorite_odds)}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-800 text-center">
+                      <div>
+                        <div className="text-[10px] text-slate-500 uppercase">
+                          Vol 24h
                         </div>
-                        <button
-                          onClick={() => toggleMarketSelection(m)}
-                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
-                            selectedMarkets.has(m.ticker)
-                              ? 'bg-emerald-500 text-slate-950'
-                              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
-                          }`}
-                        >
-                          {selectedMarkets.has(m.ticker) ? '✓' : '+'}
-                        </button>
+                        <div className="font-mono text-sm text-white">
+                          {formatVol(m.volume_24h)}
+                        </div>
                       </div>
-                      {m.subtitle && <p className="text-xs text-slate-500 mb-2">{m.subtitle}</p>}
-                      <div className="mb-4"><span className="text-xs text-slate-500 uppercase">Favorite</span><div className="font-semibold text-emerald-400">{getFavoriteTeam(m)} @ {formatPct(m.favorite_odds)}</div></div>
-                      <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-800 text-center">
-                        <div><div className="text-[10px] text-slate-500 uppercase">Vol 24h</div><div className="font-mono text-sm text-white">{formatVol(m.volume_24h)}</div></div>
-                        <div><div className="text-[10px] text-slate-500 uppercase">Open Int</div><div className="font-mono text-sm text-white">{formatVol(m.open_interest)}</div></div>
-                        <div><div className="text-[10px] text-slate-500 uppercase">Closes</div><div className="font-mono text-sm text-white">{formatTime(m.close_time)}</div></div>
+                      <div>
+                        <div className="text-[10px] text-slate-500 uppercase">
+                          Open Int
+                        </div>
+                        <div className="font-mono text-sm text-white">
+                          {formatVol(m.open_interest)}
+                        </div>
                       </div>
-                      <a href={`https://kalshi.com/markets/${m.event_ticker}`} target="_blank" rel="noopener noreferrer" className="mt-4 flex items-center justify-center gap-2 w-full border border-slate-700 rounded-lg py-2.5 text-slate-400 text-sm hover:bg-emerald-500 hover:border-emerald-500 hover:text-slate-950">View on Kalshi</a>
-                    </article>
-                  ))}
-                </div>
-              )}
-        </div>
+                      <div>
+                        <div className="text-[10px] text-slate-500 uppercase">
+                          Closes
+                        </div>
+                        <div className="font-mono text-sm text-white">
+                          {formatTime(m.close_time)}
+                        </div>
+                      </div>
+                    </div>
+                    <a
+                      href={`https://kalshi.com/markets/${m.event_ticker}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-4 flex items-center justify-center gap-2 w-full border border-slate-700 rounded-lg py-2.5 text-slate-400 text-sm hover:bg-emerald-500 hover:border-emerald-500 hover:text-slate-950"
+                    >
+                      View on Kalshi
+                    </a>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Positions Tab */}
-        {activeTab === 'positions' && (
+        {activeTab === "positions" && (
           <div className="py-8">
             {/* Sub-tabs: Active / Historical */}
             <div className="flex gap-2 mb-6">
               <button
-                onClick={() => setPositionsSubTab('active')}
+                onClick={() => setPositionsSubTab("active")}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  positionsSubTab === 'active'
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                  positionsSubTab === "active"
+                    ? "bg-amber-500 text-slate-950"
+                    : "bg-slate-800 text-slate-400 hover:text-white"
                 }`}
               >
                 Active
               </button>
               <button
-                onClick={() => setPositionsSubTab('historical')}
+                onClick={() => setPositionsSubTab("historical")}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  positionsSubTab === 'historical'
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
+                  positionsSubTab === "historical"
+                    ? "bg-amber-500 text-slate-950"
+                    : "bg-slate-800 text-slate-400 hover:text-white"
                 }`}
               >
                 Historical
@@ -1767,17 +2209,17 @@ export default function Dashboard() {
             </div>
 
             {/* Historical Timespan Filters */}
-            {positionsSubTab === 'historical' && (
+            {positionsSubTab === "historical" && (
               <div className="flex gap-2 mb-4">
                 <span className="text-sm text-slate-500 py-1">Timespan:</span>
-                {([7, 30, 90] as const).map(days => (
+                {([7, 30, 90] as const).map((days) => (
                   <button
                     key={days}
                     onClick={() => setHistoricalDays(days)}
                     className={`px-3 py-1 text-sm rounded-lg transition-colors ${
                       historicalDays === days
-                        ? 'bg-slate-700 text-white'
-                        : 'bg-slate-800/50 text-slate-400 hover:text-white'
+                        ? "bg-slate-700 text-white"
+                        : "bg-slate-800/50 text-slate-400 hover:text-white"
                     }`}
                   >
                     {days}D
@@ -1788,54 +2230,113 @@ export default function Dashboard() {
 
             {/* Summary Stats - Above Table */}
             {(() => {
-              const allOrders = orderBatches.flatMap(b => b.orders || []);
-              const activeOrders = allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided');
-              
+              const allOrders = orderBatches.flatMap((b) => b.orders || []);
+              const activeOrders = allOrders.filter(
+                (o) =>
+                  o.placement_status === "confirmed" &&
+                  o.result_status === "undecided"
+              );
+
               // Filter historical orders by timespan (in ET)
               const todayET = getTodayET();
               const cutoffDateStr = addDaysToDateET(todayET, -historicalDays);
-              
-              const historicalOrders = allOrders.filter(o => {
-                if (o.result_status !== 'won' && o.result_status !== 'lost') return false;
+
+              const historicalOrders = allOrders.filter((o) => {
+                if (o.result_status !== "won" && o.result_status !== "lost")
+                  return false;
                 // Find the batch date for this order
-                const batch = orderBatches.find(b => b.orders?.some(bo => bo.id === o.id));
+                const batch = orderBatches.find((b) =>
+                  b.orders?.some((bo) => bo.id === o.id)
+                );
                 return batch ? batch.batch_date >= cutoffDateStr : false;
               });
-              
-              const activeCost = activeOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const activePayout = activeOrders.reduce((sum, o) => sum + o.potential_payout_cents, 0);
-              
-              const wonOrders = historicalOrders.filter(o => o.result_status === 'won');
-              const lostOrders = historicalOrders.filter(o => o.result_status === 'lost');
-              const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
-              const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+
+              const activeCost = activeOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
+              const activePayout = activeOrders.reduce(
+                (sum, o) => sum + o.potential_payout_cents,
+                0
+              );
+
+              const wonOrders = historicalOrders.filter(
+                (o) => o.result_status === "won"
+              );
+              const lostOrders = historicalOrders.filter(
+                (o) => o.result_status === "lost"
+              );
+              const wonPayout = wonOrders.reduce(
+                (sum, o) =>
+                  sum + (o.actual_payout_cents || o.potential_payout_cents),
+                0
+              );
+              const wonCost = wonOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
               const wonProfit = wonPayout - wonCost;
-              const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const totalFees = historicalOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const lostCost = lostOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
+              const totalFees = historicalOrders.reduce(
+                (sum, o) => sum + (o.fee_cents || 0),
+                0
+              );
               const historicalPnl = wonPayout - wonCost - lostCost - totalFees;
-              
+
               // Count by unique event_ticker
-              const { wonEvents, lostEvents } = countByUniqueEvent(historicalOrders);
-              
+              const { wonEvents, lostEvents } =
+                countByUniqueEvent(historicalOrders);
+
               // Show different cards based on which sub-tab is active
-              if (positionsSubTab === 'active') {
+              if (positionsSubTab === "active") {
                 return (
                   <div className="mb-6 grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Active Positions</div>
-                      <div className="text-2xl font-bold text-white">{activeOrders.length}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Active Positions
+                      </div>
+                      <div className="text-2xl font-bold text-white">
+                        {activeOrders.length}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Active Exposure</div>
-                      <div className="text-2xl font-bold text-amber-400">${(activeCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Active Exposure
+                      </div>
+                      <div className="text-2xl font-bold text-amber-400">
+                        $
+                        {(activeCost / 100).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Potential Payout</div>
-                      <div className="text-2xl font-bold text-emerald-400">${(activePayout / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Potential Payout
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-400">
+                        $
+                        {(activePayout / 100).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Potential Profit</div>
-                      <div className="text-2xl font-bold text-emerald-400">+${((activePayout - activeCost) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Potential Profit
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-400">
+                        +$
+                        {((activePayout - activeCost) / 100).toLocaleString(
+                          "en-US",
+                          { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1843,7 +2344,9 @@ export default function Dashboard() {
                 return (
                   <div className="mb-6 grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">W/L Events ({historicalDays}D)</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        W/L Events ({historicalDays}D)
+                      </div>
                       <div className="text-2xl font-bold">
                         <span className="text-emerald-400">{wonEvents}W</span>
                         <span className="text-slate-500 mx-1">/</span>
@@ -1851,21 +2354,57 @@ export default function Dashboard() {
                       </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Won Profit</div>
-                      <div className="text-2xl font-bold text-emerald-400">+${(wonProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Won Profit
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-400">
+                        +$
+                        {(wonProfit / 100).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Lost Cost</div>
-                      <div className="text-2xl font-bold text-red-400">-${(lostCost / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Lost Cost
+                      </div>
+                      <div className="text-2xl font-bold text-red-400">
+                        -$
+                        {(lostCost / 100).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Total Fees</div>
-                      <div className="text-2xl font-bold text-amber-400">-${(totalFees / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Total Fees
+                      </div>
+                      <div className="text-2xl font-bold text-amber-400">
+                        -$
+                        {(totalFees / 100).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Net P&L</div>
-                      <div className={`text-2xl font-bold ${historicalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {historicalPnl >= 0 ? '+' : ''}${(historicalPnl / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Net P&L
+                      </div>
+                      <div
+                        className={`text-2xl font-bold ${
+                          historicalPnl >= 0
+                            ? "text-emerald-400"
+                            : "text-red-400"
+                        }`}
+                      >
+                        {historicalPnl >= 0 ? "+" : ""}$
+                        {(historicalPnl / 100).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </div>
                     </div>
                   </div>
@@ -1874,101 +2413,165 @@ export default function Dashboard() {
             })()}
 
             {/* Flags Section - Show positions with cost > $400 or avg price < 90¢ */}
-            {positionsSubTab === 'active' && (() => {
-              const allOrders = orderBatches.flatMap(b => b.orders || []);
-              const activeOrders = allOrders.filter(o => 
-                o.placement_status === 'confirmed' && o.result_status === 'undecided'
-              );
-              const flaggedOrders = activeOrders.filter(o => {
-                const cost = o.executed_cost_cents || o.cost_cents || 0;
-                const avgPrice = o.price_cents || 0;
-                return cost > 40000 || avgPrice < 90; // Over $400 or below 90¢
-              });
-              
-              if (flaggedOrders.length === 0) return null;
-              
-              return (
-                <div className="mb-6 bg-amber-500/10 rounded-xl border border-amber-500/30 p-4">
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-amber-400 text-lg">⚠️</span>
-                    <h3 className="text-lg font-semibold text-amber-400">Flags ({flaggedOrders.length})</h3>
-                  </div>
-                  <div className="space-y-2">
-                    {flaggedOrders.map(order => {
-                      const cost = order.executed_cost_cents || order.cost_cents || 0;
-                      const avgPrice = order.price_cents || 0;
-                      const flags: string[] = [];
-                      if (cost > 40000) flags.push(`Cost: $${(cost / 100).toFixed(0)}`);
-                      if (avgPrice < 90) flags.push(`Avg: ${avgPrice}¢`);
-                      
-                      return (
-                        <div key={order.id} className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2">
-                          <div className="flex items-center gap-3">
-                            <span className={`text-xs px-1.5 py-0.5 rounded ${order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                              {order.side}
-                            </span>
-                            <span className="text-white text-sm truncate max-w-[300px]">{order.title || order.ticker}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {flags.map((flag, i) => (
-                              <span key={i} className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">
-                                {flag}
+            {positionsSubTab === "active" &&
+              (() => {
+                const allOrders = orderBatches.flatMap((b) => b.orders || []);
+                const activeOrders = allOrders.filter(
+                  (o) =>
+                    o.placement_status === "confirmed" &&
+                    o.result_status === "undecided"
+                );
+                const flaggedOrders = activeOrders.filter((o) => {
+                  const cost = o.executed_cost_cents || o.cost_cents || 0;
+                  const avgPrice = o.price_cents || 0;
+                  return cost > 40000 || avgPrice < 90; // Over $400 or below 90¢
+                });
+
+                if (flaggedOrders.length === 0) return null;
+
+                return (
+                  <div className="mb-6 bg-amber-500/10 rounded-xl border border-amber-500/30 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-amber-400 text-lg">⚠️</span>
+                      <h3 className="text-lg font-semibold text-amber-400">
+                        Flags ({flaggedOrders.length})
+                      </h3>
+                    </div>
+                    <div className="space-y-2">
+                      {flaggedOrders.map((order) => {
+                        const cost =
+                          order.executed_cost_cents || order.cost_cents || 0;
+                        const avgPrice = order.price_cents || 0;
+                        const flags: string[] = [];
+                        if (cost > 40000)
+                          flags.push(`Cost: $${(cost / 100).toFixed(0)}`);
+                        if (avgPrice < 90) flags.push(`Avg: ${avgPrice}¢`);
+
+                        return (
+                          <div
+                            key={order.id}
+                            className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2"
+                          >
+                            <div className="flex items-center gap-3">
+                              <span
+                                className={`text-xs px-1.5 py-0.5 rounded ${
+                                  order.side === "YES"
+                                    ? "bg-emerald-500/20 text-emerald-400"
+                                    : "bg-red-500/20 text-red-400"
+                                }`}
+                              >
+                                {order.side}
                               </span>
-                            ))}
+                              <span className="text-white text-sm truncate max-w-[300px]">
+                                {order.title || order.ticker}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {flags.map((flag, i) => (
+                                <span
+                                  key={i}
+                                  className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400"
+                                >
+                                  {flag}
+                                </span>
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
-            })()}
+                );
+              })()}
 
             {/* Positions Table */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
               <table className="w-full text-sm min-w-[1100px]">
                 <thead className="bg-slate-800/50">
                   <tr>
-                    <th className="text-left p-3 text-slate-400 font-medium">Market</th>
-                    <th className="text-center p-3 text-slate-400 font-medium">Side</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Units</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Avg Price</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Current Price</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Cost</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Fees</th>
-                    <th className="text-right p-3 text-slate-400 font-medium">Profit</th>
-                    <th className="text-center p-3 text-slate-400 font-medium">Result</th>
+                    <th className="text-left p-3 text-slate-400 font-medium">
+                      Market
+                    </th>
+                    <th className="text-center p-3 text-slate-400 font-medium">
+                      Side
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Units
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Avg Price
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Current Price
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Cost
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Payout
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Fees
+                    </th>
+                    <th className="text-right p-3 text-slate-400 font-medium">
+                      Profit
+                    </th>
+                    <th className="text-center p-3 text-slate-400 font-medium">
+                      Result
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
                     // Get all orders from all batches
-                    const allOrders = orderBatches.flatMap(b => b.orders || []);
-                    
+                    const allOrders = orderBatches.flatMap(
+                      (b) => b.orders || []
+                    );
+
                     // Calculate cutoff date for historical filter (in ET)
                     const todayET = getTodayET();
-                    const cutoffDateStr = addDaysToDateET(todayET, -historicalDays);
-                    
+                    const cutoffDateStr = addDaysToDateET(
+                      todayET,
+                      -historicalDays
+                    );
+
                     // Filter by sub-tab (with timespan for historical)
-                    const filteredOrders = positionsSubTab === 'active'
-                      ? allOrders.filter(o => o.placement_status === 'confirmed' && o.result_status === 'undecided')
-                      : allOrders.filter(o => {
-                          if (o.result_status !== 'won' && o.result_status !== 'lost') return false;
-                          const batch = orderBatches.find(b => b.orders?.some(bo => bo.id === o.id));
-                          return batch ? batch.batch_date >= cutoffDateStr : false;
-                        });
-                    
+                    const filteredOrders =
+                      positionsSubTab === "active"
+                        ? allOrders.filter(
+                            (o) =>
+                              o.placement_status === "confirmed" &&
+                              o.result_status === "undecided"
+                          )
+                        : allOrders.filter((o) => {
+                            if (
+                              o.result_status !== "won" &&
+                              o.result_status !== "lost"
+                            )
+                              return false;
+                            const batch = orderBatches.find((b) =>
+                              b.orders?.some((bo) => bo.id === o.id)
+                            );
+                            return batch
+                              ? batch.batch_date >= cutoffDateStr
+                              : false;
+                          });
+
                     // Helper to extract team abbreviation from title
-                    const getTeamAbbrev = (title: string, side: string): string => {
+                    const getTeamAbbrev = (
+                      title: string,
+                      side: string
+                    ): string => {
                       // Format: "Denver at Kansas City Winner?" or "Cleveland vs New York Winner?"
-                      const match = title.match(/^(.+?)\s+(?:at|vs)\s+(.+?)\s+Winner\?$/i);
+                      const match = title.match(
+                        /^(.+?)\s+(?:at|vs)\s+(.+?)\s+Winner\?$/i
+                      );
                       if (match) {
                         const [, team1, team2] = match;
                         // YES typically means first team (away/first listed), NO means second team (home/second listed)
-                        const selectedTeam = side === 'YES' ? team1 : team2;
+                        const selectedTeam = side === "YES" ? team1 : team2;
                         // Get first 3 chars as abbreviation, or first word if short
-                        const words = selectedTeam.trim().split(' ');
+                        const words = selectedTeam.trim().split(" ");
                         if (words.length === 1 && words[0].length <= 4) {
                           return words[0].toUpperCase();
                         }
@@ -1977,68 +2580,121 @@ export default function Dashboard() {
                       }
                       return side;
                     };
-                    
+
                     if (filteredOrders.length === 0) {
                       return (
                         <tr>
-                          <td colSpan={10} className="p-8 text-center text-slate-500">
+                          <td
+                            colSpan={10}
+                            className="p-8 text-center text-slate-500"
+                          >
                             No {positionsSubTab} positions
                           </td>
                         </tr>
                       );
                     }
-                    
-                      return filteredOrders.map(order => {
-                      const avgPrice = order.executed_cost_cents 
-                        ? Math.round(order.executed_cost_cents / order.units) 
+
+                    return filteredOrders.map((order) => {
+                      const avgPrice = order.executed_cost_cents
+                        ? Math.round(order.executed_cost_cents / order.units)
                         : order.price_cents;
-                      const currentPrice = order.current_price_cents || order.price_cents;
-                      
+                      const currentPrice =
+                        order.current_price_cents || order.price_cents;
+
                       return (
-                        <tr key={order.id} className="border-t border-slate-800 hover:bg-slate-800/30">
+                        <tr
+                          key={order.id}
+                          className="border-t border-slate-800 hover:bg-slate-800/30"
+                        >
                           <td className="p-3 text-white">{order.title}</td>
                           <td className="p-3 text-center">
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${
-                              order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
-                            }`}>
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-bold ${
+                                order.side === "YES"
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : "bg-red-500/20 text-red-400"
+                              }`}
+                            >
                               {getTeamAbbrev(order.title, order.side)}
                             </span>
                           </td>
-                          <td className="p-3 text-right text-white font-mono">{order.units.toLocaleString()}</td>
-                          <td className="p-3 text-right text-slate-400 font-mono">{avgPrice}¢</td>
-                          <td className="p-3 text-right text-white font-mono">{currentPrice}¢</td>
                           <td className="p-3 text-right text-white font-mono">
-                            ${((order.executed_cost_cents || order.cost_cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {order.units.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right text-slate-400 font-mono">
+                            {avgPrice}¢
                           </td>
                           <td className="p-3 text-right text-white font-mono">
-                            ${(order.potential_payout_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {currentPrice}¢
                           </td>
                           <td className="p-3 text-right text-white font-mono">
-                            ${((order.fee_cents || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            $
+                            {(
+                              (order.executed_cost_cents || order.cost_cents) /
+                              100
+                            ).toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td className="p-3 text-right text-white font-mono">
+                            $
+                            {(
+                              order.potential_payout_cents / 100
+                            ).toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+                          <td className="p-3 text-right text-white font-mono">
+                            $
+                            {((order.fee_cents || 0) / 100).toLocaleString(
+                              "en-US",
+                              {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              }
+                            )}
                           </td>
                           <td className="p-3 text-right font-mono">
                             {(() => {
-                              const cost = order.executed_cost_cents || order.cost_cents;
+                              const cost =
+                                order.executed_cost_cents || order.cost_cents;
                               const fees = order.fee_cents || 0;
                               const payout = order.potential_payout_cents;
-                              const profit = order.result_status === 'won' 
-                                ? payout - cost - fees 
-                                : order.result_status === 'lost' 
-                                  ? -cost 
+                              const profit =
+                                order.result_status === "won"
+                                  ? payout - cost - fees
+                                  : order.result_status === "lost"
+                                  ? -cost
                                   : 0;
                               return (
-                                <span className={profit >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                                  {profit >= 0 ? '+' : ''}${(profit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                <span
+                                  className={
+                                    profit >= 0
+                                      ? "text-emerald-400"
+                                      : "text-red-400"
+                                  }
+                                >
+                                  {profit >= 0 ? "+" : ""}$
+                                  {(profit / 100).toLocaleString("en-US", {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}
                                 </span>
                               );
                             })()}
                           </td>
                           <td className="p-3 text-center">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              order.result_status === 'won' ? 'bg-emerald-500/20 text-emerald-400' :
-                              order.result_status === 'lost' ? 'bg-red-500/20 text-red-400' :
-                              'bg-slate-700 text-slate-400'
-                            }`}>
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-medium ${
+                                order.result_status === "won"
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : order.result_status === "lost"
+                                  ? "bg-red-500/20 text-red-400"
+                                  : "bg-slate-700 text-slate-400"
+                              }`}
+                            >
                               {order.result_status.toUpperCase()}
                             </span>
                           </td>
@@ -2053,11 +2709,13 @@ export default function Dashboard() {
         )}
 
         {/* Orders Tab (Live Trading) */}
-        {activeTab === 'orders' && (
+        {activeTab === "orders" && (
           <div className="py-8">
             {/* Capital Deployment Table */}
             <div className="bg-slate-900 rounded-xl p-4 mb-6 overflow-x-auto">
-              <h3 className="text-sm text-slate-400 mb-3">Capital Deployment</h3>
+              <h3 className="text-sm text-slate-400 mb-3">
+                Capital Deployment
+              </h3>
               <table className="w-full text-sm min-w-[500px]">
                 <thead>
                   <tr className="text-slate-400 border-b border-slate-800">
@@ -2071,70 +2729,147 @@ export default function Dashboard() {
                   {(() => {
                     // Generate 7 days centered on today (in ET)
                     const todayET = getTodayET();
-                    const currentPortfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
-                    
-                    const days: { date: string; label: string; isToday: boolean }[] = [];
+                    const currentPortfolioValue =
+                      liveOrdersStats?.portfolio_value_cents || 1;
+
+                    const days: {
+                      date: string;
+                      label: string;
+                      isToday: boolean;
+                    }[] = [];
                     for (let i = -3; i <= 3; i++) {
                       const dateStr = addDaysToDateET(todayET, i);
                       days.push({
                         date: dateStr,
                         label: formatDateForDisplay(dateStr),
-                        isToday: i === 0
+                        isToday: i === 0,
                       });
                     }
-                    
+
                     // Get all orders from all batches
-                    const allOrders = orderBatches.flatMap(b => b.orders || []);
-                    
-                    return days.map(day => {
-                      // Filter orders by placement_status_at date (when they were actually placed)
-                      const ordersForDay = allOrders.filter(o => {
+                    const allOrders = orderBatches.flatMap(
+                      (b) => b.orders || []
+                    );
+
+                    return days.map((day) => {
+                      // Filter orders by trading day (5am ET cutoff - orders before 5am count as previous day)
+                      const ordersForDay = allOrders.filter((o) => {
                         if (!o.placement_status_at) return false;
-                        const placedDate = getDateFromTimestampET(o.placement_status_at);
-                        return placedDate === day.date;
+                        const tradingDay = getTradingDayFromTimestamp(
+                          o.placement_status_at
+                        );
+                        return tradingDay === day.date;
                       });
-                      
+
                       // Also get pending orders from batches for this day (for projected)
-                      const batch = orderBatches.find(b => b.batch_date === day.date);
-                      const pendingOrders = (batch?.orders || []).filter(o => o.placement_status === 'pending' || o.placement_status === 'placed');
-                      
-                      // Confirmed orders (placed on this day)
-                      const confirmedOrders = ordersForDay.filter(o => o.placement_status === 'confirmed');
-                      
+                      const batch = orderBatches.find(
+                        (b) => b.batch_date === day.date
+                      );
+                      const batchPendingOrders = (batch?.orders || []).filter(
+                        (o) =>
+                          o.placement_status === "pending" ||
+                          o.placement_status === "placed"
+                      );
+
+                      // Pending orders already placed for this trading day
+                      const placedPendingOrders = ordersForDay.filter(
+                        (o) =>
+                          o.placement_status === "pending" ||
+                          o.placement_status === "placed"
+                      );
+
+                      // Combine batch pending (not yet placed) with already placed pending
+                      const pendingOrders = [
+                        ...batchPendingOrders,
+                        ...placedPendingOrders.filter(
+                          (o) => !batchPendingOrders.some((b) => b.id === o.id)
+                        ),
+                      ];
+
+                      // Confirmed orders (placed on this trading day)
+                      const confirmedOrders = ordersForDay.filter(
+                        (o) => o.placement_status === "confirmed"
+                      );
+
                       // Actual = confirmed orders cost
-                      const actualCents = confirmedOrders
-                        .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-                      
+                      const actualCents = confirmedOrders.reduce(
+                        (sum, o) =>
+                          sum + (o.executed_cost_cents || o.cost_cents || 0),
+                        0
+                      );
+
                       // Projected = pending orders for this batch + confirmed orders placed this day
-                      const projectedCents = [...pendingOrders, ...confirmedOrders]
-                        .reduce((sum, o) => sum + (o.cost_cents || 0), 0);
-                      
+                      const projectedCents = [
+                        ...pendingOrders,
+                        ...confirmedOrders,
+                      ].reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+
                       // Count unique events (by event_ticker)
-                      const projectedEvents = new Set([...pendingOrders, ...confirmedOrders].map(o => o.event_ticker)).size;
-                      const actualEvents = new Set(confirmedOrders.map(o => o.event_ticker)).size;
-                      
+                      const projectedEvents = new Set(
+                        [...pendingOrders, ...confirmedOrders].map(
+                          (o) => o.event_ticker
+                        )
+                      ).size;
+                      const actualEvents = new Set(
+                        confirmedOrders.map((o) => o.event_ticker)
+                      ).size;
+
                       // Get starting portfolio value for that day from records data
-                      const dayRecord = recordsData?.records?.find(r => r.date === day.date);
-                      const startPortfolioForDay = dayRecord?.start_portfolio_cents || currentPortfolioValue;
-                      
+                      const dayRecord = recordsData?.records?.find(
+                        (r) => r.date === day.date
+                      );
+                      const startPortfolioForDay =
+                        dayRecord?.start_portfolio_cents ||
+                        currentPortfolioValue;
+
                       // Percentage = actual capital deployed / starting portfolio value
-                      const pctOfPortfolio = startPortfolioForDay > 0 
-                        ? Math.round((actualCents / startPortfolioForDay) * 100)
-                        : 0;
-                      
+                      const pctOfPortfolio =
+                        startPortfolioForDay > 0
+                          ? Math.round(
+                              (actualCents / startPortfolioForDay) * 100
+                            )
+                          : 0;
+
                       return (
-                        <tr 
-                          key={day.date} 
-                          className={`border-b border-slate-800/50 ${day.isToday ? 'bg-blue-500/10' : ''}`}
+                        <tr
+                          key={day.date}
+                          className={`border-b border-slate-800/50 ${
+                            day.isToday ? "bg-blue-500/10" : ""
+                          }`}
                         >
-                          <td className={`py-2 ${day.isToday ? 'text-blue-400 font-medium' : 'text-white'}`}>
-                            {day.label} {day.isToday && <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2">TODAY</span>}
+                          <td
+                            className={`py-2 ${
+                              day.isToday
+                                ? "text-blue-400 font-medium"
+                                : "text-white"
+                            }`}
+                          >
+                            {day.label}{" "}
+                            {day.isToday && (
+                              <span className="text-xs bg-blue-500 text-white px-1.5 py-0.5 rounded ml-2">
+                                TODAY
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 text-right text-slate-400 font-mono">
-                            <span className="text-slate-500">{projectedEvents}</span> | ${(projectedCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className="text-slate-500">
+                              {projectedEvents}
+                            </span>{" "}
+                            | $
+                            {(projectedCents / 100).toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
                           </td>
                           <td className="py-2 text-right text-emerald-400 font-mono">
-                            <span className="text-emerald-600">{actualEvents}</span> | ${(actualCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className="text-emerald-600">
+                              {actualEvents}
+                            </span>{" "}
+                            | $
+                            {(actualCents / 100).toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
                           </td>
                           <td className="py-2 text-right text-amber-400 font-mono">
                             {pctOfPortfolio}%
@@ -2147,51 +2882,110 @@ export default function Dashboard() {
                 <tfoot>
                   {(() => {
                     const todayET = getTodayET();
-                    const currentPortfolioValue = liveOrdersStats?.portfolio_value_cents || 1;
+                    const currentPortfolioValue =
+                      liveOrdersStats?.portfolio_value_cents || 1;
                     let totalProjected = 0;
                     let totalActual = 0;
                     const allProjectedEvents = new Set<string>();
                     const allActualEvents = new Set<string>();
-                    
+
                     // Get all orders from all batches
-                    const allOrders = orderBatches.flatMap(b => b.orders || []);
-                    
+                    const allOrders = orderBatches.flatMap(
+                      (b) => b.orders || []
+                    );
+
                     for (let i = -3; i <= 3; i++) {
                       const dateStr = addDaysToDateET(todayET, i);
-                      
-                      // Filter orders by placement_status_at date
-                      const ordersForDay = allOrders.filter(o => {
+
+                      // Filter orders by trading day (5am ET cutoff)
+                      const ordersForDay = allOrders.filter((o) => {
                         if (!o.placement_status_at) return false;
-                        const placedDate = getDateFromTimestampET(o.placement_status_at);
-                        return placedDate === dateStr;
+                        const tradingDay = getTradingDayFromTimestamp(
+                          o.placement_status_at
+                        );
+                        return tradingDay === dateStr;
                       });
-                      
+
                       // Also get pending orders from batches for this day
-                      const batch = orderBatches.find(b => b.batch_date === dateStr);
-                      const pendingOrders = (batch?.orders || []).filter(o => o.placement_status === 'pending' || o.placement_status === 'placed');
-                      
-                      const confirmedOrders = ordersForDay.filter(o => o.placement_status === 'confirmed');
-                      
-                      totalActual += confirmedOrders
-                        .reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-                      totalProjected += [...pendingOrders, ...confirmedOrders].reduce((sum, o) => sum + (o.cost_cents || 0), 0);
-                      
+                      const batch = orderBatches.find(
+                        (b) => b.batch_date === dateStr
+                      );
+                      const batchPendingOrders = (batch?.orders || []).filter(
+                        (o) =>
+                          o.placement_status === "pending" ||
+                          o.placement_status === "placed"
+                      );
+                      const placedPendingOrders = ordersForDay.filter(
+                        (o) =>
+                          o.placement_status === "pending" ||
+                          o.placement_status === "placed"
+                      );
+                      const pendingOrders = [
+                        ...batchPendingOrders,
+                        ...placedPendingOrders.filter(
+                          (o) => !batchPendingOrders.some((b) => b.id === o.id)
+                        ),
+                      ];
+
+                      const confirmedOrders = ordersForDay.filter(
+                        (o) => o.placement_status === "confirmed"
+                      );
+
+                      totalActual += confirmedOrders.reduce(
+                        (sum, o) =>
+                          sum + (o.executed_cost_cents || o.cost_cents || 0),
+                        0
+                      );
+                      totalProjected += [
+                        ...pendingOrders,
+                        ...confirmedOrders,
+                      ].reduce((sum, o) => sum + (o.cost_cents || 0), 0);
+
                       // Track unique events
-                      [...pendingOrders, ...confirmedOrders].forEach(o => allProjectedEvents.add(o.event_ticker));
-                      confirmedOrders.forEach(o => allActualEvents.add(o.event_ticker));
+                      [...pendingOrders, ...confirmedOrders].forEach((o) =>
+                        allProjectedEvents.add(o.event_ticker)
+                      );
+                      confirmedOrders.forEach((o) =>
+                        allActualEvents.add(o.event_ticker)
+                      );
                     }
-                    
+
                     // Use current portfolio value for total percentage
-                    const totalPct = currentPortfolioValue > 0 
-                      ? Math.round((totalActual / currentPortfolioValue) * 100)
-                      : 0;
-                    
+                    const totalPct =
+                      currentPortfolioValue > 0
+                        ? Math.round(
+                            (totalActual / currentPortfolioValue) * 100
+                          )
+                        : 0;
+
                     return (
                       <tr className="border-t-2 border-slate-700">
-                        <td className="py-2 text-slate-400 font-medium">Total (7 days)</td>
-                        <td className="py-2 text-right text-white font-mono font-bold"><span className="text-slate-400">{allProjectedEvents.size}</span> | ${(totalProjected / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="py-2 text-right text-emerald-400 font-mono font-bold"><span className="text-emerald-600">{allActualEvents.size}</span> | ${(totalActual / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td className="py-2 text-right text-amber-400 font-mono font-bold">{totalPct}%</td>
+                        <td className="py-2 text-slate-400 font-medium">
+                          Total (7 days)
+                        </td>
+                        <td className="py-2 text-right text-white font-mono font-bold">
+                          <span className="text-slate-400">
+                            {allProjectedEvents.size}
+                          </span>{" "}
+                          | $
+                          {(totalProjected / 100).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="py-2 text-right text-emerald-400 font-mono font-bold">
+                          <span className="text-emerald-600">
+                            {allActualEvents.size}
+                          </span>{" "}
+                          | $
+                          {(totalActual / 100).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </td>
+                        <td className="py-2 text-right text-amber-400 font-mono font-bold">
+                          {totalPct}%
+                        </td>
                       </tr>
                     );
                   })()}
@@ -2209,31 +3003,42 @@ export default function Dashboard() {
                   disabled={preparingWeek}
                   className="px-4 py-1.5 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 transition-colors"
                 >
-                  {preparingWeek ? 'Preparing...' : 'Prepare Week'}
+                  {preparingWeek ? "Preparing..." : "Prepare Week"}
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
                 {orderBatches.length > 0 ? (
-                  [...orderBatches].sort((a, b) => a.batch_date.localeCompare(b.batch_date)).map((batch) => {
-                    const date = new Date(batch.batch_date + 'T12:00:00');
-                    const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-                    return (
-                      <button
-                        key={batch.id}
-                        onClick={() => setSelectedDay(batch.batch_date)}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
-                          selectedDay === batch.batch_date
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white'
-                        }`}
-                      >
-                        {dayLabel}
-                        {batch.is_paused && <span className="text-amber-400">⏸</span>}
-                      </button>
-                    );
-                  })
+                  [...orderBatches]
+                    .sort((a, b) => a.batch_date.localeCompare(b.batch_date))
+                    .map((batch) => {
+                      const date = new Date(batch.batch_date + "T12:00:00");
+                      const dayLabel = date.toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      });
+                      return (
+                        <button
+                          key={batch.id}
+                          onClick={() => setSelectedDay(batch.batch_date)}
+                          className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${
+                            selectedDay === batch.batch_date
+                              ? "bg-blue-500 text-white"
+                              : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-white"
+                          }`}
+                        >
+                          {dayLabel}
+                          {batch.is_paused && (
+                            <span className="text-amber-400">⏸</span>
+                          )}
+                        </button>
+                      );
+                    })
                 ) : (
-                  <span className="text-slate-500 text-sm">No batches yet. Click &quot;Prepare Week&quot; to create orders for the next 7 days.</span>
+                  <span className="text-slate-500 text-sm">
+                    No batches yet. Click &quot;Prepare Week&quot; to create
+                    orders for the next 7 days.
+                  </span>
                 )}
               </div>
             </div>
@@ -2241,50 +3046,120 @@ export default function Dashboard() {
             {/* Order Summary - filtered by selected day */}
             {(() => {
               // Get orders for the selected day (or all if no day selected)
-              const filteredBatches = orderBatches.filter(b => b.batch_date === selectedDay);
-              const allOrders = filteredBatches.flatMap(b => b.orders || []);
-              
+              const filteredBatches = orderBatches.filter(
+                (b) => b.batch_date === selectedDay
+              );
+              const allOrders = filteredBatches.flatMap((b) => b.orders || []);
+
               // Calculate placement breakdown
-              const pendingOrders = allOrders.filter(o => o.placement_status === 'pending');
-              const placedOrders = allOrders.filter(o => o.placement_status === 'placed');
-              const confirmedOrders = allOrders.filter(o => o.placement_status === 'confirmed');
-              const actualCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              
+              const pendingOrders = allOrders.filter(
+                (o) => o.placement_status === "pending"
+              );
+              const placedOrders = allOrders.filter(
+                (o) => o.placement_status === "placed"
+              );
+              const confirmedOrders = allOrders.filter(
+                (o) => o.placement_status === "confirmed"
+              );
+              const actualCost = confirmedOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
+
               // Calculate result breakdown
-              const undecidedOrders = confirmedOrders.filter(o => o.result_status === 'undecided');
-              const wonOrders = confirmedOrders.filter(o => o.result_status === 'won');
-              const lostOrders = confirmedOrders.filter(o => o.result_status === 'lost');
-              const undecidedExposure = undecidedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const undecidedOrders = confirmedOrders.filter(
+                (o) => o.result_status === "undecided"
+              );
+              const wonOrders = confirmedOrders.filter(
+                (o) => o.result_status === "won"
+              );
+              const lostOrders = confirmedOrders.filter(
+                (o) => o.result_status === "lost"
+              );
+              const undecidedExposure = undecidedOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
               // Won profit = payout - cost paid - fees
-              const wonPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-              const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const wonFees = wonOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const wonPayout = wonOrders.reduce(
+                (sum, o) =>
+                  sum +
+                  (o.actual_payout_cents || o.potential_payout_cents || 0),
+                0
+              );
+              const wonCost = wonOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
+              const wonFees = wonOrders.reduce(
+                (sum, o) => sum + (o.fee_cents || 0),
+                0
+              );
               const wonProfit = wonPayout - wonCost - wonFees;
-              const estimatedLost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const lostFees = lostOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const estimatedLost = lostOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
+              const lostFees = lostOrders.reduce(
+                (sum, o) => sum + (o.fee_cents || 0),
+                0
+              );
               const estimatedPnl = wonProfit - estimatedLost - lostFees;
-              
+
               // Count by unique event_ticker
-              const { wonEvents, lostEvents } = countByUniqueEvent(confirmedOrders);
-              const undecidedEvents = new Set(undecidedOrders.map(o => o.event_ticker)).size;
-              
+              const { wonEvents, lostEvents } =
+                countByUniqueEvent(confirmedOrders);
+              const undecidedEvents = new Set(
+                undecidedOrders.map((o) => o.event_ticker)
+              ).size;
+
               // Calculate settlement breakdown
               const settledOrders = [...wonOrders, ...lostOrders];
-              const pendingSettlement = settledOrders.filter(o => o.settlement_status === 'pending');
-              const successOrders = settledOrders.filter(o => o.settlement_status === 'success');
-              const closedOrders = settledOrders.filter(o => o.settlement_status === 'closed');
+              const pendingSettlement = settledOrders.filter(
+                (o) => o.settlement_status === "pending"
+              );
+              const successOrders = settledOrders.filter(
+                (o) => o.settlement_status === "success"
+              );
+              const closedOrders = settledOrders.filter(
+                (o) => o.settlement_status === "closed"
+              );
               // Pending profit = projected payout - cost
-              const pendingWonOrders = pendingSettlement.filter(o => o.result_status === 'won');
-              const pendingPayout = pendingWonOrders.reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
-              const pendingCost = pendingWonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const pendingWonOrders = pendingSettlement.filter(
+                (o) => o.result_status === "won"
+              );
+              const pendingPayout = pendingWonOrders.reduce(
+                (sum, o) => sum + (o.potential_payout_cents || 0),
+                0
+              );
+              const pendingCost = pendingWonOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
               const projectedProfit = pendingPayout - pendingCost;
               // Success profit = actual payout - cost
-              const successWonOrders = successOrders.filter(o => o.result_status === 'won');
-              const actualPayout = successWonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents || 0), 0);
-              const successCost = successWonOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
+              const successWonOrders = successOrders.filter(
+                (o) => o.result_status === "won"
+              );
+              const actualPayout = successWonOrders.reduce(
+                (sum, o) =>
+                  sum +
+                  (o.actual_payout_cents || o.potential_payout_cents || 0),
+                0
+              );
+              const successCost = successWonOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
               const successProfit = actualPayout - successCost;
-              const actualLost = closedOrders.reduce((sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
-              const feesPaid = settledOrders.reduce((sum, o) => sum + (o.fee_cents || 0), 0);
+              const actualLost = closedOrders.reduce(
+                (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
+                0
+              );
+              const feesPaid = settledOrders.reduce(
+                (sum, o) => sum + (o.fee_cents || 0),
+                0
+              );
               const netProfit = successProfit - actualLost - feesPaid;
 
               if (allOrders.length === 0) return null;
@@ -2292,13 +3167,22 @@ export default function Dashboard() {
               return (
                 <div className="bg-slate-900 rounded-xl p-6 mb-6">
                   <h3 className="text-lg font-bold text-white mb-4">
-                    Order Summary {selectedDay && `- ${new Date(selectedDay + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`}
+                    Order Summary{" "}
+                    {selectedDay &&
+                      `- ${new Date(
+                        selectedDay + "T12:00:00"
+                      ).toLocaleDateString("en-US", {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}`}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    
                     {/* Placement Status */}
                     <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Placement</div>
+                      <div className="text-sm font-medium text-white mb-3">
+                        Placement
+                      </div>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-slate-500 text-xs uppercase">
@@ -2310,23 +3194,41 @@ export default function Dashboard() {
                         <tbody className="text-sm">
                           <tr>
                             <td className="py-1.5 text-slate-400">Pending</td>
-                            <td className="py-1.5 text-right text-white">{pendingOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-slate-500">-</td>
+                            <td className="py-1.5 text-right text-white">
+                              {pendingOrders.length}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-slate-500">
+                              -
+                            </td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Placed</td>
-                            <td className="py-1.5 text-right text-white">{placedOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-slate-500">-</td>
+                            <td className="py-1.5 text-right text-white">
+                              {placedOrders.length}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-slate-500">
+                              -
+                            </td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Confirmed</td>
-                            <td className="py-1.5 text-right text-white">{confirmedOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-white">${(actualCost / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-white">
+                              {confirmedOrders.length}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-white">
+                              ${(actualCost / 100).toFixed(2)}
+                            </td>
                           </tr>
                           <tr className="border-t border-slate-700">
-                            <td className="py-2 text-white font-medium">Total</td>
-                            <td className="py-2 text-right text-white font-medium">{allOrders.length}</td>
-                            <td className="py-2 text-right font-mono text-white font-medium">${(actualCost / 100).toFixed(2)}</td>
+                            <td className="py-2 text-white font-medium">
+                              Total
+                            </td>
+                            <td className="py-2 text-right text-white font-medium">
+                              {allOrders.length}
+                            </td>
+                            <td className="py-2 text-right font-mono text-white font-medium">
+                              ${(actualCost / 100).toFixed(2)}
+                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -2334,7 +3236,9 @@ export default function Dashboard() {
 
                     {/* Result Status */}
                     <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Results (by Event)</div>
+                      <div className="text-sm font-medium text-white mb-3">
+                        Results (by Event)
+                      </div>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-slate-500 text-xs uppercase">
@@ -2346,24 +3250,51 @@ export default function Dashboard() {
                         <tbody className="text-sm">
                           <tr>
                             <td className="py-1.5 text-slate-400">Undecided</td>
-                            <td className="py-1.5 text-right text-white">{undecidedEvents}</td>
-                            <td className="py-1.5 text-right font-mono text-white">${(undecidedExposure / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-white">
+                              {undecidedEvents}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-white">
+                              ${(undecidedExposure / 100).toFixed(2)}
+                            </td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Won</td>
-                            <td className="py-1.5 text-right text-emerald-400">{wonEvents}</td>
-                            <td className="py-1.5 text-right font-mono text-emerald-400">+${(wonProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="py-1.5 text-right text-emerald-400">
+                              {wonEvents}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-emerald-400">
+                              +$
+                              {(wonProfit / 100).toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Lost</td>
-                            <td className="py-1.5 text-right text-red-400">{lostEvents}</td>
-                            <td className="py-1.5 text-right font-mono text-red-400">-${(estimatedLost / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-red-400">
+                              {lostEvents}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-red-400">
+                              -${(estimatedLost / 100).toFixed(2)}
+                            </td>
                           </tr>
                           <tr className="border-t border-slate-700">
-                            <td className="py-2 text-white font-medium">Est. P&L</td>
-                            <td className="py-2 text-right text-white font-medium">{undecidedEvents + wonEvents + lostEvents}</td>
-                            <td className={`py-2 text-right font-mono font-medium ${estimatedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {estimatedPnl >= 0 ? '+' : ''}${(estimatedPnl / 100).toFixed(2)}
+                            <td className="py-2 text-white font-medium">
+                              Est. P&L
+                            </td>
+                            <td className="py-2 text-right text-white font-medium">
+                              {undecidedEvents + wonEvents + lostEvents}
+                            </td>
+                            <td
+                              className={`py-2 text-right font-mono font-medium ${
+                                estimatedPnl >= 0
+                                  ? "text-emerald-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {estimatedPnl >= 0 ? "+" : ""}$
+                              {(estimatedPnl / 100).toFixed(2)}
                             </td>
                           </tr>
                         </tbody>
@@ -2372,7 +3303,9 @@ export default function Dashboard() {
 
                     {/* Settlement Status */}
                     <div className="bg-slate-800/50 rounded-lg p-4">
-                      <div className="text-sm font-medium text-white mb-3">Settlement</div>
+                      <div className="text-sm font-medium text-white mb-3">
+                        Settlement
+                      </div>
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-slate-500 text-xs uppercase">
@@ -2384,35 +3317,69 @@ export default function Dashboard() {
                         <tbody className="text-sm">
                           <tr>
                             <td className="py-1.5 text-slate-400">Pending</td>
-                            <td className="py-1.5 text-right text-white">{pendingSettlement.length}</td>
-                            <td className="py-1.5 text-right font-mono text-white">+${(projectedProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="py-1.5 text-right text-white">
+                              {pendingSettlement.length}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-white">
+                              +$
+                              {(projectedProfit / 100).toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Success</td>
-                            <td className="py-1.5 text-right text-emerald-400">{successOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-emerald-400">+${(successProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="py-1.5 text-right text-emerald-400">
+                              {successOrders.length}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-emerald-400">
+                              +$
+                              {(successProfit / 100).toLocaleString("en-US", {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </td>
                           </tr>
                           <tr>
                             <td className="py-1.5 text-slate-400">Closed</td>
-                            <td className="py-1.5 text-right text-red-400">{closedOrders.length}</td>
-                            <td className="py-1.5 text-right font-mono text-red-400">-${(actualLost / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-red-400">
+                              {closedOrders.length}
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-red-400">
+                              -${(actualLost / 100).toFixed(2)}
+                            </td>
                           </tr>
                           <tr className="border-t border-slate-700">
                             <td className="py-1.5 text-slate-400">Fees</td>
-                            <td className="py-1.5 text-right text-slate-500">-</td>
-                            <td className="py-1.5 text-right font-mono text-red-400">-${(feesPaid / 100).toFixed(2)}</td>
+                            <td className="py-1.5 text-right text-slate-500">
+                              -
+                            </td>
+                            <td className="py-1.5 text-right font-mono text-red-400">
+                              -${(feesPaid / 100).toFixed(2)}
+                            </td>
                           </tr>
                           <tr>
-                            <td className="py-2 text-white font-medium">Net Profit</td>
-                            <td className="py-2 text-right text-white font-medium">{settledOrders.length}</td>
-                            <td className={`py-2 text-right font-mono font-medium ${netProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {netProfit >= 0 ? '+' : ''}${(netProfit / 100).toFixed(2)}
+                            <td className="py-2 text-white font-medium">
+                              Net Profit
+                            </td>
+                            <td className="py-2 text-right text-white font-medium">
+                              {settledOrders.length}
+                            </td>
+                            <td
+                              className={`py-2 text-right font-mono font-medium ${
+                                netProfit >= 0
+                                  ? "text-emerald-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {netProfit >= 0 ? "+" : ""}$
+                              {(netProfit / 100).toFixed(2)}
                             </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
-
                   </div>
                 </div>
               );
@@ -2421,22 +3388,24 @@ export default function Dashboard() {
             {/* Quick Prepare Buttons for missing batches */}
             {!liveOrdersLoading && orderBatches.length > 0 && (
               <div className="flex gap-2 mb-4">
-                {!orderBatches.some(b => b.batch_date === getTodayET()) && (
+                {!orderBatches.some((b) => b.batch_date === getTodayET()) && (
                   <button
                     onClick={() => prepareOrders(true)}
                     disabled={preparingOrders}
                     className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50"
                   >
-                    {preparingOrders ? '...' : '+ Prepare Today'}
+                    {preparingOrders ? "..." : "+ Prepare Today"}
                   </button>
                 )}
-                {!orderBatches.some(b => b.batch_date === addDaysToDateET(getTodayET(), 1)) && (
+                {!orderBatches.some(
+                  (b) => b.batch_date === addDaysToDateET(getTodayET(), 1)
+                ) && (
                   <button
                     onClick={() => prepareOrders(false)}
                     disabled={preparingOrders}
                     className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50"
                   >
-                    {preparingOrders ? '...' : '+ Prepare Tomorrow'}
+                    {preparingOrders ? "..." : "+ Prepare Tomorrow"}
                   </button>
                 )}
               </div>
@@ -2457,85 +3426,156 @@ export default function Dashboard() {
                     disabled={preparingOrders}
                     className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50"
                   >
-                    {preparingOrders ? 'Preparing...' : '📋 Prepare Today'}
+                    {preparingOrders ? "Preparing..." : "📋 Prepare Today"}
                   </button>
                   <button
                     onClick={() => prepareOrders(false)}
                     disabled={preparingOrders}
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 disabled:opacity-50"
                   >
-                    {preparingOrders ? 'Preparing...' : '📋 Prepare Tomorrow'}
+                    {preparingOrders ? "Preparing..." : "📋 Prepare Tomorrow"}
                   </button>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
                 {orderBatches
-                  .filter(batch => batch.batch_date === selectedDay)
+                  .filter((batch) => batch.batch_date === selectedDay)
                   .map((batch) => {
                     // Add T12:00:00 to avoid timezone shift issues
-                    const batchDate = new Date(batch.batch_date + 'T12:00:00Z');
+                    const batchDate = new Date(batch.batch_date + "T12:00:00Z");
                     const todayStr = getTodayET();
                     const tomorrowStr = addDaysToDateET(todayStr, 1);
                     const isToday = batch.batch_date === todayStr;
                     const isTomorrow = batch.batch_date === tomorrowStr;
-                    
+
                     // Calculate batch stats (use actual cost when available)
-                    const confirmedOrders = batch.orders.filter(o => o.placement_status === 'confirmed');
-                    const wonOrders = batch.orders.filter(o => o.result_status === 'won');
-                    const lostOrders = batch.orders.filter(o => o.result_status === 'lost');
-                    const pendingOrders = batch.orders.filter(o => o.result_status === 'undecided');
-                    const batchCost = confirmedOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
-                    const batchPayout = wonOrders.reduce((sum, o) => sum + (o.actual_payout_cents || o.potential_payout_cents), 0);
+                    const confirmedOrders = batch.orders.filter(
+                      (o) => o.placement_status === "confirmed"
+                    );
+                    const wonOrders = batch.orders.filter(
+                      (o) => o.result_status === "won"
+                    );
+                    const lostOrders = batch.orders.filter(
+                      (o) => o.result_status === "lost"
+                    );
+                    const pendingOrders = batch.orders.filter(
+                      (o) => o.result_status === "undecided"
+                    );
+                    const batchCost = confirmedOrders.reduce(
+                      (sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents),
+                      0
+                    );
+                    const batchPayout = wonOrders.reduce(
+                      (sum, o) =>
+                        sum +
+                        (o.actual_payout_cents || o.potential_payout_cents),
+                      0
+                    );
                     // P&L = Payout received - Cost paid for wins - Cost paid for losses - Fees
-                    const wonCost = wonOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
-                    const lostCost = lostOrders.reduce((sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents), 0);
-                    const batchFees = [...wonOrders, ...lostOrders].reduce((sum, o) => sum + (o.fee_cents || 0), 0);
-                    const batchPnl = batchPayout - wonCost - lostCost - batchFees;
+                    const wonCost = wonOrders.reduce(
+                      (sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents),
+                      0
+                    );
+                    const lostCost = lostOrders.reduce(
+                      (sum, o) => sum + (o.executed_cost_cents ?? o.cost_cents),
+                      0
+                    );
+                    const batchFees = [...wonOrders, ...lostOrders].reduce(
+                      (sum, o) => sum + (o.fee_cents || 0),
+                      0
+                    );
+                    const batchPnl =
+                      batchPayout - wonCost - lostCost - batchFees;
 
                     return (
-                      <div key={batch.id} className="bg-slate-900 rounded-xl overflow-hidden">
+                      <div
+                        key={batch.id}
+                        className="bg-slate-900 rounded-xl overflow-hidden"
+                      >
                         {/* Batch Header */}
                         <div
-                          onClick={() => setExpandedBatch(expandedBatch === batch.id ? null : batch.id)}
+                          onClick={() =>
+                            setExpandedBatch(
+                              expandedBatch === batch.id ? null : batch.id
+                            )
+                          }
                           className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/50 overflow-x-auto"
                         >
                           <div className="flex items-center gap-4">
                             <div>
                               <div className="text-lg font-bold text-white flex items-center gap-2">
-                                Games for {batchDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                                {isToday && <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">TODAY</span>}
-                                {isTomorrow && <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded">TOMORROW</span>}
-                                {batch.is_paused && <span className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded">PAUSED</span>}
+                                Games for{" "}
+                                {batchDate.toLocaleDateString("en-US", {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                                {isToday && (
+                                  <span className="text-xs bg-blue-600 text-white px-2 py-0.5 rounded">
+                                    TODAY
+                                  </span>
+                                )}
+                                {isTomorrow && (
+                                  <span className="text-xs bg-purple-600 text-white px-2 py-0.5 rounded">
+                                    TOMORROW
+                                  </span>
+                                )}
+                                {batch.is_paused && (
+                                  <span className="text-xs bg-amber-600 text-white px-2 py-0.5 rounded">
+                                    PAUSED
+                                  </span>
+                                )}
                               </div>
                               <div className="text-xs text-slate-500">
-                                {batch.orders.length} orders • {confirmedOrders.length} confirmed
+                                {batch.orders.length} orders •{" "}
+                                {confirmedOrders.length} confirmed
                               </div>
                             </div>
                           </div>
                           <div className="flex items-center gap-6">
                             <div className="text-right">
                               <div className="text-xs text-slate-500">Cost</div>
-                              <div className="text-white font-mono">${(batchCost / 100).toFixed(2)}</div>
+                              <div className="text-white font-mono">
+                                ${(batchCost / 100).toFixed(2)}
+                              </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-xs text-slate-500">Payout</div>
-                              <div className="text-emerald-400 font-mono">${(batchPayout / 100).toFixed(2)}</div>
+                              <div className="text-xs text-slate-500">
+                                Payout
+                              </div>
+                              <div className="text-emerald-400 font-mono">
+                                ${(batchPayout / 100).toFixed(2)}
+                              </div>
                             </div>
                             <div className="text-right">
                               <div className="text-xs text-slate-500">P&L</div>
-                              <div className={`font-mono font-bold ${batchPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              <div
+                                className={`font-mono font-bold ${
+                                  batchPnl >= 0
+                                    ? "text-emerald-400"
+                                    : "text-red-400"
+                                }`}
+                              >
                                 ${(batchPnl / 100).toFixed(2)}
                               </div>
                             </div>
                             <div className="text-right">
-                              <div className="text-xs text-slate-500">Status</div>
+                              <div className="text-xs text-slate-500">
+                                Status
+                              </div>
                               <div className="text-sm">
-                                <span className="text-emerald-400">{wonOrders.length}W</span>
+                                <span className="text-emerald-400">
+                                  {wonOrders.length}W
+                                </span>
                                 <span className="text-slate-500"> / </span>
-                                <span className="text-red-400">{lostOrders.length}L</span>
+                                <span className="text-red-400">
+                                  {lostOrders.length}L
+                                </span>
                                 <span className="text-slate-500"> / </span>
-                                <span className="text-slate-400">{pendingOrders.length}P</span>
+                                <span className="text-slate-400">
+                                  {pendingOrders.length}P
+                                </span>
                               </div>
                             </div>
                             {/* Re-prepare & Execute button */}
@@ -2543,26 +3583,36 @@ export default function Dashboard() {
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  const action = confirmedOrders.length > 0 
-                                    ? 'This will DELETE existing orders and re-prepare with fresh markets. Continue?' 
-                                    : 'Re-prepare batch with fresh markets and execute? This will place real orders!';
+                                  const action =
+                                    confirmedOrders.length > 0
+                                      ? "This will DELETE existing orders and re-prepare with fresh markets. Continue?"
+                                      : "Re-prepare batch with fresh markets and execute? This will place real orders!";
                                   if (!confirm(action)) return;
                                   setPreparingOrders(true);
                                   try {
-                                    const res = await fetch('/api/orders-live/prepare-and-execute', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ forToday: isToday }),
-                                    });
+                                    const res = await fetch(
+                                      "/api/orders-live/prepare-and-execute",
+                                      {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          forToday: isToday,
+                                        }),
+                                      }
+                                    );
                                     const data = await res.json();
                                     if (data.success) {
-                                      alert(`Success! Placed ${data.summary.orders_placed} orders. Cost: ${data.summary.total_cost}`);
+                                      alert(
+                                        `Success! Placed ${data.summary.orders_placed} orders. Cost: ${data.summary.total_cost}`
+                                      );
                                       refreshAll();
                                     } else {
                                       alert(`Error: ${data.error}`);
                                     }
                                   } catch (err) {
-                                    alert('Error preparing orders');
+                                    alert("Error preparing orders");
                                   } finally {
                                     setPreparingOrders(false);
                                   }
@@ -2570,31 +3620,53 @@ export default function Dashboard() {
                                 disabled={preparingOrders}
                                 className="px-3 py-1 rounded text-xs font-medium bg-purple-600 text-white hover:bg-purple-500 disabled:opacity-50"
                               >
-                                {preparingOrders ? '...' : '🔄 Re-prepare'}
+                                {preparingOrders ? "..." : "🔄 Re-prepare"}
                               </button>
                             )}
                             {/* Execute button - for batches with pending orders */}
-                            {batch.orders.filter((o: LiveOrder) => o.placement_status === 'pending' && !o.kalshi_order_id).length > 0 && (
+                            {batch.orders.filter(
+                              (o: LiveOrder) =>
+                                o.placement_status === "pending" &&
+                                !o.kalshi_order_id
+                            ).length > 0 && (
                               <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
-                                  if (!confirm(`Execute ${batch.orders.filter((o: LiveOrder) => !o.kalshi_order_id).length} pending orders? This will place real orders on Kalshi!`)) return;
+                                  if (
+                                    !confirm(
+                                      `Execute ${
+                                        batch.orders.filter(
+                                          (o: LiveOrder) => !o.kalshi_order_id
+                                        ).length
+                                      } pending orders? This will place real orders on Kalshi!`
+                                    )
+                                  )
+                                    return;
                                   setExecutingOrders(true);
                                   try {
-                                    const res = await fetch('/api/orders-live/force-execute', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ batchId: batch.id }),
-                                    });
+                                    const res = await fetch(
+                                      "/api/orders-live/force-execute",
+                                      {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          batchId: batch.id,
+                                        }),
+                                      }
+                                    );
                                     const data = await res.json();
                                     if (data.success) {
-                                      alert(`Executed! Success: ${data.summary.success}, Failed: ${data.summary.failed}, Skipped: ${data.summary.skipped}`);
+                                      alert(
+                                        `Executed! Success: ${data.summary.success}, Failed: ${data.summary.failed}, Skipped: ${data.summary.skipped}`
+                                      );
                                       refreshAll();
                                     } else {
                                       alert(`Error: ${data.error}`);
                                     }
                                   } catch (err) {
-                                    alert('Error executing orders');
+                                    alert("Error executing orders");
                                   } finally {
                                     setExecutingOrders(false);
                                   }
@@ -2602,7 +3674,7 @@ export default function Dashboard() {
                                 disabled={executingOrders}
                                 className="px-3 py-1 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50"
                               >
-                                {executingOrders ? '...' : '🚀 Execute'}
+                                {executingOrders ? "..." : "🚀 Execute"}
                               </button>
                             )}
                             {/* Recalculate button - only for pending batches */}
@@ -2611,20 +3683,29 @@ export default function Dashboard() {
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   try {
-                                    const res = await fetch('/api/orders-live/recalculate', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ batchId: batch.id }),
-                                    });
+                                    const res = await fetch(
+                                      "/api/orders-live/recalculate",
+                                      {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          batchId: batch.id,
+                                        }),
+                                      }
+                                    );
                                     const data = await res.json();
                                     if (data.success) {
-                                      alert(`Recalculated: ${data.total_units} units across ${data.total_orders} orders (${data.capital_utilization} utilization)`);
+                                      alert(
+                                        `Recalculated: ${data.total_units} units across ${data.total_orders} orders (${data.capital_utilization} utilization)`
+                                      );
                                       fetchLiveOrders();
                                     } else {
                                       alert(`Error: ${data.error}`);
                                     }
                                   } catch (err) {
-                                    alert('Error recalculating');
+                                    alert("Error recalculating");
                                   }
                                 }}
                                 className="px-3 py-1 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-500"
@@ -2633,17 +3714,20 @@ export default function Dashboard() {
                               </button>
                             )}
                             <button
-                              onClick={(e) => { e.stopPropagation(); togglePause(batch.id, batch.is_paused); }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                togglePause(batch.id, batch.is_paused);
+                              }}
                               className={`px-3 py-1 rounded text-xs font-medium ${
-                                batch.is_paused 
-                                  ? 'bg-emerald-600 text-white hover:bg-emerald-500' 
-                                  : 'bg-amber-600 text-white hover:bg-amber-500'
+                                batch.is_paused
+                                  ? "bg-emerald-600 text-white hover:bg-emerald-500"
+                                  : "bg-amber-600 text-white hover:bg-amber-500"
                               }`}
                             >
-                              {batch.is_paused ? '▶ Resume' : '⏸ Pause'}
+                              {batch.is_paused ? "▶ Resume" : "⏸ Pause"}
                             </button>
                             <div className="text-slate-400">
-                              {expandedBatch === batch.id ? '▲' : '▼'}
+                              {expandedBatch === batch.id ? "▲" : "▼"}
                             </div>
                           </div>
                         </div>
@@ -2654,83 +3738,172 @@ export default function Dashboard() {
                             <table className="w-full text-sm min-w-[800px]">
                               <thead className="bg-slate-800/50">
                                 <tr>
-                                  <th className="text-left p-3 text-slate-400 font-medium">Market</th>
-                                  <th className="text-center p-3 text-slate-400 font-medium">Side</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Units</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Est. Cost</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Actual Cost</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Payout</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Open Int</th>
-                                  <th className="text-right p-3 text-slate-400 font-medium">Vol 24h</th>
-                                  <th className="text-center p-3 text-slate-400 font-medium">Placement</th>
-                                  <th className="text-center p-3 text-slate-400 font-medium">Result</th>
-                                  <th className="text-center p-3 text-slate-400 font-medium">Settlement</th>
+                                  <th className="text-left p-3 text-slate-400 font-medium">
+                                    Market
+                                  </th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">
+                                    Side
+                                  </th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">
+                                    Units
+                                  </th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">
+                                    Est. Cost
+                                  </th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">
+                                    Actual Cost
+                                  </th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">
+                                    Payout
+                                  </th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">
+                                    Open Int
+                                  </th>
+                                  <th className="text-right p-3 text-slate-400 font-medium">
+                                    Vol 24h
+                                  </th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">
+                                    Placement
+                                  </th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">
+                                    Result
+                                  </th>
+                                  <th className="text-center p-3 text-slate-400 font-medium">
+                                    Settlement
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {batch.orders.map((order) => (
-                                  <tr key={order.id} className="border-t border-slate-800/50">
+                                  <tr
+                                    key={order.id}
+                                    className="border-t border-slate-800/50"
+                                  >
                                     <td className="p-3 text-white max-w-xs">
-                                      <div className="truncate">{order.title}</div>
+                                      <div className="truncate">
+                                        {order.title}
+                                      </div>
                                     </td>
                                     <td className="p-3 text-center">
-                                      <span className={`px-2 py-0.5 rounded text-xs font-bold ${order.side === 'YES' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-xs font-bold ${
+                                          order.side === "YES"
+                                            ? "bg-emerald-500/20 text-emerald-400"
+                                            : "bg-red-500/20 text-red-400"
+                                        }`}
+                                      >
                                         {order.side}
                                       </span>
                                     </td>
-                                    <td className="p-3 text-right text-white font-mono">{order.units}</td>
-                                    <td className="p-3 text-right text-slate-500 font-mono">${(order.cost_cents / 100).toFixed(2)}</td>
+                                    <td className="p-3 text-right text-white font-mono">
+                                      {order.units}
+                                    </td>
+                                    <td className="p-3 text-right text-slate-500 font-mono">
+                                      ${(order.cost_cents / 100).toFixed(2)}
+                                    </td>
                                     <td className="p-3 text-right font-mono">
                                       {order.executed_cost_cents !== null ? (
-                                        <span className={order.executed_cost_cents < order.cost_cents ? 'text-emerald-400' : 'text-white'}>
-                                          ${(order.executed_cost_cents / 100).toFixed(2)}
+                                        <span
+                                          className={
+                                            order.executed_cost_cents <
+                                            order.cost_cents
+                                              ? "text-emerald-400"
+                                              : "text-white"
+                                          }
+                                        >
+                                          $
+                                          {(
+                                            order.executed_cost_cents / 100
+                                          ).toFixed(2)}
                                         </span>
                                       ) : (
-                                        <span className="text-slate-500">-</span>
+                                        <span className="text-slate-500">
+                                          -
+                                        </span>
                                       )}
                                     </td>
-                                    <td className="p-3 text-right text-emerald-400 font-mono">${(order.potential_payout_cents / 100).toFixed(2)}</td>
-                                    <td className="p-3 text-right text-slate-400 font-mono text-sm">{order.open_interest?.toLocaleString() || '-'}</td>
-                                    <td className="p-3 text-right text-slate-400 font-mono text-sm">{order.volume_24h?.toLocaleString() || '-'}</td>
+                                    <td className="p-3 text-right text-emerald-400 font-mono">
+                                      $
+                                      {(
+                                        order.potential_payout_cents / 100
+                                      ).toFixed(2)}
+                                    </td>
+                                    <td className="p-3 text-right text-slate-400 font-mono text-sm">
+                                      {order.open_interest?.toLocaleString() ||
+                                        "-"}
+                                    </td>
+                                    <td className="p-3 text-right text-slate-400 font-mono text-sm">
+                                      {order.volume_24h?.toLocaleString() ||
+                                        "-"}
+                                    </td>
                                     <td className="p-3 text-center">
-                                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                                        order.placement_status === 'confirmed' ? 'bg-emerald-500/20 text-emerald-400' :
-                                        order.placement_status === 'placed' ? 'bg-blue-500/20 text-blue-400' :
-                                        'bg-slate-700 text-slate-400'
-                                      }`}>
+                                      <div
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                          order.placement_status === "confirmed"
+                                            ? "bg-emerald-500/20 text-emerald-400"
+                                            : order.placement_status ===
+                                              "placed"
+                                            ? "bg-blue-500/20 text-blue-400"
+                                            : "bg-slate-700 text-slate-400"
+                                        }`}
+                                      >
                                         {order.placement_status.toUpperCase()}
                                       </div>
                                       {order.placement_status_at && (
                                         <div className="text-[10px] text-slate-500 mt-0.5">
-                                          {new Date(order.placement_status_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                          {new Date(
+                                            order.placement_status_at
+                                          ).toLocaleTimeString("en-US", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
                                         </div>
                                       )}
                                     </td>
                                     <td className="p-3 text-center">
-                                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                                        order.result_status === 'won' ? 'bg-emerald-500/20 text-emerald-400' :
-                                        order.result_status === 'lost' ? 'bg-red-500/20 text-red-400' :
-                                        'bg-slate-700 text-slate-400'
-                                      }`}>
+                                      <div
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                          order.result_status === "won"
+                                            ? "bg-emerald-500/20 text-emerald-400"
+                                            : order.result_status === "lost"
+                                            ? "bg-red-500/20 text-red-400"
+                                            : "bg-slate-700 text-slate-400"
+                                        }`}
+                                      >
                                         {order.result_status.toUpperCase()}
                                       </div>
                                       {order.result_status_at && (
                                         <div className="text-[10px] text-slate-500 mt-0.5">
-                                          {new Date(order.result_status_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                          {new Date(
+                                            order.result_status_at
+                                          ).toLocaleTimeString("en-US", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
                                         </div>
                                       )}
                                     </td>
                                     <td className="p-3 text-center">
-                                      <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                                        order.settlement_status === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
-                                        order.settlement_status === 'closed' ? 'bg-red-500/20 text-red-400' :
-                                        'bg-amber-500/20 text-amber-400'
-                                      }`}>
+                                      <div
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                                          order.settlement_status === "success"
+                                            ? "bg-emerald-500/20 text-emerald-400"
+                                            : order.settlement_status ===
+                                              "closed"
+                                            ? "bg-red-500/20 text-red-400"
+                                            : "bg-amber-500/20 text-amber-400"
+                                        }`}
+                                      >
                                         {order.settlement_status.toUpperCase()}
                                       </div>
                                       {order.settlement_status_at && (
                                         <div className="text-[10px] text-slate-500 mt-0.5">
-                                          {new Date(order.settlement_status_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                                          {new Date(
+                                            order.settlement_status_at
+                                          ).toLocaleTimeString("en-US", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })}
                                         </div>
                                       )}
                                     </td>
@@ -2749,7 +3922,7 @@ export default function Dashboard() {
         )}
 
         {/* Records Tab */}
-        {activeTab === 'records' && (
+        {activeTab === "records" && (
           <div className="py-8">
             {/* Header */}
             <div className="mb-6">
@@ -2760,72 +3933,144 @@ export default function Dashboard() {
             {recordsData && (
               <div className="flex flex-wrap gap-4 mb-6">
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase mb-2">Cash | Positions | Portfolio</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">
+                    Cash | Positions | Portfolio
+                  </div>
                   <div className="flex items-baseline gap-1.5">
-                    <span className="text-lg text-white">${Math.round((recordsData.current_balance_cents || 0) / 100).toLocaleString('en-US')}</span>
+                    <span className="text-lg text-white">
+                      $
+                      {Math.round(
+                        (recordsData.current_balance_cents || 0) / 100
+                      ).toLocaleString("en-US")}
+                    </span>
                     <span className="text-slate-600">|</span>
-                    <span className="text-lg text-amber-400">${Math.round((recordsData.current_positions_cents || 0) / 100).toLocaleString('en-US')}</span>
+                    <span className="text-lg text-amber-400">
+                      $
+                      {Math.round(
+                        (recordsData.current_positions_cents || 0) / 100
+                      ).toLocaleString("en-US")}
+                    </span>
                     <span className="text-slate-600">|</span>
-                    <span className="text-lg text-white">${Math.round(((recordsData.current_balance_cents || 0) + (recordsData.current_positions_cents || 0)) / 100).toLocaleString('en-US')}</span>
+                    <span className="text-lg text-white">
+                      $
+                      {Math.round(
+                        ((recordsData.current_balance_cents || 0) +
+                          (recordsData.current_positions_cents || 0)) /
+                          100
+                      ).toLocaleString("en-US")}
+                    </span>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase mb-2">Total W-L</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">
+                    Total W-L
+                  </div>
                   <div className="text-lg font-bold text-white">
-                    {recordsData.totals?.wins || 0}W / {recordsData.totals?.losses || 0}L
+                    {recordsData.totals?.wins || 0}W /{" "}
+                    {recordsData.totals?.losses || 0}L
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase mb-2">Total P&L</div>
-                  <div className={`text-lg ${(recordsData.totals?.pnl_cents || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {(recordsData.totals?.pnl_cents || 0) >= 0 ? '+' : ''}${Math.round((recordsData.totals?.pnl_cents || 0) / 100).toLocaleString('en-US')}
+                  <div className="text-xs text-slate-500 uppercase mb-2">
+                    Total P&L
+                  </div>
+                  <div
+                    className={`text-lg ${
+                      (recordsData.totals?.pnl_cents || 0) >= 0
+                        ? "text-emerald-400"
+                        : "text-red-400"
+                    }`}
+                  >
+                    {(recordsData.totals?.pnl_cents || 0) >= 0 ? "+" : ""}$
+                    {Math.round(
+                      (recordsData.totals?.pnl_cents || 0) / 100
+                    ).toLocaleString("en-US")}
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase mb-2">Avg Daily ROIC</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">
+                    Avg Daily ROIC
+                  </div>
                   {(() => {
                     const today = getTodayET();
                     // Only include past days (not today or tomorrow)
-                    const pastRecords = (recordsData.records || []).filter(r => 
-                      r.date < today
+                    const pastRecords = (recordsData.records || []).filter(
+                      (r) => r.date < today
                     );
-                    const avgRoic = pastRecords.length > 0 
-                      ? pastRecords.reduce((sum, r) => sum + parseFloat(String(r.roic_percent || 0)), 0) / pastRecords.length
-                      : 0;
+                    const avgRoic =
+                      pastRecords.length > 0
+                        ? pastRecords.reduce(
+                            (sum, r) =>
+                              sum + parseFloat(String(r.roic_percent || 0)),
+                            0
+                          ) / pastRecords.length
+                        : 0;
                     return (
-                      <div className={`text-lg font-bold ${avgRoic >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {avgRoic >= 0 ? '+' : ''}{avgRoic.toFixed(2)}%
+                      <div
+                        className={`text-lg font-bold ${
+                          avgRoic >= 0 ? "text-emerald-400" : "text-red-400"
+                        }`}
+                      >
+                        {avgRoic >= 0 ? "+" : ""}
+                        {avgRoic.toFixed(2)}%
                       </div>
                     );
                   })()}
                 </div>
                 <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                  <div className="text-xs text-slate-500 uppercase mb-2">Odds | Win%</div>
+                  <div className="text-xs text-slate-500 uppercase mb-2">
+                    Odds | Win%
+                  </div>
                   {(() => {
                     const allRecords = recordsData.records || [];
-                    const totalWins = allRecords.reduce((sum, r) => sum + r.wins, 0);
-                    const totalLosses = allRecords.reduce((sum, r) => sum + r.losses, 0);
+                    const totalWins = allRecords.reduce(
+                      (sum, r) => sum + r.wins,
+                      0
+                    );
+                    const totalLosses = allRecords.reduce(
+                      (sum, r) => sum + r.losses,
+                      0
+                    );
                     const totalGames = totalWins + totalLosses;
-                    
+
                     // Calculate weighted average odds across all records
-                    const recordsWithOdds = allRecords.filter(r => r.avg_price_cents > 0 && (r.wins + r.losses) > 0);
-                    const weightedOdds = recordsWithOdds.length > 0
-                      ? recordsWithOdds.reduce((sum, r) => sum + r.avg_price_cents * (r.wins + r.losses), 0) / 
-                        recordsWithOdds.reduce((sum, r) => sum + (r.wins + r.losses), 0)
-                      : 0;
-                    
-                    const winPct = totalGames > 0 ? (totalWins / totalGames) * 100 : 0;
+                    const recordsWithOdds = allRecords.filter(
+                      (r) => r.avg_price_cents > 0 && r.wins + r.losses > 0
+                    );
+                    const weightedOdds =
+                      recordsWithOdds.length > 0
+                        ? recordsWithOdds.reduce(
+                            (sum, r) =>
+                              sum + r.avg_price_cents * (r.wins + r.losses),
+                            0
+                          ) /
+                          recordsWithOdds.reduce(
+                            (sum, r) => sum + (r.wins + r.losses),
+                            0
+                          )
+                        : 0;
+
+                    const winPct =
+                      totalGames > 0 ? (totalWins / totalGames) * 100 : 0;
                     const oddsHigher = weightedOdds > winPct;
                     const winHigher = winPct > weightedOdds;
-                    
+
                     return (
                       <div className="text-lg font-mono">
-                        <span className={oddsHigher ? 'text-red-400' : 'text-slate-300'}>
-                          {weightedOdds > 0 ? weightedOdds.toFixed(2) : '—'}
+                        <span
+                          className={
+                            oddsHigher ? "text-red-400" : "text-slate-300"
+                          }
+                        >
+                          {weightedOdds > 0 ? weightedOdds.toFixed(2) : "—"}
                         </span>
                         <span className="text-slate-500 mx-1">|</span>
-                        <span className={winHigher ? 'text-emerald-400' : 'text-slate-300'}>
-                          {totalGames > 0 ? winPct.toFixed(2) : '—'}
+                        <span
+                          className={
+                            winHigher ? "text-emerald-400" : "text-slate-300"
+                          }
+                        >
+                          {totalGames > 0 ? winPct.toFixed(2) : "—"}
                         </span>
                       </div>
                     );
@@ -2843,128 +4088,219 @@ export default function Dashboard() {
 
             {/* Records Table */}
             {recordsLoading && !recordsData ? (
-              <div className="text-center py-12 text-slate-400">Loading records...</div>
+              <div className="text-center py-12 text-slate-400">
+                Loading records...
+              </div>
             ) : recordsData?.records && recordsData.records.length > 0 ? (
               <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
                 <table className="w-full min-w-[800px]">
                   <thead className="bg-slate-800/50">
                     <tr>
-                      <th className="text-left p-4 text-slate-400 font-medium text-sm">Date</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Portfolio</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">W/L/P</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">P&L</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">ROIC</th>
-                      <th className="text-center p-4 text-slate-400 font-medium text-sm">Odds(¢) | Win%</th>
-                      <th className="text-right p-4 text-slate-400 font-medium text-sm">Deployed</th>
+                      <th className="text-left p-4 text-slate-400 font-medium text-sm">
+                        Date
+                      </th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">
+                        Portfolio
+                      </th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">
+                        W/L/P
+                      </th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">
+                        P&L
+                      </th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">
+                        ROIC
+                      </th>
+                      <th className="text-center p-4 text-slate-400 font-medium text-sm">
+                        Odds(¢) | Win%
+                      </th>
+                      <th className="text-right p-4 text-slate-400 font-medium text-sm">
+                        Deployed
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {recordsData.records
-                      .filter(record => record.date <= getTodayET())
+                      .filter((record) => record.date <= getTodayET())
                       .map((record, idx) => {
-                      // Get deployed amount from the record (stored in daily_snapshots)
-                      const deployedCents = (record as any).deployed_cents || 0;
-                      
-                      return (
-                        <tr key={record.date} className={`border-t border-slate-800 ${idx % 2 === 0 ? 'bg-slate-900' : 'bg-slate-900/50'}`}>
-                          <td className="p-4 text-white font-medium">
-                            {new Date(record.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                          </td>
-                          <td className="p-4 text-center font-mono">
-                            <span className="text-slate-400">${Math.round(record.start_portfolio_cents / 100).toLocaleString('en-US')}</span>
-                            <span className="text-slate-500 mx-2">→</span>
-                            <span className="text-white">${Math.round(record.end_portfolio_cents / 100).toLocaleString('en-US')}</span>
-                          </td>
-                          <td className="p-4 text-center">
-                            <span className="text-emerald-400">{record.wins}</span>
-                            <span className="text-slate-500">/</span>
-                            <span className="text-red-400">{record.losses}</span>
-                            <span className="text-slate-500">/</span>
-                            <span className="text-amber-400">{record.pending}</span>
-                          </td>
-                          <td className={`p-4 text-right font-mono ${record.pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {record.pnl_cents >= 0 ? '+' : ''}${Math.round(record.pnl_cents / 100).toLocaleString('en-US')}
-                          </td>
-                          <td className={`p-4 text-right font-mono text-sm ${record.roic_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {record.roic_percent >= 0 ? '+' : ''}{record.roic_percent.toFixed(2)}%
-                          </td>
-                          <td className="p-4 text-center font-mono text-sm">
-                            {(() => {
-                              const odds = record.avg_price_cents;
-                              const winPct = record.wins + record.losses > 0 
-                                ? (record.wins / (record.wins + record.losses)) * 100 
-                                : null;
-                              const oddsHigher = winPct !== null && odds > winPct;
-                              const winHigher = winPct !== null && winPct > odds;
-                              return (
-                                <>
-                                  <span className={oddsHigher ? 'text-red-400' : 'text-slate-300'}>
-                                    {odds > 0 ? odds.toFixed(2) : '—'}
-                                  </span>
-                                  <span className="text-slate-500 mx-1">|</span>
-                                  <span className={winHigher ? 'text-emerald-400' : 'text-slate-300'}>
-                                    {winPct !== null ? winPct.toFixed(2) : '—'}
-                                  </span>
-                                </>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-4 text-right">
-                            {deployedCents > 0 ? (
-                              <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-xs font-mono">
-                                ${Math.round(deployedCents / 100).toLocaleString('en-US')}
+                        // Get deployed amount from the record (stored in daily_snapshots)
+                        const deployedCents =
+                          (record as any).deployed_cents || 0;
+
+                        return (
+                          <tr
+                            key={record.date}
+                            className={`border-t border-slate-800 ${
+                              idx % 2 === 0 ? "bg-slate-900" : "bg-slate-900/50"
+                            }`}
+                          >
+                            <td className="p-4 text-white font-medium">
+                              {new Date(
+                                record.date + "T12:00:00"
+                              ).toLocaleDateString("en-US", {
+                                weekday: "short",
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </td>
+                            <td className="p-4 text-center font-mono">
+                              <span className="text-slate-400">
+                                $
+                                {Math.round(
+                                  record.start_portfolio_cents / 100
+                                ).toLocaleString("en-US")}
                               </span>
-                            ) : <span className="text-slate-600">—</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                              <span className="text-slate-500 mx-2">→</span>
+                              <span className="text-white">
+                                $
+                                {Math.round(
+                                  record.end_portfolio_cents / 100
+                                ).toLocaleString("en-US")}
+                              </span>
+                            </td>
+                            <td className="p-4 text-center">
+                              <span className="text-emerald-400">
+                                {record.wins}
+                              </span>
+                              <span className="text-slate-500">/</span>
+                              <span className="text-red-400">
+                                {record.losses}
+                              </span>
+                              <span className="text-slate-500">/</span>
+                              <span className="text-amber-400">
+                                {record.pending}
+                              </span>
+                            </td>
+                            <td
+                              className={`p-4 text-right font-mono ${
+                                record.pnl_cents >= 0
+                                  ? "text-emerald-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {record.pnl_cents >= 0 ? "+" : ""}$
+                              {Math.round(
+                                record.pnl_cents / 100
+                              ).toLocaleString("en-US")}
+                            </td>
+                            <td
+                              className={`p-4 text-right font-mono text-sm ${
+                                record.roic_percent >= 0
+                                  ? "text-emerald-400"
+                                  : "text-red-400"
+                              }`}
+                            >
+                              {record.roic_percent >= 0 ? "+" : ""}
+                              {record.roic_percent.toFixed(2)}%
+                            </td>
+                            <td className="p-4 text-center font-mono text-sm">
+                              {(() => {
+                                const odds = record.avg_price_cents;
+                                const winPct =
+                                  record.wins + record.losses > 0
+                                    ? (record.wins /
+                                        (record.wins + record.losses)) *
+                                      100
+                                    : null;
+                                const oddsHigher =
+                                  winPct !== null && odds > winPct;
+                                const winHigher =
+                                  winPct !== null && winPct > odds;
+                                return (
+                                  <>
+                                    <span
+                                      className={
+                                        oddsHigher
+                                          ? "text-red-400"
+                                          : "text-slate-300"
+                                      }
+                                    >
+                                      {odds > 0 ? odds.toFixed(2) : "—"}
+                                    </span>
+                                    <span className="text-slate-500 mx-1">
+                                      |
+                                    </span>
+                                    <span
+                                      className={
+                                        winHigher
+                                          ? "text-emerald-400"
+                                          : "text-slate-300"
+                                      }
+                                    >
+                                      {winPct !== null
+                                        ? winPct.toFixed(2)
+                                        : "—"}
+                                    </span>
+                                  </>
+                                );
+                              })()}
+                            </td>
+                            <td className="p-4 text-right">
+                              {deployedCents > 0 ? (
+                                <span className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-xs font-mono">
+                                  $
+                                  {Math.round(
+                                    deployedCents / 100
+                                  ).toLocaleString("en-US")}
+                                </span>
+                              ) : (
+                                <span className="text-slate-600">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
             ) : (
-              <div className="text-center py-12 text-slate-400">No records found. Daily snapshots are captured automatically at 11:55pm ET.</div>
+              <div className="text-center py-12 text-slate-400">
+                No records found. Daily snapshots are captured automatically at
+                11:55pm ET.
+              </div>
             )}
           </div>
         )}
 
         {/* Losses Tab */}
-        {activeTab === 'losses' && (
+        {activeTab === "losses" && (
           <div className="py-8">
             {/* Header */}
             <div className="mb-6">
               <h2 className="text-2xl font-bold text-white">Loss Analysis</h2>
-              <p className="text-slate-400 text-sm mt-1">Detailed breakdown of losing trades</p>
+              <p className="text-slate-400 text-sm mt-1">
+                Detailed breakdown of losing trades
+              </p>
             </div>
 
             {/* Sub-tab Toggle */}
             <div className="flex gap-1 bg-slate-800/50 p-1 rounded-lg mb-6 w-fit">
               <button
-                onClick={() => setLossesSubTab('summary')}
+                onClick={() => setLossesSubTab("summary")}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  lossesSubTab === 'summary'
-                    ? 'bg-red-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  lossesSubTab === "summary"
+                    ? "bg-red-600 text-white"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700"
                 }`}
               >
                 Summary
               </button>
               <button
-                onClick={() => setLossesSubTab('teams')}
+                onClick={() => setLossesSubTab("teams")}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  lossesSubTab === 'teams'
-                    ? 'bg-red-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  lossesSubTab === "teams"
+                    ? "bg-red-600 text-white"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700"
                 }`}
               >
                 Teams
               </button>
               <button
-                onClick={() => setLossesSubTab('individual')}
+                onClick={() => setLossesSubTab("individual")}
                 className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  lossesSubTab === 'individual'
-                    ? 'bg-red-600 text-white'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700'
+                  lossesSubTab === "individual"
+                    ? "bg-red-600 text-white"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700"
                 }`}
               >
                 Individual
@@ -2972,418 +4308,775 @@ export default function Dashboard() {
             </div>
 
             {lossesLoading && !lossesData ? (
-              <div className="text-center py-12 text-slate-400">Loading loss data...</div>
+              <div className="text-center py-12 text-slate-400">
+                Loading loss data...
+              </div>
             ) : lossesData?.losses && lossesData.losses.length > 0 ? (
               <>
                 {/* Summary Sub-Tab */}
-                {lossesSubTab === 'summary' && (
+                {lossesSubTab === "summary" && (
                   <>
                     {/* Summary Cards */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Total Losses</div>
-                    <div className="text-2xl font-bold text-red-400">{lossesData.summary.total_losses}</div>
-                  </div>
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Total Lost</div>
-                    <div className="text-2xl font-bold text-red-400">
-                      -${(lossesData.summary.total_lost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <div className="text-xs text-slate-500 uppercase mb-1">
+                          Total Losses
+                        </div>
+                        <div className="text-2xl font-bold text-red-400">
+                          {lossesData.summary.total_losses}
+                        </div>
+                      </div>
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <div className="text-xs text-slate-500 uppercase mb-1">
+                          Total Lost
+                        </div>
+                        <div className="text-2xl font-bold text-red-400">
+                          -$
+                          {(
+                            lossesData.summary.total_lost_cents / 100
+                          ).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </div>
+                      </div>
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <div className="text-xs text-slate-500 uppercase mb-1">
+                          Avg Odds Paid
+                        </div>
+                        <div className="text-2xl font-bold text-amber-400">
+                          {lossesData.summary.avg_odds}¢
+                        </div>
+                      </div>
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <div className="text-xs text-slate-500 uppercase mb-1">
+                          Avg Loss/Trade
+                        </div>
+                        <div className="text-2xl font-bold text-red-400">
+                          -$
+                          {(
+                            lossesData.summary.total_lost_cents /
+                            lossesData.summary.total_losses /
+                            100
+                          ).toFixed(2)}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Avg Odds Paid</div>
-                    <div className="text-2xl font-bold text-amber-400">{lossesData.summary.avg_odds}¢</div>
-                  </div>
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <div className="text-xs text-slate-500 uppercase mb-1">Avg Loss/Trade</div>
-                    <div className="text-2xl font-bold text-red-400">
-                      -${(lossesData.summary.total_lost_cents / lossesData.summary.total_losses / 100).toFixed(2)}
-                    </div>
-                  </div>
-                </div>
 
-                {/* Pattern Analysis */}
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-6">
-                  {/* By League */}
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by League</h3>
-                    <div className="space-y-2">
-                      {Object.entries(lossesData.summary.by_league)
-                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                        .map(([league, data]) => (
-                          <div key={league} className="flex justify-between items-center">
-                            <span className="text-white font-medium">{league}</span>
-                            <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
-                              <span className="text-slate-500 text-xs ml-2">({data.count}/{data.total_bets})</span>
-                              <span className="text-slate-400 text-xs ml-2">{data.avg_odds}¢</span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                    {/* Pattern Analysis */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-6">
+                      {/* By League */}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Losses by League
+                        </h3>
+                        <div className="space-y-2">
+                          {Object.entries(lossesData.summary.by_league)
+                            .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                            .map(([league, data]) => (
+                              <div
+                                key={league}
+                                className="flex justify-between items-center"
+                              >
+                                <span className="text-white font-medium">
+                                  {league}
+                                </span>
+                                <div className="text-right">
+                                  <span className="text-red-400 font-mono">
+                                    -${(data.lost_cents / 100).toLocaleString()}
+                                  </span>
+                                  <span className="text-slate-500 text-xs ml-2">
+                                    ({data.count}/{data.total_bets})
+                                  </span>
+                                  <span className="text-slate-400 text-xs ml-2">
+                                    {data.avg_odds}¢
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
 
-                  {/* By Odds Range */}
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Odds Range</h3>
-                    <div className="space-y-2">
-                      {Object.entries(lossesData.summary.by_odds_range)
-                        .filter(([, data]) => data.count > 0)
-                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                        .map(([range, data]) => (
-                          <div key={range} className="flex justify-between items-center">
-                            <span className="text-white">{range}</span>
-                            <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
-                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                      {/* By Odds Range */}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Losses by Odds Range
+                        </h3>
+                        <div className="space-y-2">
+                          {Object.entries(lossesData.summary.by_odds_range)
+                            .filter(([, data]) => data.count > 0)
+                            .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                            .map(([range, data]) => (
+                              <div
+                                key={range}
+                                className="flex justify-between items-center"
+                              >
+                                <span className="text-white">{range}</span>
+                                <div className="text-right">
+                                  <span className="text-red-400 font-mono">
+                                    -${(data.lost_cents / 100).toLocaleString()}
+                                  </span>
+                                  <span className="text-slate-500 text-xs ml-2">
+                                    ({data.count})
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
 
-                  {/* By Day of Week */}
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Day</h3>
-                    <div className="space-y-2">
-                      {Object.entries(lossesData.summary.by_day_of_week)
-                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                        .map(([day, data]) => (
-                          <div key={day} className="flex justify-between items-center">
-                            <span className="text-white">{day}</span>
-                            <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
-                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                      {/* By Day of Week */}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Losses by Day
+                        </h3>
+                        <div className="space-y-2">
+                          {Object.entries(lossesData.summary.by_day_of_week)
+                            .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                            .map(([day, data]) => (
+                              <div
+                                key={day}
+                                className="flex justify-between items-center"
+                              >
+                                <span className="text-white">{day}</span>
+                                <div className="text-right">
+                                  <span className="text-red-400 font-mono">
+                                    -${(data.lost_cents / 100).toLocaleString()}
+                                  </span>
+                                  <span className="text-slate-500 text-xs ml-2">
+                                    ({data.count})
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
 
-                  {/* By Venue (Home/Away) */}
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Losses by Venue</h3>
-                    <div className="space-y-2">
-                      {lossesData.summary.by_venue && Object.entries(lossesData.summary.by_venue)
-                        .filter(([, data]) => data.count > 0)
-                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                        .map(([venue, data]) => (
-                          <div key={venue} className="flex justify-between items-center">
-                            <span className="text-white capitalize flex items-center gap-2">
-                              {venue === 'home' && '🏠'}
-                              {venue === 'away' && '✈️'}
-                              {venue === 'neutral' && '⚖️'}
-                              {venue}
-                            </span>
-                            <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
-                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                      {/* By Venue (Home/Away) */}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Losses by Venue
+                        </h3>
+                        <div className="space-y-2">
+                          {lossesData.summary.by_venue &&
+                            Object.entries(lossesData.summary.by_venue)
+                              .filter(([, data]) => data.count > 0)
+                              .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                              .map(([venue, data]) => (
+                                <div
+                                  key={venue}
+                                  className="flex justify-between items-center"
+                                >
+                                  <span className="text-white capitalize flex items-center gap-2">
+                                    {venue === "home" && "🏠"}
+                                    {venue === "away" && "✈️"}
+                                    {venue === "neutral" && "⚖️"}
+                                    {venue}
+                                  </span>
+                                  <div className="text-right">
+                                    <span className="text-red-400 font-mono">
+                                      -$
+                                      {(data.lost_cents / 100).toLocaleString()}
+                                    </span>
+                                    <span className="text-slate-500 text-xs ml-2">
+                                      ({data.count})
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                        </div>
+                      </div>
 
-                  {/* By Timing (Pre-game vs Live) */}
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">Pre-Game vs Live</h3>
-                    <div className="space-y-2">
-                      {lossesData.summary.by_timing && Object.entries(lossesData.summary.by_timing)
-                        .filter(([, data]) => data.count > 0)
-                        .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                        .map(([timing, data]) => (
-                          <div key={timing} className="flex justify-between items-center">
-                            <span className="text-white capitalize flex items-center gap-2">
-                              {timing === 'pre-game' && '📅'}
-                              {timing === 'live' && '🔴'}
-                              {timing === 'unknown' && '❓'}
-                              {timing}
-                            </span>
-                            <div className="text-right">
-                              <span className="text-red-400 font-mono">-${(data.lost_cents / 100).toLocaleString()}</span>
-                              <span className="text-slate-500 text-xs ml-2">({data.count})</span>
-                            </div>
-                          </div>
-                        ))}
+                      {/* By Timing (Pre-game vs Live) */}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Pre-Game vs Live
+                        </h3>
+                        <div className="space-y-2">
+                          {lossesData.summary.by_timing &&
+                            Object.entries(lossesData.summary.by_timing)
+                              .filter(([, data]) => data.count > 0)
+                              .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
+                              .map(([timing, data]) => (
+                                <div
+                                  key={timing}
+                                  className="flex justify-between items-center"
+                                >
+                                  <span className="text-white capitalize flex items-center gap-2">
+                                    {timing === "pre-game" && "📅"}
+                                    {timing === "live" && "🔴"}
+                                    {timing === "unknown" && "❓"}
+                                    {timing}
+                                  </span>
+                                  <div className="text-right">
+                                    <span className="text-red-400 font-mono">
+                                      -$
+                                      {(data.lost_cents / 100).toLocaleString()}
+                                    </span>
+                                    <span className="text-slate-500 text-xs ml-2">
+                                      ({data.count})
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
                   </>
                 )}
 
                 {/* Teams Sub-Tab */}
-                {lossesSubTab === 'teams' && (
+                {lossesSubTab === "teams" && (
                   <>
-                    {lossesData.summary.top_losing_teams && lossesData.summary.top_losing_teams.length > 0 ? (
+                    {lossesData.summary.top_losing_teams &&
+                    lossesData.summary.top_losing_teams.length > 0 ? (
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                        <h3 className="text-sm font-medium text-slate-400 mb-3">Teams We Lost Betting On (Most Frequent)</h3>
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Teams We Lost Betting On (Most Frequent)
+                        </h3>
                         <div className="flex flex-wrap gap-2">
-                          {lossesData.summary.top_losing_teams.map(({ team, count }) => (
-                            <span key={team} className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm">
-                              {team} <span className="text-red-300">({count})</span>
-                            </span>
-                          ))}
+                          {lossesData.summary.top_losing_teams.map(
+                            ({ team, count }) => (
+                              <span
+                                key={team}
+                                className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm"
+                              >
+                                {team}{" "}
+                                <span className="text-red-300">({count})</span>
+                              </span>
+                            )
+                          )}
                         </div>
                       </div>
                     ) : (
-                      <div className="text-center py-12 text-slate-400">No team data available</div>
+                      <div className="text-center py-12 text-slate-400">
+                        No team data available
+                      </div>
                     )}
                   </>
                 )}
 
                 {/* Individual Sub-Tab */}
-                {lossesSubTab === 'individual' && (
+                {lossesSubTab === "individual" && (
                   <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-                  <table className="w-full text-sm min-w-[1200px]">
-                    <thead className="bg-slate-800/50">
-                      <tr>
-                        <th className="text-left p-3 text-slate-400 font-medium">Date</th>
-                        <th className="text-left p-3 text-slate-400 font-medium">Market</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">League</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">H/A</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">Timing</th>
-                        <th className="text-right p-3 text-slate-400 font-medium">Units</th>
-                        <th className="text-right p-3 text-slate-400 font-medium">Entry</th>
-                        <th className="text-right p-3 text-slate-400 font-medium">High</th>
-                        <th className="text-right p-3 text-slate-400 font-medium">Lost</th>
-                        <th className="text-center p-3 text-slate-400 font-medium">Price Chart</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(() => {
-                        // Aggregate losses by event_ticker
-                        const eventMap: Record<string, {
-                          event_ticker: string;
-                          title: string;
-                          batch_date: string;
-                          league: string;
-                          venues: Set<string>;
-                          timings: Set<string>;
-                          sides: Set<string>;
-                          total_units: number;
-                          total_cost_cents: number;
-                          avg_entry_price: number;
-                          orders: number;
-                          all_fills: any[];
-                          candlesticks: { ts: string; open: number; high: number; low: number; close: number }[];
-                          max_price_cents: number | null;
-                        }> = {};
-                        
-                        for (const loss of lossesData.losses) {
-                          if (!eventMap[loss.event_ticker]) {
-                            eventMap[loss.event_ticker] = {
-                              event_ticker: loss.event_ticker,
-                              title: loss.title,
-                              batch_date: loss.batch_date,
-                              league: loss.league,
-                              venues: new Set(),
-                              timings: new Set(),
-                              sides: new Set(),
-                              total_units: 0,
-                              total_cost_cents: 0,
-                              avg_entry_price: 0,
-                              orders: 0,
-                              all_fills: [],
-                              candlesticks: [],
-                              max_price_cents: null,
-                            };
+                    <table className="w-full text-sm min-w-[1200px]">
+                      <thead className="bg-slate-800/50">
+                        <tr>
+                          <th className="text-left p-3 text-slate-400 font-medium">
+                            Date
+                          </th>
+                          <th className="text-left p-3 text-slate-400 font-medium">
+                            Market
+                          </th>
+                          <th className="text-center p-3 text-slate-400 font-medium">
+                            League
+                          </th>
+                          <th className="text-center p-3 text-slate-400 font-medium">
+                            H/A
+                          </th>
+                          <th className="text-center p-3 text-slate-400 font-medium">
+                            Timing
+                          </th>
+                          <th className="text-right p-3 text-slate-400 font-medium">
+                            Units
+                          </th>
+                          <th className="text-right p-3 text-slate-400 font-medium">
+                            Entry
+                          </th>
+                          <th className="text-right p-3 text-slate-400 font-medium">
+                            High
+                          </th>
+                          <th className="text-right p-3 text-slate-400 font-medium">
+                            Lost
+                          </th>
+                          <th className="text-center p-3 text-slate-400 font-medium">
+                            Price Chart
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          // Aggregate losses by event_ticker
+                          const eventMap: Record<
+                            string,
+                            {
+                              event_ticker: string;
+                              title: string;
+                              batch_date: string;
+                              league: string;
+                              venues: Set<string>;
+                              timings: Set<string>;
+                              sides: Set<string>;
+                              total_units: number;
+                              total_cost_cents: number;
+                              avg_entry_price: number;
+                              orders: number;
+                              all_fills: any[];
+                              candlesticks: {
+                                ts: string;
+                                open: number;
+                                high: number;
+                                low: number;
+                                close: number;
+                              }[];
+                              max_price_cents: number | null;
+                            }
+                          > = {};
+
+                          for (const loss of lossesData.losses) {
+                            if (!eventMap[loss.event_ticker]) {
+                              eventMap[loss.event_ticker] = {
+                                event_ticker: loss.event_ticker,
+                                title: loss.title,
+                                batch_date: loss.batch_date,
+                                league: loss.league,
+                                venues: new Set(),
+                                timings: new Set(),
+                                sides: new Set(),
+                                total_units: 0,
+                                total_cost_cents: 0,
+                                avg_entry_price: 0,
+                                orders: 0,
+                                all_fills: [],
+                                candlesticks: [],
+                                max_price_cents: null,
+                              };
+                            }
+                            const event = eventMap[loss.event_ticker];
+                            event.venues.add(loss.venue);
+                            event.timings.add(loss.bet_timing);
+                            event.sides.add(loss.side);
+                            event.total_units += loss.units;
+                            event.total_cost_cents += loss.cost_cents;
+                            event.avg_entry_price += loss.entry_price_cents;
+                            event.orders++;
+                            if (loss.fills) event.all_fills.push(...loss.fills);
+                            // Use candlesticks from first order that has them
+                            if (
+                              loss.candlesticks &&
+                              loss.candlesticks.length > 0 &&
+                              event.candlesticks.length === 0
+                            ) {
+                              event.candlesticks = loss.candlesticks;
+                            }
+                            // Track highest max_price seen
+                            if (
+                              loss.max_price_cents !== null &&
+                              (event.max_price_cents === null ||
+                                loss.max_price_cents > event.max_price_cents)
+                            ) {
+                              event.max_price_cents = loss.max_price_cents;
+                            }
+                            // Use earliest batch_date
+                            if (loss.batch_date < event.batch_date) {
+                              event.batch_date = loss.batch_date;
+                            }
                           }
-                          const event = eventMap[loss.event_ticker];
-                          event.venues.add(loss.venue);
-                          event.timings.add(loss.bet_timing);
-                          event.sides.add(loss.side);
-                          event.total_units += loss.units;
-                          event.total_cost_cents += loss.cost_cents;
-                          event.avg_entry_price += loss.entry_price_cents;
-                          event.orders++;
-                          if (loss.fills) event.all_fills.push(...loss.fills);
-                          // Use candlesticks from first order that has them
-                          if (loss.candlesticks && loss.candlesticks.length > 0 && event.candlesticks.length === 0) {
-                            event.candlesticks = loss.candlesticks;
-                          }
-                          // Track highest max_price seen
-                          if (loss.max_price_cents !== null && (event.max_price_cents === null || loss.max_price_cents > event.max_price_cents)) {
-                            event.max_price_cents = loss.max_price_cents;
-                          }
-                          // Use earliest batch_date
-                          if (loss.batch_date < event.batch_date) {
-                            event.batch_date = loss.batch_date;
-                          }
-                        }
-                        
-                        // Calculate averages and convert to array
-                        const aggregatedLosses = Object.values(eventMap).map(event => ({
-                          ...event,
-                          avg_entry_price: Math.round(event.avg_entry_price / event.orders),
-                          venue: event.venues.size === 1 ? [...event.venues][0] : 'mixed',
-                          timing: event.timings.size === 1 ? [...event.timings][0] : 'mixed',
-                          side: event.sides.size === 1 ? [...event.sides][0] : 'MIXED',
-                        }));
-                        
-                        // Sort by date descending
-                        aggregatedLosses.sort((a, b) => b.batch_date.localeCompare(a.batch_date));
-                        
-                        return aggregatedLosses.map((loss) => (
-                          <tr key={loss.event_ticker} className="border-t border-slate-800 hover:bg-slate-800/30">
-                            <td className="p-3 text-slate-400 font-mono text-xs">
-                              {new Date(loss.batch_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                            </td>
-                            <td className="p-3 text-white max-w-[250px] truncate" title={loss.title}>
-                              {loss.title}
-                              {loss.orders > 1 && <span className="ml-2 text-xs text-slate-500">({loss.orders} orders)</span>}
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
-                                {loss.league}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-1 rounded text-xs ${
-                                loss.venue === 'home' ? 'bg-blue-500/20 text-blue-400' : 
-                                loss.venue === 'away' ? 'bg-orange-500/20 text-orange-400' : 
-                                loss.venue === 'mixed' ? 'bg-purple-500/20 text-purple-400' :
-                                'bg-slate-700 text-slate-400'
-                              }`}>
-                                {loss.venue === 'home' ? 'HOME' : loss.venue === 'away' ? 'AWAY' : loss.venue === 'neutral' ? 'N' : 'MIX'}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-1 rounded text-xs ${
-                                loss.timing === 'pre-game' ? 'bg-green-500/20 text-green-400' : 
-                                loss.timing === 'live' ? 'bg-red-500/20 text-red-400' : 
-                                loss.timing === 'mixed' ? 'bg-purple-500/20 text-purple-400' :
-                                'bg-slate-700 text-slate-400'
-                              }`}>
-                                {loss.timing === 'pre-game' && '📅 '}
-                                {loss.timing === 'live' && '🔴 '}
-                                {loss.timing === 'pre-game' ? 'PRE' : loss.timing === 'live' ? 'LIVE' : loss.timing === 'mixed' ? 'MIXED' : '?'}
-                              </span>
-                            </td>
-                            <td className="p-3 text-right text-white font-mono">{loss.total_units.toLocaleString()}</td>
-                            <td className="p-3 text-right text-amber-400 font-mono">{loss.avg_entry_price}¢</td>
-                            <td className="p-3 text-right font-mono">
-                              {loss.max_price_cents !== null ? (
-                                <span className={loss.max_price_cents > loss.avg_entry_price ? 'text-emerald-400' : 'text-slate-400'}>
-                                  {loss.max_price_cents}¢
-                                  {loss.max_price_cents > loss.avg_entry_price && (
-                                    <span className="text-xs ml-1 text-emerald-600">↑{loss.max_price_cents - loss.avg_entry_price}</span>
-                                  )}
+
+                          // Calculate averages and convert to array
+                          const aggregatedLosses = Object.values(eventMap).map(
+                            (event) => ({
+                              ...event,
+                              avg_entry_price: Math.round(
+                                event.avg_entry_price / event.orders
+                              ),
+                              venue:
+                                event.venues.size === 1
+                                  ? [...event.venues][0]
+                                  : "mixed",
+                              timing:
+                                event.timings.size === 1
+                                  ? [...event.timings][0]
+                                  : "mixed",
+                              side:
+                                event.sides.size === 1
+                                  ? [...event.sides][0]
+                                  : "MIXED",
+                            })
+                          );
+
+                          // Sort by date descending
+                          aggregatedLosses.sort((a, b) =>
+                            b.batch_date.localeCompare(a.batch_date)
+                          );
+
+                          return aggregatedLosses.map((loss) => (
+                            <tr
+                              key={loss.event_ticker}
+                              className="border-t border-slate-800 hover:bg-slate-800/30"
+                            >
+                              <td className="p-3 text-slate-400 font-mono text-xs">
+                                {new Date(
+                                  loss.batch_date + "T12:00:00"
+                                ).toLocaleDateString("en-US", {
+                                  month: "short",
+                                  day: "numeric",
+                                })}
+                              </td>
+                              <td
+                                className="p-3 text-white max-w-[250px] truncate"
+                                title={loss.title}
+                              >
+                                {loss.title}
+                                {loss.orders > 1 && (
+                                  <span className="ml-2 text-xs text-slate-500">
+                                    ({loss.orders} orders)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className="px-2 py-1 rounded text-xs bg-slate-700 text-white font-medium">
+                                  {loss.league}
                                 </span>
-                              ) : (
-                                <span className="text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td className="p-3 text-right text-red-400 font-mono">
-                              -${(loss.total_cost_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td className="p-3">
-                              {(() => {
-                                const width = 160;
-                                const height = 40;
-                                const entryPrice = loss.avg_entry_price;
-                                const exitPrice = 0; // Lost = settled at 0
-                                
-                                // If we have candlestick data, show it
-                                if (loss.candlesticks && loss.candlesticks.length > 0) {
-                                  const candles = loss.candlesticks.slice(-24);
-                                  const allPrices = candles.flatMap(c => [c.high, c.low, c.open, c.close]).filter(p => p > 0);
-                                  
-                                  if (allPrices.length > 0) {
-                                    const minPrice = Math.min(...allPrices, 0);
-                                    const chartMaxPrice = Math.max(...allPrices, entryPrice);
-                                    const highPrice = loss.max_price_cents || chartMaxPrice;
-                                    const range = chartMaxPrice - minPrice || 1;
-                                    const candleWidth = Math.max(2, Math.floor((width - 20) / candles.length) - 1);
-                                    const gap = 1;
-                                    
-                                    const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
-                                    const entryY = scaleY(entryPrice);
-                                    const highY = scaleY(highPrice);
-                                    
-                                    return (
-                                      <div className="w-[160px] h-[40px]">
-                                        <svg width={width} height={height} className="bg-slate-800/50 rounded">
-                                          {/* High price line (green dashed) */}
-                                          {loss.max_price_cents !== null && (
-                                            <line x1="0" y1={highY} x2={width} y2={highY} stroke="#22c55e" strokeWidth="1" strokeDasharray="2,2" />
-                                          )}
-                                          {/* Entry price line (orange dashed) */}
-                                          <line x1="0" y1={entryY} x2={width} y2={entryY} stroke="#f59e0b" strokeWidth="1" strokeDasharray="3,3" />
-                                          {candles.map((c, i) => {
-                                            const x = 10 + i * (candleWidth + gap);
-                                            const openY = scaleY(c.open);
-                                            const closeY = scaleY(c.close);
-                                            const candleHighY = scaleY(c.high);
-                                            const lowY = scaleY(c.low);
-                                            const isUp = c.close >= c.open;
-                                            const color = isUp ? '#22c55e' : '#ef4444';
-                                            const bodyTop = Math.min(openY, closeY);
-                                            const bodyHeight = Math.max(1, Math.abs(closeY - openY));
-                                            
-                                            return (
-                                              <g key={i}>
-                                                <line x1={x + candleWidth / 2} y1={candleHighY} x2={x + candleWidth / 2} y2={lowY} stroke={color} strokeWidth="1" />
-                                                <rect x={x} y={bodyTop} width={candleWidth} height={bodyHeight} fill={color} />
-                                              </g>
-                                            );
-                                          })}
-                                          {/* Labels */}
-                                          <text x={width - 25} y="10" fontSize="8" fill="#22c55e">{Math.round(highPrice)}¢</text>
-                                          <text x="2" y={height - 2} fontSize="8" fill="#94a3b8">{Math.round(minPrice)}¢</text>
-                                        </svg>
-                                      </div>
-                                    );
+                              </td>
+                              <td className="p-3 text-center">
+                                <span
+                                  className={`px-2 py-1 rounded text-xs ${
+                                    loss.venue === "home"
+                                      ? "bg-blue-500/20 text-blue-400"
+                                      : loss.venue === "away"
+                                      ? "bg-orange-500/20 text-orange-400"
+                                      : loss.venue === "mixed"
+                                      ? "bg-purple-500/20 text-purple-400"
+                                      : "bg-slate-700 text-slate-400"
+                                  }`}
+                                >
+                                  {loss.venue === "home"
+                                    ? "HOME"
+                                    : loss.venue === "away"
+                                    ? "AWAY"
+                                    : loss.venue === "neutral"
+                                    ? "N"
+                                    : "MIX"}
+                                </span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span
+                                  className={`px-2 py-1 rounded text-xs ${
+                                    loss.timing === "pre-game"
+                                      ? "bg-green-500/20 text-green-400"
+                                      : loss.timing === "live"
+                                      ? "bg-red-500/20 text-red-400"
+                                      : loss.timing === "mixed"
+                                      ? "bg-purple-500/20 text-purple-400"
+                                      : "bg-slate-700 text-slate-400"
+                                  }`}
+                                >
+                                  {loss.timing === "pre-game" && "📅 "}
+                                  {loss.timing === "live" && "🔴 "}
+                                  {loss.timing === "pre-game"
+                                    ? "PRE"
+                                    : loss.timing === "live"
+                                    ? "LIVE"
+                                    : loss.timing === "mixed"
+                                    ? "MIXED"
+                                    : "?"}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right text-white font-mono">
+                                {loss.total_units.toLocaleString()}
+                              </td>
+                              <td className="p-3 text-right text-amber-400 font-mono">
+                                {loss.avg_entry_price}¢
+                              </td>
+                              <td className="p-3 text-right font-mono">
+                                {loss.max_price_cents !== null ? (
+                                  <span
+                                    className={
+                                      loss.max_price_cents >
+                                      loss.avg_entry_price
+                                        ? "text-emerald-400"
+                                        : "text-slate-400"
+                                    }
+                                  >
+                                    {loss.max_price_cents}¢
+                                    {loss.max_price_cents >
+                                      loss.avg_entry_price && (
+                                      <span className="text-xs ml-1 text-emerald-600">
+                                        ↑
+                                        {loss.max_price_cents -
+                                          loss.avg_entry_price}
+                                      </span>
+                                    )}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right text-red-400 font-mono">
+                                -$
+                                {(loss.total_cost_cents / 100).toLocaleString(
+                                  "en-US",
+                                  {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
                                   }
-                                }
-                                
-                                // Fallback: Show entry → high → exit visualization
-                                const highPrice = loss.max_price_cents || entryPrice;
-                                const minPrice = 0;
-                                const maxPrice = Math.max(entryPrice, highPrice);
-                                const range = maxPrice || 1;
-                                const scaleY = (price: number) => height - 5 - ((price - minPrice) / range) * (height - 10);
-                                const entryY = scaleY(entryPrice);
-                                const highY = scaleY(highPrice);
-                                const exitY = scaleY(exitPrice);
-                                
-                                const hasHighAboveEntry = loss.max_price_cents !== null && loss.max_price_cents > entryPrice;
-                                
-                                return (
-                                  <div className="w-[160px] h-[40px]">
-                                    <svg width={width} height={height} className="bg-slate-800/50 rounded">
-                                      {hasHighAboveEntry ? (
-                                        <>
-                                          {/* Entry to high line (green) */}
-                                          <line x1="20" y1={entryY} x2={width/2} y2={highY} stroke="#22c55e" strokeWidth="2" />
-                                          {/* High to exit line (red) */}
-                                          <line x1={width/2} y1={highY} x2={width - 20} y2={exitY} stroke="#ef4444" strokeWidth="2" />
-                                          {/* High point */}
-                                          <circle cx={width/2} cy={highY} r="4" fill="#22c55e" />
-                                          {/* High label */}
-                                          <text x={width/2 + 6} y={highY + 3} fontSize="8" fill="#22c55e">{highPrice}¢</text>
-                                        </>
-                                      ) : (
-                                        /* Entry to exit line (red) */
-                                        <line x1="20" y1={entryY} x2={width - 20} y2={exitY} stroke="#ef4444" strokeWidth="2" />
-                                      )}
-                                      {/* Entry point */}
-                                      <circle cx="20" cy={entryY} r="4" fill="#f59e0b" />
-                                      {/* Exit point */}
-                                      <circle cx={width - 20} cy={exitY} r="4" fill="#ef4444" />
-                                      {/* Labels */}
-                                      <text x="28" y={entryY + 3} fontSize="8" fill="#f59e0b">{entryPrice}¢</text>
-                                      <text x={width - 30} y={exitY - 3} fontSize="8" fill="#ef4444">0¢</text>
-                                    </svg>
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                          </tr>
-                        ));
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
+                                )}
+                              </td>
+                              <td className="p-3">
+                                {(() => {
+                                  const width = 160;
+                                  const height = 40;
+                                  const entryPrice = loss.avg_entry_price;
+                                  const exitPrice = 0; // Lost = settled at 0
+
+                                  // If we have candlestick data, show it
+                                  if (
+                                    loss.candlesticks &&
+                                    loss.candlesticks.length > 0
+                                  ) {
+                                    const candles =
+                                      loss.candlesticks.slice(-24);
+                                    const allPrices = candles
+                                      .flatMap((c) => [
+                                        c.high,
+                                        c.low,
+                                        c.open,
+                                        c.close,
+                                      ])
+                                      .filter((p) => p > 0);
+
+                                    if (allPrices.length > 0) {
+                                      const minPrice = Math.min(
+                                        ...allPrices,
+                                        0
+                                      );
+                                      const chartMaxPrice = Math.max(
+                                        ...allPrices,
+                                        entryPrice
+                                      );
+                                      const highPrice =
+                                        loss.max_price_cents || chartMaxPrice;
+                                      const range =
+                                        chartMaxPrice - minPrice || 1;
+                                      const candleWidth = Math.max(
+                                        2,
+                                        Math.floor(
+                                          (width - 20) / candles.length
+                                        ) - 1
+                                      );
+                                      const gap = 1;
+
+                                      const scaleY = (price: number) =>
+                                        height -
+                                        5 -
+                                        ((price - minPrice) / range) *
+                                          (height - 10);
+                                      const entryY = scaleY(entryPrice);
+                                      const highY = scaleY(highPrice);
+
+                                      return (
+                                        <div className="w-[160px] h-[40px]">
+                                          <svg
+                                            width={width}
+                                            height={height}
+                                            className="bg-slate-800/50 rounded"
+                                          >
+                                            {/* High price line (green dashed) */}
+                                            {loss.max_price_cents !== null && (
+                                              <line
+                                                x1="0"
+                                                y1={highY}
+                                                x2={width}
+                                                y2={highY}
+                                                stroke="#22c55e"
+                                                strokeWidth="1"
+                                                strokeDasharray="2,2"
+                                              />
+                                            )}
+                                            {/* Entry price line (orange dashed) */}
+                                            <line
+                                              x1="0"
+                                              y1={entryY}
+                                              x2={width}
+                                              y2={entryY}
+                                              stroke="#f59e0b"
+                                              strokeWidth="1"
+                                              strokeDasharray="3,3"
+                                            />
+                                            {candles.map((c, i) => {
+                                              const x =
+                                                10 + i * (candleWidth + gap);
+                                              const openY = scaleY(c.open);
+                                              const closeY = scaleY(c.close);
+                                              const candleHighY = scaleY(
+                                                c.high
+                                              );
+                                              const lowY = scaleY(c.low);
+                                              const isUp = c.close >= c.open;
+                                              const color = isUp
+                                                ? "#22c55e"
+                                                : "#ef4444";
+                                              const bodyTop = Math.min(
+                                                openY,
+                                                closeY
+                                              );
+                                              const bodyHeight = Math.max(
+                                                1,
+                                                Math.abs(closeY - openY)
+                                              );
+
+                                              return (
+                                                <g key={i}>
+                                                  <line
+                                                    x1={x + candleWidth / 2}
+                                                    y1={candleHighY}
+                                                    x2={x + candleWidth / 2}
+                                                    y2={lowY}
+                                                    stroke={color}
+                                                    strokeWidth="1"
+                                                  />
+                                                  <rect
+                                                    x={x}
+                                                    y={bodyTop}
+                                                    width={candleWidth}
+                                                    height={bodyHeight}
+                                                    fill={color}
+                                                  />
+                                                </g>
+                                              );
+                                            })}
+                                            {/* Labels */}
+                                            <text
+                                              x={width - 25}
+                                              y="10"
+                                              fontSize="8"
+                                              fill="#22c55e"
+                                            >
+                                              {Math.round(highPrice)}¢
+                                            </text>
+                                            <text
+                                              x="2"
+                                              y={height - 2}
+                                              fontSize="8"
+                                              fill="#94a3b8"
+                                            >
+                                              {Math.round(minPrice)}¢
+                                            </text>
+                                          </svg>
+                                        </div>
+                                      );
+                                    }
+                                  }
+
+                                  // Fallback: Show entry → high → exit visualization
+                                  const highPrice =
+                                    loss.max_price_cents || entryPrice;
+                                  const minPrice = 0;
+                                  const maxPrice = Math.max(
+                                    entryPrice,
+                                    highPrice
+                                  );
+                                  const range = maxPrice || 1;
+                                  const scaleY = (price: number) =>
+                                    height -
+                                    5 -
+                                    ((price - minPrice) / range) *
+                                      (height - 10);
+                                  const entryY = scaleY(entryPrice);
+                                  const highY = scaleY(highPrice);
+                                  const exitY = scaleY(exitPrice);
+
+                                  const hasHighAboveEntry =
+                                    loss.max_price_cents !== null &&
+                                    loss.max_price_cents > entryPrice;
+
+                                  return (
+                                    <div className="w-[160px] h-[40px]">
+                                      <svg
+                                        width={width}
+                                        height={height}
+                                        className="bg-slate-800/50 rounded"
+                                      >
+                                        {hasHighAboveEntry ? (
+                                          <>
+                                            {/* Entry to high line (green) */}
+                                            <line
+                                              x1="20"
+                                              y1={entryY}
+                                              x2={width / 2}
+                                              y2={highY}
+                                              stroke="#22c55e"
+                                              strokeWidth="2"
+                                            />
+                                            {/* High to exit line (red) */}
+                                            <line
+                                              x1={width / 2}
+                                              y1={highY}
+                                              x2={width - 20}
+                                              y2={exitY}
+                                              stroke="#ef4444"
+                                              strokeWidth="2"
+                                            />
+                                            {/* High point */}
+                                            <circle
+                                              cx={width / 2}
+                                              cy={highY}
+                                              r="4"
+                                              fill="#22c55e"
+                                            />
+                                            {/* High label */}
+                                            <text
+                                              x={width / 2 + 6}
+                                              y={highY + 3}
+                                              fontSize="8"
+                                              fill="#22c55e"
+                                            >
+                                              {highPrice}¢
+                                            </text>
+                                          </>
+                                        ) : (
+                                          /* Entry to exit line (red) */
+                                          <line
+                                            x1="20"
+                                            y1={entryY}
+                                            x2={width - 20}
+                                            y2={exitY}
+                                            stroke="#ef4444"
+                                            strokeWidth="2"
+                                          />
+                                        )}
+                                        {/* Entry point */}
+                                        <circle
+                                          cx="20"
+                                          cy={entryY}
+                                          r="4"
+                                          fill="#f59e0b"
+                                        />
+                                        {/* Exit point */}
+                                        <circle
+                                          cx={width - 20}
+                                          cy={exitY}
+                                          r="4"
+                                          fill="#ef4444"
+                                        />
+                                        {/* Labels */}
+                                        <text
+                                          x="28"
+                                          y={entryY + 3}
+                                          fontSize="8"
+                                          fill="#f59e0b"
+                                        >
+                                          {entryPrice}¢
+                                        </text>
+                                        <text
+                                          x={width - 30}
+                                          y={exitY - 3}
+                                          fontSize="8"
+                                          fill="#ef4444"
+                                        >
+                                          0¢
+                                        </text>
+                                      </svg>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                            </tr>
+                          ));
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </>
             ) : (
@@ -3395,41 +5088,76 @@ export default function Dashboard() {
             {/* Candlestick Analysis Section */}
             <div className="mt-12 pt-8 border-t border-slate-700">
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-white">📊 Candlestick Analysis</h2>
-                <p className="text-slate-400 text-sm mt-1">How many wins reached various low price points before recovering?</p>
+                <h2 className="text-2xl font-bold text-white">
+                  📊 Candlestick Analysis
+                </h2>
+                <p className="text-slate-400 text-sm mt-1">
+                  How many wins reached various low price points before
+                  recovering?
+                </p>
               </div>
 
               {candlestickLoading && !candlestickData ? (
                 <div className="text-center py-12 text-slate-400">
-                  <div className="animate-pulse">Loading candlestick data for all wins...</div>
-                  <p className="text-xs text-slate-500 mt-2">This may take a moment (~300 wins)</p>
+                  <div className="animate-pulse">
+                    Loading candlestick data for all wins...
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    This may take a moment (~300 wins)
+                  </p>
                 </div>
               ) : candlestickData?.summary ? (
                 <>
                   {/* Summary Cards */}
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Total Wins</div>
-                      <div className="text-2xl font-bold text-emerald-400">{candlestickData.summary.total_wins}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Total Wins
+                      </div>
+                      <div className="text-2xl font-bold text-emerald-400">
+                        {candlestickData.summary.total_wins}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">With Candlestick Data</div>
-                      <div className="text-2xl font-bold text-white">{candlestickData.summary.with_candlesticks}</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        With Candlestick Data
+                      </div>
+                      <div className="text-2xl font-bold text-white">
+                        {candlestickData.summary.with_candlesticks}
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-red-500/30">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Hit ≤50¢</div>
-                      <div className="text-2xl font-bold text-red-400">{candlestickData.summary.hit_50}</div>
-                      <div className="text-xs text-red-400/70 mt-1">{candlestickData.summary.hit_50_pct}%</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Hit ≤50¢
+                      </div>
+                      <div className="text-2xl font-bold text-red-400">
+                        {candlestickData.summary.hit_50}
+                      </div>
+                      <div className="text-xs text-red-400/70 mt-1">
+                        {candlestickData.summary.hit_50_pct}%
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-amber-500/30">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Hit ≤60¢</div>
-                      <div className="text-2xl font-bold text-amber-400">{candlestickData.summary.hit_60}</div>
-                      <div className="text-xs text-amber-400/70 mt-1">{candlestickData.summary.hit_60_pct}%</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Hit ≤60¢
+                      </div>
+                      <div className="text-2xl font-bold text-amber-400">
+                        {candlestickData.summary.hit_60}
+                      </div>
+                      <div className="text-xs text-amber-400/70 mt-1">
+                        {candlestickData.summary.hit_60_pct}%
+                      </div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-yellow-500/30">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Hit ≤70¢</div>
-                      <div className="text-2xl font-bold text-yellow-400">{candlestickData.summary.hit_70}</div>
-                      <div className="text-xs text-yellow-400/70 mt-1">{candlestickData.summary.hit_70_pct}%</div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">
+                        Hit ≤70¢
+                      </div>
+                      <div className="text-2xl font-bold text-yellow-400">
+                        {candlestickData.summary.hit_70}
+                      </div>
+                      <div className="text-xs text-yellow-400/70 mt-1">
+                        {candlestickData.summary.hit_70_pct}%
+                      </div>
                     </div>
                   </div>
 
@@ -3439,10 +5167,14 @@ export default function Dashboard() {
                       <span className="text-2xl">⚠️</span>
                       <div>
                         <div className="text-white font-medium">
-                          {candlestickData.summary.hit_50} of {candlestickData.summary.with_candlesticks} wins ({candlestickData.summary.hit_50_pct}%) dropped to 50¢ or below before winning
+                          {candlestickData.summary.hit_50} of{" "}
+                          {candlestickData.summary.with_candlesticks} wins (
+                          {candlestickData.summary.hit_50_pct}%) dropped to 50¢
+                          or below before winning
                         </div>
                         <div className="text-slate-400 text-sm">
-                          These would have been stopped out at a 50¢ stop-loss threshold
+                          These would have been stopped out at a 50¢ stop-loss
+                          threshold
                         </div>
                       </div>
                     </div>
@@ -3452,7 +5184,8 @@ export default function Dashboard() {
                   {candlestickData.wins_hit_50.length > 0 && (
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                       <h3 className="text-sm font-medium text-slate-400 mb-3">
-                        Wins that dipped to ≤50¢ ({candlestickData.wins_hit_50.length} trades)
+                        Wins that dipped to ≤50¢ (
+                        {candlestickData.wins_hit_50.length} trades)
                       </h3>
                       <div className="overflow-x-auto max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
@@ -3469,17 +5202,33 @@ export default function Dashboard() {
                           </thead>
                           <tbody>
                             {candlestickData.wins_hit_50.map((win) => (
-                              <tr key={win.ticker} className="border-b border-slate-800 hover:bg-slate-800/50">
-                                <td className="py-2 px-2 text-white max-w-[250px] truncate" title={win.title}>
+                              <tr
+                                key={win.ticker}
+                                className="border-b border-slate-800 hover:bg-slate-800/50"
+                              >
+                                <td
+                                  className="py-2 px-2 text-white max-w-[250px] truncate"
+                                  title={win.title}
+                                >
                                   {win.title}
                                 </td>
                                 <td className="py-2 px-2 text-center">
-                                  <span className={win.side === 'YES' ? 'text-emerald-400' : 'text-red-400'}>
+                                  <span
+                                    className={
+                                      win.side === "YES"
+                                        ? "text-emerald-400"
+                                        : "text-red-400"
+                                    }
+                                  >
                                     {win.side}
                                   </span>
                                 </td>
-                                <td className="py-2 px-2 text-right font-mono text-white">{win.entry_price}¢</td>
-                                <td className="py-2 px-2 text-right font-mono text-red-400">{win.min_price}¢</td>
+                                <td className="py-2 px-2 text-right font-mono text-white">
+                                  {win.entry_price}¢
+                                </td>
+                                <td className="py-2 px-2 text-right font-mono text-red-400">
+                                  {win.min_price}¢
+                                </td>
                                 <td className="py-2 px-2 text-right font-mono text-slate-400">
                                   ${(win.cost_cents / 100).toFixed(2)}
                                 </td>
@@ -3487,7 +5236,11 @@ export default function Dashboard() {
                                   ${(win.payout_cents / 100).toFixed(2)}
                                 </td>
                                 <td className="py-2 px-2 text-right font-mono text-emerald-400">
-                                  +${((win.payout_cents - win.cost_cents) / 100).toFixed(2)}
+                                  +$
+                                  {(
+                                    (win.payout_cents - win.cost_cents) /
+                                    100
+                                  ).toFixed(2)}
                                 </td>
                               </tr>
                             ))}
@@ -3507,7 +5260,16 @@ export default function Dashboard() {
         )}
 
         <footer className="py-8 border-t border-slate-800 text-center text-slate-500 text-sm">
-          Data from <a href="https://kalshi.com" target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:underline">Kalshi</a> • Click Refresh to update
+          Data from{" "}
+          <a
+            href="https://kalshi.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-emerald-400 hover:underline"
+          >
+            Kalshi
+          </a>{" "}
+          • Click Refresh to update
         </footer>
       </Container>
 
@@ -3516,43 +5278,62 @@ export default function Dashboard() {
         <div className="fixed right-0 top-0 h-full w-80 bg-slate-900 border-l border-slate-800 shadow-2xl z-50 flex flex-col">
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <h2 className="text-lg font-bold text-white">Batch Order</h2>
-            <button onClick={() => setSidebarOpen(false)} className="text-slate-400 hover:text-white text-xl">×</button>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="text-slate-400 hover:text-white text-xl"
+            >
+              ×
+            </button>
           </div>
-          
+
           <div className="p-4 border-b border-slate-800">
-            <label className="text-sm text-slate-400">Contracts per order</label>
+            <label className="text-sm text-slate-400">
+              Contracts per order
+            </label>
             <input
               type="number"
               min="1"
               value={orderCount}
-              onChange={(e) => setOrderCount(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={(e) =>
+                setOrderCount(Math.max(1, parseInt(e.target.value) || 1))
+              }
               className="w-full mt-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white"
             />
           </div>
-          
+
           <div className="flex-1 overflow-y-auto p-4">
-            <p className="text-xs text-slate-500 mb-3">{selectedMarkets.size} markets selected</p>
+            <p className="text-xs text-slate-500 mb-3">
+              {selectedMarkets.size} markets selected
+            </p>
             <div className="space-y-3">
               {Array.from(selectedMarkets.values()).map((m) => {
                 // Calculate cumulative fills at each price level for the favorite side
                 // BUY side: bids on the favorite side (people wanting to buy)
-                const buyLevels = m.favorite_side === 'YES' ? m.orderbook?.yes : m.orderbook?.no;
+                const buyLevels =
+                  m.favorite_side === "YES"
+                    ? m.orderbook?.yes
+                    : m.orderbook?.no;
                 let buyCumulativeCount = 0;
-                const cumulativeBuyLevels = (buyLevels || []).map(level => {
+                const cumulativeBuyLevels = (buyLevels || []).map((level) => {
                   buyCumulativeCount += level.count;
                   return { ...level, cumulative: buyCumulativeCount };
                 });
 
                 // SELL side: bids on the opposite side (converted to sell orders)
                 // NO bid at price P = YES sell at (100-P), and vice versa
-                const sellLevelsRaw = m.favorite_side === 'YES' ? m.orderbook?.no : m.orderbook?.yes;
-                const sellLevels = (sellLevelsRaw || []).map(level => ({
-                  ...level,
-                  price: 100 - level.price, // Convert to equivalent sell price
-                })).sort((a, b) => a.price - b.price); // Sort ascending (lowest ask first)
-                
+                const sellLevelsRaw =
+                  m.favorite_side === "YES"
+                    ? m.orderbook?.no
+                    : m.orderbook?.yes;
+                const sellLevels = (sellLevelsRaw || [])
+                  .map((level) => ({
+                    ...level,
+                    price: 100 - level.price, // Convert to equivalent sell price
+                  }))
+                  .sort((a, b) => a.price - b.price); // Sort ascending (lowest ask first)
+
                 let sellCumulativeCount = 0;
-                const cumulativeSellLevels = sellLevels.map(level => {
+                const cumulativeSellLevels = sellLevels.map((level) => {
                   sellCumulativeCount += level.count;
                   return { ...level, cumulative: sellCumulativeCount };
                 });
@@ -3562,7 +5343,10 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-white truncate">{m.title}</p>
-                        <p className="text-xs text-emerald-400">{m.favorite_side} @ {(m.favorite_odds * 100).toFixed(0)}%</p>
+                        <p className="text-xs text-emerald-400">
+                          {m.favorite_side} @{" "}
+                          {(m.favorite_odds * 100).toFixed(0)}%
+                        </p>
                       </div>
                       <button
                         onClick={() => {
@@ -3575,10 +5359,12 @@ export default function Dashboard() {
                         ×
                       </button>
                     </div>
-                    
+
                     {/* Orderbook depth visualization */}
                     {m.orderbookLoading ? (
-                      <div className="text-xs text-slate-500 py-2">Loading orderbook...</div>
+                      <div className="text-xs text-slate-500 py-2">
+                        Loading orderbook...
+                      </div>
                     ) : m.orderbook ? (
                       <div className="mt-2 border-t border-slate-700 pt-2">
                         {/* Two-column layout: Sell (asks) on left, Buy (bids) on right */}
@@ -3590,17 +5376,23 @@ export default function Dashboard() {
                             </div>
                             <div className="space-y-0.5 max-h-28 overflow-y-auto">
                               {cumulativeSellLevels.length > 0 ? (
-                                cumulativeSellLevels.slice(0, 8).map((level, i) => (
-                                  <div 
-                                    key={i} 
-                                    className="flex justify-between text-xs font-mono text-red-400"
-                                  >
-                                    <span>{level.price}¢</span>
-                                    <span>{level.count.toLocaleString()}</span>
-                                  </div>
-                                ))
+                                cumulativeSellLevels
+                                  .slice(0, 8)
+                                  .map((level, i) => (
+                                    <div
+                                      key={i}
+                                      className="flex justify-between text-xs font-mono text-red-400"
+                                    >
+                                      <span>{level.price}¢</span>
+                                      <span>
+                                        {level.count.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  ))
                               ) : (
-                                <div className="text-xs text-slate-500 text-center">No asks</div>
+                                <div className="text-xs text-slate-500 text-center">
+                                  No asks
+                                </div>
                               )}
                             </div>
                           </div>
@@ -3612,17 +5404,23 @@ export default function Dashboard() {
                             </div>
                             <div className="space-y-0.5 max-h-28 overflow-y-auto">
                               {cumulativeBuyLevels.length > 0 ? (
-                                cumulativeBuyLevels.slice(0, 8).map((level, i) => (
-                                  <div 
-                                    key={i} 
-                                    className="flex justify-between text-xs font-mono text-emerald-400"
-                                  >
-                                    <span>{level.price}¢</span>
-                                    <span>{level.count.toLocaleString()}</span>
-                                  </div>
-                                ))
+                                cumulativeBuyLevels
+                                  .slice(0, 8)
+                                  .map((level, i) => (
+                                    <div
+                                      key={i}
+                                      className="flex justify-between text-xs font-mono text-emerald-400"
+                                    >
+                                      <span>{level.price}¢</span>
+                                      <span>
+                                        {level.count.toLocaleString()}
+                                      </span>
+                                    </div>
+                                  ))
                               ) : (
-                                <div className="text-xs text-slate-500 text-center">No bids</div>
+                                <div className="text-xs text-slate-500 text-center">
+                                  No bids
+                                </div>
                               )}
                             </div>
                           </div>
@@ -3634,22 +5432,30 @@ export default function Dashboard() {
                             <div>
                               <span className="text-slate-500">Best Ask: </span>
                               <span className="text-red-400 font-mono">
-                                {cumulativeSellLevels.length > 0 ? `${cumulativeSellLevels[0].price}¢` : '-'}
+                                {cumulativeSellLevels.length > 0
+                                  ? `${cumulativeSellLevels[0].price}¢`
+                                  : "-"}
                               </span>
                             </div>
                             <div>
                               <span className="text-slate-500">Best Bid: </span>
                               <span className="text-emerald-400 font-mono">
-                                {cumulativeBuyLevels.length > 0 ? `${cumulativeBuyLevels[0].price}¢` : '-'}
+                                {cumulativeBuyLevels.length > 0
+                                  ? `${cumulativeBuyLevels[0].price}¢`
+                                  : "-"}
                               </span>
                             </div>
                           </div>
                           <div className="text-center text-xs mt-1">
                             <span className="text-slate-500">Spread: </span>
                             <span className="text-amber-400 font-mono">
-                              {cumulativeSellLevels.length > 0 && cumulativeBuyLevels.length > 0
-                                ? `${cumulativeSellLevels[0].price - cumulativeBuyLevels[0].price}¢`
-                                : '-'}
+                              {cumulativeSellLevels.length > 0 &&
+                              cumulativeBuyLevels.length > 0
+                                ? `${
+                                    cumulativeSellLevels[0].price -
+                                    cumulativeBuyLevels[0].price
+                                  }¢`
+                                : "-"}
                             </span>
                           </div>
                         </div>
@@ -3657,9 +5463,11 @@ export default function Dashboard() {
                         {/* Fill Summary for buying */}
                         {cumulativeSellLevels.length > 0 && (
                           <div className="mt-2 pt-2 border-t border-slate-700">
-                            <div className="text-[10px] text-slate-500 uppercase mb-1">Buy Fill (from asks)</div>
+                            <div className="text-[10px] text-slate-500 uppercase mb-1">
+                              Buy Fill (from asks)
+                            </div>
                             <div className="grid grid-cols-3 gap-1 text-xs">
-                              {[100, 250, 500].map(qty => {
+                              {[100, 250, 500].map((qty) => {
                                 let worstPrice = 0;
                                 let canFill = false;
                                 for (const level of cumulativeSellLevels) {
@@ -3669,18 +5477,41 @@ export default function Dashboard() {
                                     break;
                                   }
                                 }
-                                if (!canFill && cumulativeSellLevels.length > 0) {
-                                  worstPrice = cumulativeSellLevels[cumulativeSellLevels.length - 1].price;
+                                if (
+                                  !canFill &&
+                                  cumulativeSellLevels.length > 0
+                                ) {
+                                  worstPrice =
+                                    cumulativeSellLevels[
+                                      cumulativeSellLevels.length - 1
+                                    ].price;
                                 }
-                                const totalAvailable = cumulativeSellLevels.length > 0 
-                                  ? cumulativeSellLevels[cumulativeSellLevels.length - 1].cumulative 
-                                  : 0;
-                                
+                                const totalAvailable =
+                                  cumulativeSellLevels.length > 0
+                                    ? cumulativeSellLevels[
+                                        cumulativeSellLevels.length - 1
+                                      ].cumulative
+                                    : 0;
+
                                 return (
-                                  <div key={qty} className="bg-slate-900 rounded p-1.5 text-center">
+                                  <div
+                                    key={qty}
+                                    className="bg-slate-900 rounded p-1.5 text-center"
+                                  >
                                     <div className="text-slate-400">{qty}</div>
-                                    <div className={canFill ? 'text-emerald-400' : 'text-amber-400'}>
-                                      {canFill ? `${worstPrice}¢` : `${Math.min(qty, totalAvailable)}@${worstPrice}¢`}
+                                    <div
+                                      className={
+                                        canFill
+                                          ? "text-emerald-400"
+                                          : "text-amber-400"
+                                      }
+                                    >
+                                      {canFill
+                                        ? `${worstPrice}¢`
+                                        : `${Math.min(
+                                            qty,
+                                            totalAvailable
+                                          )}@${worstPrice}¢`}
                                     </div>
                                   </div>
                                 );
@@ -3695,54 +5526,77 @@ export default function Dashboard() {
               })}
             </div>
           </div>
-          
+
           {/* Deployment Summary */}
           {selectedMarkets.size > 0 && (
             <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-              <div className="text-[10px] text-slate-500 uppercase mb-2">Deployment Summary (at best ask)</div>
+              <div className="text-[10px] text-slate-500 uppercase mb-2">
+                Deployment Summary (at best ask)
+              </div>
               <div className="space-y-1 max-h-32 overflow-y-auto mb-3">
                 {Array.from(selectedMarkets.values()).map((m) => {
                   // Get sell side (asks) for the favorite
-                  const sellLevelsRaw = m.favorite_side === 'YES' ? m.orderbook?.no : m.orderbook?.yes;
+                  const sellLevelsRaw =
+                    m.favorite_side === "YES"
+                      ? m.orderbook?.no
+                      : m.orderbook?.yes;
                   const bestAskRaw = sellLevelsRaw?.[0];
-                  const bestAskPrice = bestAskRaw ? 100 - bestAskRaw.price : null;
+                  const bestAskPrice = bestAskRaw
+                    ? 100 - bestAskRaw.price
+                    : null;
                   const availableAtBest = bestAskRaw?.count || 0;
-                  const maxCostCents = bestAskPrice ? bestAskPrice * availableAtBest : 0;
-                  
+                  const maxCostCents = bestAskPrice
+                    ? bestAskPrice * availableAtBest
+                    : 0;
+
                   return (
-                    <div key={m.ticker} className="flex justify-between text-xs">
-                      <span className="text-slate-400 truncate max-w-[140px]">{m.title.split(' ').slice(0, 3).join(' ')}...</span>
+                    <div
+                      key={m.ticker}
+                      className="flex justify-between text-xs"
+                    >
+                      <span className="text-slate-400 truncate max-w-[140px]">
+                        {m.title.split(" ").slice(0, 3).join(" ")}...
+                      </span>
                       <span className="text-white font-mono">
-                        {availableAtBest.toLocaleString()} @ {bestAskPrice || '-'}¢ = ${(maxCostCents / 100).toFixed(0)}
+                        {availableAtBest.toLocaleString()} @{" "}
+                        {bestAskPrice || "-"}¢ = $
+                        {(maxCostCents / 100).toFixed(0)}
                       </span>
                     </div>
                   );
                 })}
               </div>
-              
+
               {/* Totals */}
               {(() => {
                 let totalAvailable = 0;
                 let totalMaxCost = 0;
-                
+
                 Array.from(selectedMarkets.values()).forEach((m) => {
-                  const sellLevelsRaw = m.favorite_side === 'YES' ? m.orderbook?.no : m.orderbook?.yes;
+                  const sellLevelsRaw =
+                    m.favorite_side === "YES"
+                      ? m.orderbook?.no
+                      : m.orderbook?.yes;
                   const bestAskRaw = sellLevelsRaw?.[0];
                   const bestAskPrice = bestAskRaw ? 100 - bestAskRaw.price : 0;
                   const availableAtBest = bestAskRaw?.count || 0;
                   totalAvailable += availableAtBest;
                   totalMaxCost += bestAskPrice * availableAtBest;
                 });
-                
+
                 return (
                   <div className="border-t border-slate-700 pt-2">
                     <div className="flex justify-between text-sm font-bold">
                       <span className="text-slate-300">Total at Best Ask</span>
-                      <span className="text-emerald-400 font-mono">{totalAvailable.toLocaleString()} units</span>
+                      <span className="text-emerald-400 font-mono">
+                        {totalAvailable.toLocaleString()} units
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm font-bold mt-1">
                       <span className="text-slate-300">Max Deployable</span>
-                      <span className="text-amber-400 font-mono">${(totalMaxCost / 100).toLocaleString()}</span>
+                      <span className="text-amber-400 font-mono">
+                        ${(totalMaxCost / 100).toLocaleString()}
+                      </span>
                     </div>
                   </div>
                 );
@@ -3751,13 +5605,17 @@ export default function Dashboard() {
           )}
 
           <div className="p-4 border-t border-slate-800 space-y-2">
-            <p className="text-xs text-slate-500 text-center">Press Enter to submit</p>
+            <p className="text-xs text-slate-500 text-center">
+              Press Enter to submit
+            </p>
             <button
               onClick={submitBatchOrder}
               disabled={orderSubmitting || selectedMarkets.size === 0}
               className="w-full py-3 bg-emerald-500 text-slate-950 font-bold rounded-lg hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {orderSubmitting ? 'Submitting...' : `Place ${selectedMarkets.size} Orders`}
+              {orderSubmitting
+                ? "Submitting..."
+                : `Place ${selectedMarkets.size} Orders`}
             </button>
             <button
               onClick={clearSelections}
@@ -3771,29 +5629,64 @@ export default function Dashboard() {
 
       {/* Rules Modal */}
       {showRulesModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setShowRulesModal(false)}>
-          <div 
+        <div
+          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowRulesModal(false)}
+        >
+          <div
             className="bg-slate-900 rounded-xl border border-slate-700 max-w-lg w-full p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-bold text-white">Investment Rules</h3>
-              <button 
+              <button
                 onClick={() => setShowRulesModal(false)}
                 className="text-slate-400 hover:text-white transition-colors"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                <svg
+                  className="w-6 h-6"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
             <ul className="text-sm text-slate-400 space-y-2">
-              <li>— <span className="text-emerald-400">Only bet on games happening TODAY</span></li>
-              <li>— <span className="text-red-400 font-bold">ONLY 90-99.5% odds</span> (NEVER below 90%)</li>
-              <li>— Execute orders starting at <span className="text-white">6am ET</span> on game day</li>
-              <li>— Maximum <span className="text-white">3% of portfolio per EVENT</span></li>
-              <li>— Can add to event if under 3% (tracks remaining capacity)</li>
-              <li>— Monitor every <span className="text-white">5 minutes</span> for new opportunities</li>
+              <li>
+                —{" "}
+                <span className="text-emerald-400">
+                  Only bet on games happening TODAY
+                </span>
+              </li>
+              <li>
+                —{" "}
+                <span className="text-red-400 font-bold">
+                  ONLY 90-99.5% odds
+                </span>{" "}
+                (NEVER below 90%)
+              </li>
+              <li>
+                — Execute orders starting at{" "}
+                <span className="text-white">6am ET</span> on game day
+              </li>
+              <li>
+                — Maximum{" "}
+                <span className="text-white">3% of portfolio per EVENT</span>
+              </li>
+              <li>
+                — Can add to event if under 3% (tracks remaining capacity)
+              </li>
+              <li>
+                — Monitor every <span className="text-white">5 minutes</span>{" "}
+                for new opportunities
+              </li>
               <li>— Improve resting order price by 1¢ after 1 hour</li>
               <li>— Cancel unfilled orders after 4 hours</li>
               <li>— Blacklist illiquid markets that fail to fill</li>
