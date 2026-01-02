@@ -41,71 +41,111 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
-interface WinWithLow {
+interface CandlestickResult {
   ticker: string;
   title: string;
   side: string;
   entry_price: number;
   min_price: number | null;
-  hit_50: boolean;
-  hit_60: boolean;
-  hit_70: boolean;
-  hit_80: boolean;
+  max_price: number | null;
   cost_cents: number;
   payout_cents: number;
 }
 
-// GET - Analyze candlesticks for all wins
+// GET - Analyze candlesticks for all wins (uses cache)
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const limit = parseInt(url.searchParams.get("limit") || "500");
+    const refresh = url.searchParams.get("refresh") === "true";
     
-    // Get all won orders
+    // First, try to get cached data from order_candlesticks table
+    if (!refresh) {
+      const { data: cached, error: cacheError } = await supabase
+        .from("order_candlesticks")
+        .select("*")
+        .eq("result_status", "won")
+        .not("min_price_cents", "is", null);
+      
+      if (!cacheError && cached && cached.length > 0) {
+        console.log(`[Candlestick Analysis] Using ${cached.length} cached results`);
+        
+        // Build threshold table (every 5 cents from 5 to 95)
+        const thresholdTable: { threshold: number; count: number }[] = [];
+        for (let t = 5; t <= 95; t += 5) {
+          const count = cached.filter(c => (c.min_price_cents || 100) <= t).length;
+          thresholdTable.push({ threshold: t, count });
+        }
+        
+        // Get all results for the detailed table
+        const allResults: CandlestickResult[] = cached.map(c => ({
+          ticker: c.ticker,
+          title: c.title || c.ticker,
+          side: c.side,
+          entry_price: c.entry_price_cents || 0,
+          min_price: c.min_price_cents,
+          max_price: c.max_price_cents,
+          cost_cents: c.cost_cents || 0,
+          payout_cents: c.payout_cents || 0,
+        })).sort((a, b) => (a.min_price || 100) - (b.min_price || 100));
+        
+        return NextResponse.json({
+          success: true,
+          from_cache: true,
+          summary: {
+            total_wins: cached.length,
+            with_candlesticks: cached.length,
+          },
+          threshold_table: thresholdTable,
+          all_results: allResults,
+        });
+      }
+    }
+    
+    // Get all won orders that don't have cached candlestick data
     const { data: wonOrders, error } = await supabase
       .from("orders")
       .select("id, ticker, event_ticker, title, side, price_cents, executed_price_cents, executed_cost_cents, cost_cents, actual_payout_cents, potential_payout_cents, placement_status_at, market_close_time")
       .eq("placement_status", "confirmed")
       .eq("result_status", "won")
       .order("placement_status_at", { ascending: false })
-      .limit(limit);
+      .limit(500);
 
     if (error) {
       return NextResponse.json({ success: false, error: error.message });
     }
 
-    console.log(`[Candlestick Analysis] Found ${wonOrders?.length} won orders`);
+    // Check which ones we already have cached
+    const { data: existingCache } = await supabase
+      .from("order_candlesticks")
+      .select("ticker")
+      .in("ticker", wonOrders?.map(o => o.ticker) || []);
+    
+    const cachedTickers = new Set(existingCache?.map(c => c.ticker) || []);
+    const ordersToProcess = wonOrders?.filter(o => !cachedTickers.has(o.ticker)) || [];
 
-    const results: WinWithLow[] = [];
+    console.log(`[Candlestick Analysis] Found ${wonOrders?.length} won orders, ${ordersToProcess.length} need processing`);
+
+    const results: CandlestickResult[] = [];
     const errors: string[] = [];
     let processed = 0;
-    let withCandlesticks = 0;
-    let hit50Count = 0;
-    let hit60Count = 0;
-    let hit70Count = 0;
-    let hit80Count = 0;
 
     // Process in batches to avoid rate limits
     const BATCH_SIZE = 10;
-    const BATCH_DELAY = 1000; // 1 second between batches
+    const BATCH_DELAY = 1000;
 
-    for (let i = 0; i < (wonOrders?.length || 0); i += BATCH_SIZE) {
-      const batch = wonOrders!.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < ordersToProcess.length; i += BATCH_SIZE) {
+      const batch = ordersToProcess.slice(i, i + BATCH_SIZE);
       
       await Promise.all(batch.map(async (order) => {
         processed++;
         
         try {
-          // Extract series_ticker from event_ticker
           const seriesTicker = order.event_ticker?.split("-")[0] || "";
           const marketTicker = order.ticker;
-          const userSide = order.side; // 'YES' or 'NO'
+          const userSide = order.side;
 
-          if (!seriesTicker || !marketTicker) {
-            return;
-          }
+          if (!seriesTicker || !marketTicker) return;
 
-          // Calculate time range
           const placementTime = order.placement_status_at
             ? Math.floor(new Date(order.placement_status_at).getTime() / 1000)
             : null;
@@ -113,23 +153,16 @@ export async function GET(request: Request) {
             ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
             : Math.floor(Date.now() / 1000);
 
-          const startTs = placementTime
-            ? placementTime - 2 * 60 * 60
-            : closeTime - 48 * 60 * 60;
+          const startTs = placementTime ? placementTime - 2 * 60 * 60 : closeTime - 48 * 60 * 60;
           const endTs = closeTime;
 
-          const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+          const candlestickUrl = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+          const response = await kalshiFetch(candlestickUrl);
 
-          const response = await kalshiFetch(url);
+          if (!response?.candlesticks || response.candlesticks.length === 0) return;
 
-          if (!response?.candlesticks || response.candlesticks.length === 0) {
-            return;
-          }
-
-          withCandlesticks++;
-
-          // Calculate min price for user's side
           let minPrice = 100;
+          let maxPrice = 0;
 
           for (const c of response.candlesticks) {
             const yesHigh = c.price?.high ?? c.price?.max ?? c.yes_bid?.high ?? 0;
@@ -137,23 +170,38 @@ export async function GET(request: Request) {
 
             if (userSide === "YES") {
               if (yesLow > 0 && yesLow < minPrice) minPrice = yesLow;
+              if (yesHigh > maxPrice) maxPrice = yesHigh;
             } else {
-              // For NO side: our low = 100 - YES high
               const noLow = yesHigh > 0 ? 100 - yesHigh : 0;
+              const noHigh = yesLow > 0 ? 100 - yesLow : 0;
               if (noLow > 0 && noLow < minPrice) minPrice = noLow;
+              if (noHigh > maxPrice) maxPrice = noHigh;
             }
           }
 
           const entryPrice = order.executed_price_cents || order.price_cents;
-          const hit50 = minPrice <= 50;
-          const hit60 = minPrice <= 60;
-          const hit70 = minPrice <= 70;
-          const hit80 = minPrice <= 80;
+          const costCents = order.executed_cost_cents || order.cost_cents || 0;
+          const payoutCents = order.actual_payout_cents || order.potential_payout_cents || 0;
 
-          if (hit50) hit50Count++;
-          if (hit60) hit60Count++;
-          if (hit70) hit70Count++;
-          if (hit80) hit80Count++;
+          // Save to cache
+          await supabase.from("order_candlesticks").upsert({
+            ticker: order.ticker,
+            event_ticker: order.event_ticker,
+            title: order.title,
+            side: userSide,
+            entry_price_cents: entryPrice,
+            min_price_cents: minPrice < 100 ? minPrice : null,
+            max_price_cents: maxPrice > 0 ? maxPrice : null,
+            candlestick_count: response.candlesticks.length,
+            hit_50: minPrice <= 50,
+            hit_60: minPrice <= 60,
+            hit_70: minPrice <= 70,
+            hit_80: minPrice <= 80,
+            result_status: "won",
+            cost_cents: costCents,
+            payout_cents: payoutCents,
+            analyzed_at: new Date().toISOString(),
+          }, { onConflict: "ticker" });
 
           results.push({
             ticker: order.ticker,
@@ -161,12 +209,9 @@ export async function GET(request: Request) {
             side: userSide,
             entry_price: entryPrice,
             min_price: minPrice < 100 ? minPrice : null,
-            hit_50: hit50,
-            hit_60: hit60,
-            hit_70: hit70,
-            hit_80: hit80,
-            cost_cents: order.executed_cost_cents || order.cost_cents || 0,
-            payout_cents: order.actual_payout_cents || order.potential_payout_cents || 0,
+            max_price: maxPrice > 0 ? maxPrice : null,
+            cost_cents: costCents,
+            payout_cents: payoutCents,
           });
 
         } catch (e) {
@@ -174,38 +219,49 @@ export async function GET(request: Request) {
         }
       }));
 
-      // Rate limit between batches
-      if (i + BATCH_SIZE < (wonOrders?.length || 0)) {
+      if (i + BATCH_SIZE < ordersToProcess.length) {
         await new Promise(r => setTimeout(r, BATCH_DELAY));
       }
       
-      console.log(`[Candlestick Analysis] Processed ${Math.min(i + BATCH_SIZE, wonOrders?.length || 0)} / ${wonOrders?.length}`);
+      console.log(`[Candlestick Analysis] Processed ${Math.min(i + BATCH_SIZE, ordersToProcess.length)} / ${ordersToProcess.length}`);
     }
 
-    // Sort results by min_price ascending (lowest first)
-    results.sort((a, b) => (a.min_price || 100) - (b.min_price || 100));
+    // Now get ALL cached data (including what we just added)
+    const { data: allCached } = await supabase
+      .from("order_candlesticks")
+      .select("*")
+      .eq("result_status", "won")
+      .not("min_price_cents", "is", null);
 
-    // Get wins that hit 50
-    const winsHit50 = results.filter(r => r.hit_50);
+    // Build threshold table
+    const thresholdTable: { threshold: number; count: number }[] = [];
+    for (let t = 5; t <= 95; t += 5) {
+      const count = (allCached || []).filter(c => (c.min_price_cents || 100) <= t).length;
+      thresholdTable.push({ threshold: t, count });
+    }
+
+    const allResults: CandlestickResult[] = (allCached || []).map(c => ({
+      ticker: c.ticker,
+      title: c.title || c.ticker,
+      side: c.side,
+      entry_price: c.entry_price_cents || 0,
+      min_price: c.min_price_cents,
+      max_price: c.max_price_cents,
+      cost_cents: c.cost_cents || 0,
+      payout_cents: c.payout_cents || 0,
+    })).sort((a, b) => (a.min_price || 100) - (b.min_price || 100));
 
     return NextResponse.json({
       success: true,
+      from_cache: false,
+      new_processed: processed,
       summary: {
-        total_wins: wonOrders?.length || 0,
-        processed: processed,
-        with_candlesticks: withCandlesticks,
-        hit_50: hit50Count,
-        hit_60: hit60Count,
-        hit_70: hit70Count,
-        hit_80: hit80Count,
-        hit_50_pct: withCandlesticks > 0 ? ((hit50Count / withCandlesticks) * 100).toFixed(1) : "0",
-        hit_60_pct: withCandlesticks > 0 ? ((hit60Count / withCandlesticks) * 100).toFixed(1) : "0",
-        hit_70_pct: withCandlesticks > 0 ? ((hit70Count / withCandlesticks) * 100).toFixed(1) : "0",
-        hit_80_pct: withCandlesticks > 0 ? ((hit80Count / withCandlesticks) * 100).toFixed(1) : "0",
+        total_wins: allCached?.length || 0,
+        with_candlesticks: allCached?.length || 0,
       },
-      wins_hit_50: winsHit50,
-      all_results: results,
-      errors: errors.slice(0, 10), // Only show first 10 errors
+      threshold_table: thresholdTable,
+      all_results: allResults,
+      errors: errors.slice(0, 10),
     });
   } catch (e) {
     console.error("[Candlestick Analysis] Error:", e);
