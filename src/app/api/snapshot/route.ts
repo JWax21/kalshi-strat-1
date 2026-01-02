@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     // and the START of the current day (they're the same values at this moment)
     const nowET = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const today = nowET; // Current date in ET
-    
+
     // Get current balance from Kalshi (this is the live balance right now)
     let balanceCents = 0;
     try {

@@ -41,15 +41,70 @@ async function kalshiFetch(endpoint: string): Promise<any> {
   return response.json();
 }
 
-interface CandlestickResult {
+interface WinWithLow {
   ticker: string;
   title: string;
   side: string;
   entry_price: number;
   min_price: number | null;
-  max_price: number | null;
+  hit_50: boolean;
+  hit_60: boolean;
+  hit_70: boolean;
+  hit_80: boolean;
   cost_cents: number;
   payout_cents: number;
+}
+
+// Helper to build the response from cached data
+function buildResponseFromCache(cached: any[]) {
+  const withCandlesticks = cached.length;
+  
+  // Count hits at each threshold - min_price_cents is in cents (e.g., 50 = 50¢)
+  const hit50Count = cached.filter(c => (c.min_price_cents || 100) <= 50).length;
+  const hit60Count = cached.filter(c => (c.min_price_cents || 100) <= 60).length;
+  const hit70Count = cached.filter(c => (c.min_price_cents || 100) <= 70).length;
+  const hit80Count = cached.filter(c => (c.min_price_cents || 100) <= 80).length;
+
+  // Build all_results array matching frontend format
+  const allResults: WinWithLow[] = cached.map(c => {
+    const minPrice = c.min_price_cents; // Already in cents
+    return {
+      ticker: c.ticker,
+      title: c.title || c.ticker,
+      side: c.side,
+      entry_price: c.entry_price_cents || 0, // in cents
+      min_price: minPrice,
+      hit_50: (minPrice || 100) <= 50,
+      hit_60: (minPrice || 100) <= 60,
+      hit_70: (minPrice || 100) <= 70,
+      hit_80: (minPrice || 100) <= 80,
+      cost_cents: c.cost_cents || 0,
+      payout_cents: c.payout_cents || 0,
+    };
+  }).sort((a, b) => (a.min_price || 100) - (b.min_price || 100));
+
+  // wins_hit_50 are the ones that dipped to 50¢ or below
+  const winsHit50 = allResults.filter(r => r.hit_50);
+
+  return {
+    success: true,
+    summary: {
+      total_wins: cached.length,
+      processed: cached.length,
+      with_candlesticks: withCandlesticks,
+      hit_50: hit50Count,
+      hit_60: hit60Count,
+      hit_70: hit70Count,
+      hit_80: hit80Count,
+      hit_50_pct: withCandlesticks > 0 ? ((hit50Count / withCandlesticks) * 100).toFixed(1) : "0",
+      hit_60_pct: withCandlesticks > 0 ? ((hit60Count / withCandlesticks) * 100).toFixed(1) : "0",
+      hit_70_pct: withCandlesticks > 0 ? ((hit70Count / withCandlesticks) * 100).toFixed(1) : "0",
+      hit_80_pct: withCandlesticks > 0 ? ((hit80Count / withCandlesticks) * 100).toFixed(1) : "0",
+    },
+    wins_hit_50: winsHit50,
+    all_results: allResults,
+    errors: [],
+  };
 }
 
 // GET - Analyze candlesticks for all wins (uses cache)
@@ -67,37 +122,8 @@ export async function GET(request: Request) {
         .not("min_price_cents", "is", null);
       
       if (!cacheError && cached && cached.length > 0) {
-        console.log(`[Candlestick Analysis] Using ${cached.length} cached results`);
-        
-        // Build threshold table (every 5 cents from 5 to 95)
-        const thresholdTable: { threshold: number; count: number }[] = [];
-        for (let t = 5; t <= 95; t += 5) {
-          const count = cached.filter(c => (c.min_price_cents || 100) <= t).length;
-          thresholdTable.push({ threshold: t, count });
-        }
-        
-        // Get all results for the detailed table
-        const allResults: CandlestickResult[] = cached.map(c => ({
-          ticker: c.ticker,
-          title: c.title || c.ticker,
-          side: c.side,
-          entry_price: c.entry_price_cents || 0,
-          min_price: c.min_price_cents,
-          max_price: c.max_price_cents,
-          cost_cents: c.cost_cents || 0,
-          payout_cents: c.payout_cents || 0,
-        })).sort((a, b) => (a.min_price || 100) - (b.min_price || 100));
-        
-        return NextResponse.json({
-          success: true,
-          from_cache: true,
-          summary: {
-            total_wins: cached.length,
-            with_candlesticks: cached.length,
-          },
-          threshold_table: thresholdTable,
-          all_results: allResults,
-        });
+        console.log(`[Candlestick Analysis] Using ${cached.length} cached results from DB`);
+        return NextResponse.json(buildResponseFromCache(cached));
       }
     }
     
@@ -125,7 +151,6 @@ export async function GET(request: Request) {
 
     console.log(`[Candlestick Analysis] Found ${wonOrders?.length} won orders, ${ordersToProcess.length} need processing`);
 
-    const results: CandlestickResult[] = [];
     const errors: string[] = [];
     let processed = 0;
 
@@ -183,7 +208,7 @@ export async function GET(request: Request) {
           const costCents = order.executed_cost_cents || order.cost_cents || 0;
           const payoutCents = order.actual_payout_cents || order.potential_payout_cents || 0;
 
-          // Save to cache
+          // Save to cache - min_price_cents stored in cents (e.g., 50 = 50¢)
           await supabase.from("order_candlesticks").upsert({
             ticker: order.ticker,
             event_ticker: order.event_ticker,
@@ -202,17 +227,6 @@ export async function GET(request: Request) {
             payout_cents: payoutCents,
             analyzed_at: new Date().toISOString(),
           }, { onConflict: "ticker" });
-
-          results.push({
-            ticker: order.ticker,
-            title: order.title || order.ticker,
-            side: userSide,
-            entry_price: entryPrice,
-            min_price: minPrice < 100 ? minPrice : null,
-            max_price: maxPrice > 0 ? maxPrice : null,
-            cost_cents: costCents,
-            payout_cents: payoutCents,
-          });
 
         } catch (e) {
           errors.push(`Error processing ${order.ticker}: ${e}`);
@@ -233,36 +247,12 @@ export async function GET(request: Request) {
       .eq("result_status", "won")
       .not("min_price_cents", "is", null);
 
-    // Build threshold table
-    const thresholdTable: { threshold: number; count: number }[] = [];
-    for (let t = 5; t <= 95; t += 5) {
-      const count = (allCached || []).filter(c => (c.min_price_cents || 100) <= t).length;
-      thresholdTable.push({ threshold: t, count });
-    }
-
-    const allResults: CandlestickResult[] = (allCached || []).map(c => ({
-      ticker: c.ticker,
-      title: c.title || c.ticker,
-      side: c.side,
-      entry_price: c.entry_price_cents || 0,
-      min_price: c.min_price_cents,
-      max_price: c.max_price_cents,
-      cost_cents: c.cost_cents || 0,
-      payout_cents: c.payout_cents || 0,
-    })).sort((a, b) => (a.min_price || 100) - (b.min_price || 100));
-
-    return NextResponse.json({
-      success: true,
-      from_cache: false,
-      new_processed: processed,
-      summary: {
-        total_wins: allCached?.length || 0,
-        with_candlesticks: allCached?.length || 0,
-      },
-      threshold_table: thresholdTable,
-      all_results: allResults,
-      errors: errors.slice(0, 10),
-    });
+    console.log(`[Candlestick Analysis] Processed ${processed} new orders, returning ${allCached?.length || 0} total`);
+    
+    // Use the same format builder for consistency
+    const response = buildResponseFromCache(allCached || []);
+    response.errors = errors.slice(0, 10);
+    return NextResponse.json(response);
   } catch (e) {
     console.error("[Candlestick Analysis] Error:", e);
     return NextResponse.json({

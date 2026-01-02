@@ -435,13 +435,13 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           continue;
         }
         
-        const maxUnitsForTarget = Math.floor(Math.min(targetAllocationCents, remainingCapital) / priceCents);
+          const maxUnitsForTarget = Math.floor(Math.min(targetAllocationCents, remainingCapital) / priceCents);
         const recalculatedUnits = Math.max(maxUnitsForTarget, 1);
-        const recalculatedCost = recalculatedUnits * priceCents;
-        
-        if (recalculatedCost > remainingCapital) {
+          const recalculatedCost = recalculatedUnits * priceCents;
+          
+          if (recalculatedCost > remainingCapital) {
           ordersToQueue.push({ order, reason: `Need ${recalculatedCost}¢, have ${remainingCapital}¢` });
-          continue;
+            continue;
         }
         
         ordersToPlace.push({ order, recalculatedUnits, recalculatedCost });
