@@ -484,6 +484,49 @@ export default function Dashboard() {
   const [selectedCell, setSelectedCell] = useState<{ threshold: number; stopLoss: number } | null>(null);
   const [scenariosLoading, setScenariosLoading] = useState(false);
   
+  // Candlestick analysis state
+  const [candlestickData, setCandlestickData] = useState<{
+    success: boolean;
+    summary: {
+      total_wins: number;
+      processed: number;
+      with_candlesticks: number;
+      hit_50: number;
+      hit_60: number;
+      hit_70: number;
+      hit_80: number;
+      hit_50_pct: string;
+      hit_60_pct: string;
+      hit_70_pct: string;
+      hit_80_pct: string;
+    };
+    wins_hit_50: Array<{
+      ticker: string;
+      title: string;
+      side: string;
+      entry_price: number;
+      min_price: number | null;
+      hit_50: boolean;
+      cost_cents: number;
+      payout_cents: number;
+    }>;
+    all_results: Array<{
+      ticker: string;
+      title: string;
+      side: string;
+      entry_price: number;
+      min_price: number | null;
+      hit_50: boolean;
+      hit_60: boolean;
+      hit_70: boolean;
+      hit_80: boolean;
+      cost_cents: number;
+      payout_cents: number;
+    }>;
+    errors: string[];
+  } | null>(null);
+  const [candlestickLoading, setCandlestickLoading] = useState(false);
+  
   // Stop-loss monitoring state
   const [stopLossStatus, setStopLossStatus] = useState<{
     timestamp: string;
@@ -860,6 +903,22 @@ export default function Dashboard() {
     }
   };
   
+  // Fetch candlestick analysis data
+  const fetchCandlestickAnalysis = async () => {
+    setCandlestickLoading(true);
+    try {
+      const res = await fetch('/api/candlestick-analysis');
+      const data = await res.json();
+      if (data.success) {
+        setCandlestickData(data);
+      }
+    } catch (err) {
+      console.error('Error fetching candlestick analysis:', err);
+    } finally {
+      setCandlestickLoading(false);
+    }
+  };
+  
   // Check stop-loss status (dry run)
   const checkStopLoss = async () => {
     setStopLossLoading(true);
@@ -1040,9 +1099,7 @@ export default function Dashboard() {
       fetchRecords();
     } else if (activeTab === 'losses') {
       fetchLosses();
-      // Also fetch whatif data for the What If Analysis section within Losses tab
-      fetchWhatIf();
-      fetchScenarios();
+      fetchCandlestickAnalysis();
     }
   }, [activeTab]);
 
@@ -3305,706 +3362,116 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* What If Analysis Section */}
+            {/* Candlestick Analysis Section */}
             <div className="mt-12 pt-8 border-t border-slate-700">
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-white">What If Analysis</h2>
-                <p className="text-slate-400 text-sm mt-1">Simulate automatic stop-loss selling with historical price data</p>
+                <h2 className="text-2xl font-bold text-white">📊 Candlestick Analysis</h2>
+                <p className="text-slate-400 text-sm mt-1">How many wins reached various low price points before recovering?</p>
               </div>
 
-            {whatIfLoading && !whatIfData ? (
-              <div className="text-center py-12 text-slate-400">
-                Loading historical data from Kalshi...
-              </div>
-            ) : whatIfData?.summary ? (
-              <>
-                {/* Data Quality Indicator */}
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-slate-400">Orders analyzed:</span>
-                      <span className="text-white ml-2">{whatIfData.summary.total_orders}</span>
-                      <span className="text-slate-500 mx-2">|</span>
-                      <span className="text-emerald-400">{whatIfData.summary.won}W</span>
-                      <span className="text-slate-500 mx-1">/</span>
-                      <span className="text-red-400">{whatIfData.summary.lost}L</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">With price history:</span>
-                      <span className={`ml-2 ${whatIfData.summary.has_price_history > 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                        {whatIfData.summary.has_price_history} / {whatIfData.summary.total_orders}
-                      </span>
-                    </div>
-                  </div>
+              {candlestickLoading && !candlestickData ? (
+                <div className="text-center py-12 text-slate-400">
+                  <div className="animate-pulse">Loading candlestick data for all wins...</div>
+                  <p className="text-xs text-slate-500 mt-2">This may take a moment (~300 wins)</p>
                 </div>
-
-                {/* Stop-Loss Slider */}
-                <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-medium text-white">Stop-Loss Price</h3>
-                      <p className="text-sm text-slate-400">Auto-sell when price drops below this level</p>
-                    </div>
-                    <div className="text-3xl font-bold text-purple-400">{stopLossPrice}¢</div>
-                  </div>
-                  <input
-                    type="range"
-                    min="30"
-                    max="85"
-                    step="5"
-                    value={stopLossPrice}
-                    onChange={(e) => setStopLossPrice(parseInt(e.target.value))}
-                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
-                  />
-                  <div className="flex justify-between text-xs text-slate-500 mt-2">
-                    <span>30¢ (aggressive)</span>
-                    <span>60¢</span>
-                    <span>85¢ (conservative)</span>
-                  </div>
-                </div>
-
-                {/* Comparison Cards */}
-                {whatIfData.summary.stop_loss_results[stopLossPrice] && (
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              ) : candlestickData?.summary ? (
+                <>
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Actual P&L</div>
-                      <div className={`text-2xl font-bold ${whatIfData.summary.actual_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {whatIfData.summary.actual_pnl_cents >= 0 ? '+' : ''}${(whatIfData.summary.actual_pnl_cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-purple-500/50">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Simulated @ {stopLossPrice}¢</div>
-                      <div className={`text-2xl font-bold ${whatIfData.summary.stop_loss_results[stopLossPrice].simulatedPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {whatIfData.summary.stop_loss_results[stopLossPrice].simulatedPnL >= 0 ? '+' : ''}${(whatIfData.summary.stop_loss_results[stopLossPrice].simulatedPnL / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">Total Wins</div>
+                      <div className="text-2xl font-bold text-emerald-400">{candlestickData.summary.total_wins}</div>
                     </div>
                     <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Improvement</div>
-                      <div className={`text-2xl font-bold ${whatIfData.summary.stop_loss_results[stopLossPrice].improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {whatIfData.summary.stop_loss_results[stopLossPrice].improvement >= 0 ? '+' : ''}${(whatIfData.summary.stop_loss_results[stopLossPrice].improvement / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                      </div>
+                      <div className="text-xs text-slate-500 uppercase mb-1">With Candlestick Data</div>
+                      <div className="text-2xl font-bold text-white">{candlestickData.summary.with_candlesticks}</div>
                     </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <div className="text-xs text-slate-500 uppercase mb-1">Trades Affected</div>
-                      <div className="text-lg font-bold">
-                        <span className="text-red-400">{whatIfData.summary.stop_loss_results[stopLossPrice].lossesTriggered}L</span>
-                        <span className="text-slate-500 mx-1">/</span>
-                        <span className="text-emerald-400">{whatIfData.summary.stop_loss_results[stopLossPrice].winsTriggered}W</span>
-                      </div>
-                      <div className="text-xs text-slate-500 mt-1">would trigger stop</div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-red-500/30">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Hit ≤50¢</div>
+                      <div className="text-2xl font-bold text-red-400">{candlestickData.summary.hit_50}</div>
+                      <div className="text-xs text-red-400/70 mt-1">{candlestickData.summary.hit_50_pct}%</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-amber-500/30">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Hit ≤60¢</div>
+                      <div className="text-2xl font-bold text-amber-400">{candlestickData.summary.hit_60}</div>
+                      <div className="text-xs text-amber-400/70 mt-1">{candlestickData.summary.hit_60_pct}%</div>
+                    </div>
+                    <div className="bg-slate-900 rounded-xl p-4 border border-yellow-500/30">
+                      <div className="text-xs text-slate-500 uppercase mb-1">Hit ≤70¢</div>
+                      <div className="text-2xl font-bold text-yellow-400">{candlestickData.summary.hit_70}</div>
+                      <div className="text-xs text-yellow-400/70 mt-1">{candlestickData.summary.hit_70_pct}%</div>
                     </div>
                   </div>
-                )}
 
-                {/* Breakdown */}
-                {whatIfData.summary.stop_loss_results[stopLossPrice] && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <h3 className="text-sm font-medium text-slate-400 mb-3">Loss Recovery @ {stopLossPrice}¢</h3>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Losses that would trigger</span>
-                          <span className="text-white">{whatIfData.summary.stop_loss_results[stopLossPrice].lossesTriggered} / {whatIfData.summary.lost}</span>
+                  {/* Key Insight */}
+                  <div className="bg-gradient-to-r from-red-500/10 to-amber-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">⚠️</span>
+                      <div>
+                        <div className="text-white font-medium">
+                          {candlestickData.summary.hit_50} of {candlestickData.summary.with_candlesticks} wins ({candlestickData.summary.hit_50_pct}%) dropped to 50¢ or below before winning
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Amount recovered</span>
-                          <span className="text-emerald-400">+${(whatIfData.summary.stop_loss_results[stopLossPrice].lossRecovery / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                      <h3 className="text-sm font-medium text-slate-400 mb-3">Missed Wins @ {stopLossPrice}¢</h3>
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Wins that would trigger</span>
-                          <span className="text-white">{whatIfData.summary.stop_loss_results[stopLossPrice].winsTriggered} / {whatIfData.summary.won}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Profit missed</span>
-                          <span className="text-red-400">-${(whatIfData.summary.stop_loss_results[stopLossPrice].missedWinProfit / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+                        <div className="text-slate-400 text-sm">
+                          These would have been stopped out at a 50¢ stop-loss threshold
                         </div>
                       </div>
                     </div>
                   </div>
-                )}
 
-                {/* Optimal Stop-Loss Finder */}
-                <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                  <h3 className="text-sm font-medium text-slate-400 mb-3">Find Optimal Stop-Loss</h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-slate-400 border-b border-slate-700">
-                          <th className="text-left py-2">Stop-Loss</th>
-                          <th className="text-right py-2">Losses Triggered</th>
-                          <th className="text-right py-2">Wins Triggered</th>
-                          <th className="text-right py-2">Recovery</th>
-                          <th className="text-right py-2">Missed Profit</th>
-                          <th className="text-right py-2">Simulated P&L</th>
-                          <th className="text-right py-2">vs Actual</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(whatIfData.summary.stop_loss_results)
-                          .sort((a, b) => parseInt(a[0]) - parseInt(b[0]))
-                          .map(([sl, result]) => {
-                            const isOptimal = parseInt(sl) === whatIfData.summary.optimal_stop_loss.price;
-                            return (
-                              <tr 
-                                key={sl} 
-                                className={`border-b border-slate-800 ${isOptimal ? 'bg-purple-500/10' : ''} ${parseInt(sl) === stopLossPrice ? 'ring-1 ring-purple-500' : ''}`}
-                              >
-                                <td className="py-2">
-                                  <span className={isOptimal ? 'text-purple-400 font-bold' : 'text-white'}>
-                                    {sl}¢ {isOptimal && '⭐'}
-                                  </span>
-                                </td>
-                                <td className="py-2 text-right text-red-400">{result.lossesTriggered}</td>
-                                <td className="py-2 text-right text-amber-400">{result.winsTriggered}</td>
-                                <td className="py-2 text-right text-emerald-400 font-mono">
-                                  +${(result.lossRecovery / 100).toLocaleString()}
-                                </td>
-                                <td className="py-2 text-right text-red-400 font-mono">
-                                  -${(result.missedWinProfit / 100).toLocaleString()}
-                                </td>
-                                <td className={`py-2 text-right font-mono ${result.simulatedPnL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  {result.simulatedPnL >= 0 ? '+' : ''}${(result.simulatedPnL / 100).toLocaleString()}
-                                </td>
-                                <td className={`py-2 text-right font-mono font-bold ${result.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  {result.improvement >= 0 ? '+' : ''}${(result.improvement / 100).toLocaleString()}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <div className="mt-3 text-sm text-slate-400">
-                    <span className="text-purple-400">⭐ Optimal stop-loss: {whatIfData.summary.optimal_stop_loss.price}¢</span>
-                    {' '}would have improved P&L by{' '}
-                    <span className={whatIfData.summary.optimal_stop_loss.improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                      ${(whatIfData.summary.optimal_stop_loss.improvement / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Individual Trade Analysis */}
-                {whatIfData.orders.filter(o => o.price_history.length > 0 || o.min_price_after_entry !== null).length > 0 && (
-                  <div className="bg-slate-900 rounded-xl p-4 border border-slate-800 mb-6">
-                    <h3 className="text-sm font-medium text-slate-400 mb-3">
-                      Trades with Price History ({whatIfData.orders.filter(o => o.price_history.length > 0).length} orders)
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="text-slate-400 border-b border-slate-700">
-                            <th className="text-left py-2">Market</th>
-                            <th className="text-center py-2">Result</th>
-                            <th className="text-right py-2">Entry</th>
-                            <th className="text-right py-2">Min Price</th>
-                            <th className="text-right py-2">Max Price</th>
-                            <th className="text-center py-2">Would Trigger @ {stopLossPrice}¢</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {whatIfData.orders
-                            .filter(o => o.min_price_after_entry !== null)
-                            .slice(0, 20)
-                            .map((order) => (
-                              <tr key={order.id} className="border-b border-slate-800">
-                                <td className="py-2 text-white max-w-[200px] truncate" title={order.title}>
-                                  {order.title}
-                                </td>
-                                <td className="py-2 text-center">
-                                  <span className={`px-2 py-0.5 rounded text-xs ${order.result_status === 'won' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                                    {order.result_status.toUpperCase()}
-                                  </span>
-                                </td>
-                                <td className="py-2 text-right text-white font-mono">{order.entry_price_cents}¢</td>
-                                <td className="py-2 text-right text-red-400 font-mono">
-                                  {order.min_price_after_entry !== null ? `${order.min_price_after_entry}¢` : '—'}
-                                </td>
-                                <td className="py-2 text-right text-emerald-400 font-mono">
-                                  {order.max_price_after_entry !== null ? `${order.max_price_after_entry}¢` : '—'}
-                                </td>
-                                <td className="py-2 text-center">
-                                  {order.would_trigger_at[stopLossPrice] ? (
-                                    <span className="text-amber-400">✓ Yes</span>
-                                  ) : (
-                                    <span className="text-slate-500">No</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* P&L Matrix: Threshold x Stop-Loss */}
-                <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
-                  <div className="mb-4">
-                    <h3 className="text-lg font-medium text-white">🎯 P&L Matrix: Threshold × Stop-Loss</h3>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Find the optimal combination. Green = profit, Red = loss. Highlighted = best result.
-                    </p>
-                  </div>
-                  
-                  {scenariosLoading ? (
-                    <div className="text-center py-8 text-slate-400">Loading scenarios...</div>
-                  ) : scenariosData?.matrix ? (
-                    <>
-                      <div className="overflow-x-auto">
+                  {/* Wins that hit 50 table */}
+                  {candlestickData.wins_hit_50.length > 0 && (
+                    <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                      <h3 className="text-sm font-medium text-slate-400 mb-3">
+                        Wins that dipped to ≤50¢ ({candlestickData.wins_hit_50.length} trades)
+                      </h3>
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
-                          <thead>
+                          <thead className="sticky top-0 bg-slate-900">
                             <tr className="text-slate-400 border-b border-slate-700">
-                              <th className="text-left py-3 px-2 font-medium">Threshold</th>
-                              <th className="text-right py-3 px-2 font-medium">No SL</th>
-                              {scenariosData.stopLossValues.map(sl => (
-                                <th key={sl} className="text-right py-3 px-2 font-medium">{sl}¢ SL</th>
-                              ))}
+                              <th className="text-left py-2 px-2">Market</th>
+                              <th className="text-center py-2 px-2">Side</th>
+                              <th className="text-right py-2 px-2">Entry</th>
+                              <th className="text-right py-2 px-2">Low</th>
+                              <th className="text-right py-2 px-2">Cost</th>
+                              <th className="text-right py-2 px-2">Payout</th>
+                              <th className="text-right py-2 px-2">Profit</th>
                             </tr>
                           </thead>
                           <tbody>
-                            {scenariosData.thresholds.map((threshold, idx) => (
-                              <tr 
-                                key={threshold} 
-                                className={`border-b border-slate-800 ${idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
-                              >
-                                <td className="py-2 px-2 font-mono font-bold text-white">{threshold}¢</td>
-                                <td 
-                                  onClick={() => setSelectedCell({ threshold, stopLoss: 0 })}
-                                  className={`py-2 px-2 text-right font-mono cursor-pointer transition-colors ${
-                                    selectedCell?.threshold === threshold && selectedCell?.stopLoss === 0
-                                      ? 'bg-purple-500/40 text-purple-200 ring-2 ring-purple-500'
-                                      : scenariosData.matrix[threshold][0] >= 0 
-                                        ? 'text-emerald-400 hover:bg-emerald-500/20' 
-                                        : 'text-red-400 hover:bg-red-500/20'
-                                  }`}
-                                >
-                                  {scenariosData.matrix[threshold][0] >= 0 ? '+' : ''}${(scenariosData.matrix[threshold][0] / 100).toFixed(0)}
+                            {candlestickData.wins_hit_50.map((win) => (
+                              <tr key={win.ticker} className="border-b border-slate-800 hover:bg-slate-800/50">
+                                <td className="py-2 px-2 text-white max-w-[250px] truncate" title={win.title}>
+                                  {win.title}
                                 </td>
-                                {scenariosData.stopLossValues.map(sl => {
-                                  const pnl = scenariosData.matrix[threshold][sl];
-                                  const isOptimal = threshold === scenariosData.optimal.threshold && sl === scenariosData.optimal.stopLoss;
-                                  const isSelected = selectedCell?.threshold === threshold && selectedCell?.stopLoss === sl;
-                                  return (
-                                    <td 
-                                      key={sl}
-                                      onClick={() => setSelectedCell({ threshold, stopLoss: sl })}
-                                      className={`py-2 px-2 text-right font-mono cursor-pointer transition-colors ${
-                                        isSelected
-                                          ? 'bg-purple-500/40 text-purple-200 ring-2 ring-purple-500'
-                                          : isOptimal 
-                                            ? 'bg-emerald-500/30 text-emerald-300 font-bold hover:bg-emerald-500/40' 
-                                            : pnl >= 0 
-                                              ? 'text-emerald-400 hover:bg-emerald-500/20' 
-                                              : 'text-red-400 hover:bg-red-500/20'
-                                      }`}
-                                    >
-                                      {pnl >= 0 ? '+' : ''}${(pnl / 100).toFixed(0)}
-                                    </td>
-                                  );
-                                })}
+                                <td className="py-2 px-2 text-center">
+                                  <span className={win.side === 'YES' ? 'text-emerald-400' : 'text-red-400'}>
+                                    {win.side}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-2 text-right font-mono text-white">{win.entry_price}¢</td>
+                                <td className="py-2 px-2 text-right font-mono text-red-400">{win.min_price}¢</td>
+                                <td className="py-2 px-2 text-right font-mono text-slate-400">
+                                  ${(win.cost_cents / 100).toFixed(2)}
+                                </td>
+                                <td className="py-2 px-2 text-right font-mono text-slate-400">
+                                  ${(win.payout_cents / 100).toFixed(2)}
+                                </td>
+                                <td className="py-2 px-2 text-right font-mono text-emerald-400">
+                                  +${((win.payout_cents - win.cost_cents) / 100).toFixed(2)}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                      
-                      {/* Optimal highlight */}
-                      <div className="mt-4 p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                        <div className="flex items-center gap-2">
-                          <span className="text-emerald-400 text-lg">🏆</span>
-                          <span className="text-emerald-300 font-medium">
-                            Optimal: {scenariosData.optimal.threshold}¢ threshold + {scenariosData.optimal.stopLoss}¢ stop-loss = 
-                            <span className="font-bold ml-1">
-                              {scenariosData.optimal.pnl >= 0 ? '+' : ''}${(scenariosData.optimal.pnl / 100).toFixed(2)}
-                            </span>
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <p className="mt-3 text-xs text-slate-500">💡 Click any cell to see detailed game-by-game breakdown below</p>
-                      
-                      {/* Selected Cell Breakdown */}
-                      {selectedCell && scenariosData.allScenarios && (() => {
-                        const key = `${selectedCell.threshold}-${selectedCell.stopLoss}`;
-                        const scenario = scenariosData.allScenarios[key];
-                        if (!scenario || !scenario.breakdown) return null;
-                        
-                        return (
-                          <div className="mt-6 bg-slate-800/50 rounded-xl p-4 border border-purple-500/50">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-lg font-bold text-purple-400">
-                                Breakdown: {selectedCell.threshold}¢ Threshold + {selectedCell.stopLoss === 0 ? 'No' : `${selectedCell.stopLoss}¢`} Stop-Loss
-                              </h4>
-                              <button 
-                                onClick={() => setSelectedCell(null)}
-                                className="text-slate-400 hover:text-white text-sm px-2 py-1 rounded hover:bg-slate-700"
-                              >
-                                ✕ Close
-                              </button>
-                            </div>
-                            
-                            {/* Summary stats */}
-                            <div className="grid grid-cols-5 gap-4 mb-4 text-sm">
-                              <div className="bg-slate-900 rounded-lg p-3">
-                                <div className="text-slate-500 text-xs">Events</div>
-                                <div className="text-white font-bold">{scenario.totalEvents}</div>
-                              </div>
-                              <div className="bg-slate-900 rounded-lg p-3">
-                                <div className="text-slate-500 text-xs">Wins</div>
-                                <div className="text-emerald-400 font-bold">{scenario.wins}</div>
-                              </div>
-                              <div className="bg-slate-900 rounded-lg p-3">
-                                <div className="text-slate-500 text-xs">Stopped</div>
-                                <div className="text-amber-400 font-bold">{scenario.winsStoppedOut + scenario.lossesSaved}</div>
-                              </div>
-                              <div className="bg-slate-900 rounded-lg p-3">
-                                <div className="text-slate-500 text-xs">SL Saved</div>
-                                <div className="text-emerald-400 font-bold">+${(scenario.stopLossRecovery / 100).toFixed(0)}</div>
-                              </div>
-                              <div className="bg-slate-900 rounded-lg p-3">
-                                <div className="text-slate-500 text-xs">P&L</div>
-                                <div className={`font-bold ${scenario.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  {scenario.pnl >= 0 ? '+' : ''}${(scenario.pnl / 100).toFixed(2)}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            {/* Game-by-game breakdown */}
-                            <div className="overflow-x-auto max-h-80 overflow-y-auto">
-                              <table className="w-full text-xs">
-                                <thead className="sticky top-0 bg-slate-800">
-                                  <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
-                                    <th className="text-left py-2 px-2">Event</th>
-                                    <th className="text-center py-2 px-2">Side</th>
-                                    <th className="text-right py-2 px-2">Entry</th>
-                                    <th className="text-right py-2 px-2">Low</th>
-                                    <th className="text-center py-2 px-2">Actual</th>
-                                    <th className="text-center py-2 px-2">With SL</th>
-                                    <th className="text-right py-2 px-2">Cost</th>
-                                    <th className="text-right py-2 px-2">Actual P&L</th>
-                                    <th className="text-right py-2 px-2">Sim P&L</th>
-                                    <th className="text-right py-2 px-2">Δ</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {scenario.breakdown.map((event, idx) => {
-                                    const delta = event.simulated_pnl - event.actual_pnl;
-                                    return (
-                                      <tr 
-                                        key={event.event_ticker} 
-                                        className={`border-b border-slate-700 ${idx % 2 === 0 ? 'bg-slate-900/30' : ''}`}
-                                      >
-                                        <td className="py-2 px-2 max-w-48 truncate" title={event.event_title}>
-                                          {event.event_title}
-                                        </td>
-                                        <td className="py-2 px-2 text-center">
-                                          <span className={event.side === 'YES' ? 'text-emerald-400' : 'text-red-400'}>
-                                            {event.side}
-                                          </span>
-                                        </td>
-                                        <td className="py-2 px-2 text-right font-mono">{event.entry_price}¢</td>
-                                        <td className="py-2 px-2 text-right font-mono">
-                                          {event.min_price !== null ? (
-                                            <span className={event.min_price < (selectedCell.stopLoss || 999) ? 'text-amber-400' : 'text-slate-400'}>
-                                              {event.min_price}¢
-                                            </span>
-                                          ) : '—'}
-                                        </td>
-                                        <td className="py-2 px-2 text-center">
-                                          {event.actual_result === 'won' ? (
-                                            <span className="text-emerald-400">✓ Won</span>
-                                          ) : (
-                                            <span className="text-red-400">✗ Lost</span>
-                                          )}
-                                        </td>
-                                        <td className="py-2 px-2 text-center">
-                                          {event.simulated_result === 'won' && (
-                                            <span className="text-emerald-400">✓ Win</span>
-                                          )}
-                                          {event.simulated_result === 'stopped' && event.actual_result === 'lost' && (
-                                            <span className="text-emerald-400">💰 Saved</span>
-                                          )}
-                                          {event.simulated_result === 'stopped' && event.actual_result === 'won' && (
-                                            <span className="text-amber-400">😢 Missed</span>
-                                          )}
-                                          {event.simulated_result === 'lost' && (
-                                            <span className="text-red-400">✗ Loss</span>
-                                          )}
-                                        </td>
-                                        <td className="py-2 px-2 text-right font-mono text-slate-400">
-                                          ${(event.cost / 100).toFixed(2)}
-                                        </td>
-                                        <td className={`py-2 px-2 text-right font-mono ${event.actual_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                          {event.actual_pnl >= 0 ? '+' : ''}${(event.actual_pnl / 100).toFixed(2)}
-                                        </td>
-                                        <td className={`py-2 px-2 text-right font-mono ${event.simulated_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                          {event.simulated_pnl >= 0 ? '+' : ''}${(event.simulated_pnl / 100).toFixed(2)}
-                                        </td>
-                                        <td className={`py-2 px-2 text-right font-mono font-bold ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                          {delta >= 0 ? '+' : ''}${(delta / 100).toFixed(2)}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  ) : (
-                    <div className="text-center py-8 text-slate-500">No data available</div>
+                    </div>
                   )}
+                </>
+              ) : (
+                <div className="text-center py-12 text-slate-400">
+                  No candlestick data available yet.
                 </div>
-
-                {/* Threshold Scenarios Analysis */}
-                <div className="bg-slate-900 rounded-xl p-6 border border-slate-800 mb-6">
-                  <div className="mb-4">
-                    <h3 className="text-lg font-medium text-white">📊 Detailed Breakdown by Threshold</h3>
-                    <p className="text-sm text-slate-400 mt-1">
-                      Click a row to see game-by-game breakdown for that threshold.
-                    </p>
-                  </div>
-                  
-                  {scenariosLoading ? (
-                    <div className="text-center py-8 text-slate-400">Loading scenarios...</div>
-                  ) : scenariosData ? (
-                    <>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
-                              <th className="text-left py-3 px-2">Threshold</th>
-                              <th className="text-right py-3 px-2">Events</th>
-                              <th className="text-center py-3 px-2">W / Stopped</th>
-                              <th className="text-right py-3 px-2">P&L (No SL)</th>
-                              <th className="text-right py-3 px-2">SL Saved</th>
-                              <th className="text-right py-3 px-2">Wins Stopped</th>
-                              <th className="text-right py-3 px-2">P&L (75¢ SL)</th>
-                              <th className="text-right py-3 px-2">Δ P&L</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {scenariosData.scenarios.map((scenario, idx) => {
-                              const noStopLoss = scenariosData.scenariosWithoutStopLoss.find(s => s.threshold === scenario.threshold);
-                              const pnlWithoutSL = noStopLoss?.pnl || 0;
-                              const improvement = scenario.pnl - pnlWithoutSL;
-                              const isHighlighted = scenario.threshold >= 90 && scenario.threshold <= 92;
-                              const isSelected = selectedThreshold === scenario.threshold;
-                              
-                              return (
-                                <tr 
-                                  key={scenario.threshold} 
-                                  onClick={() => setSelectedThreshold(isSelected ? null : scenario.threshold)}
-                                  className={`border-b border-slate-800 cursor-pointer transition-colors ${
-                                    isSelected 
-                                      ? 'bg-purple-600/30 border-purple-500' 
-                                      : isHighlighted 
-                                        ? 'bg-purple-500/10 hover:bg-purple-500/20' 
-                                        : idx % 2 === 0 
-                                          ? 'bg-slate-800/20 hover:bg-slate-700/30' 
-                                          : 'hover:bg-slate-700/30'
-                                  }`}
-                                >
-                                  <td className="py-2 px-2">
-                                    <span className={`font-mono font-bold ${isHighlighted ? 'text-purple-400' : 'text-white'}`}>
-                                      {scenario.threshold}¢
-                                    </span>
-                                  </td>
-                                  <td className="py-2 px-2 text-right text-slate-300 font-mono">{scenario.totalEvents}</td>
-                                  <td className="py-2 px-2 text-center">
-                                    <span className="text-emerald-400">{scenario.wins}W</span>
-                                    <span className="text-slate-500"> / </span>
-                                    <span className="text-amber-400">{scenario.winsStoppedOut + scenario.lossesSaved}S</span>
-                                    {scenario.losses > 0 && (
-                                      <>
-                                        <span className="text-slate-500"> / </span>
-                                        <span className="text-red-400">{scenario.losses}L</span>
-                                      </>
-                                    )}
-                                  </td>
-                                  <td className={`py-2 px-2 text-right font-mono ${pnlWithoutSL >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {pnlWithoutSL >= 0 ? '+' : ''}${(pnlWithoutSL / 100).toLocaleString()}
-                                  </td>
-                                  <td className="py-2 px-2 text-right text-emerald-400 font-mono">
-                                    +${(scenario.stopLossRecovery / 100).toLocaleString()}
-                                  </td>
-                                  <td className="py-2 px-2 text-right font-mono">
-                                    {scenario.missedWinProfit > 0 ? (
-                                      <span className="text-red-400">-${(scenario.missedWinProfit / 100).toLocaleString()}</span>
-                                    ) : (
-                                      <span className="text-slate-500">$0</span>
-                                    )}
-                                  </td>
-                                  <td className={`py-2 px-2 text-right font-mono font-bold ${scenario.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {scenario.pnl >= 0 ? '+' : ''}${(scenario.pnl / 100).toLocaleString()}
-                                  </td>
-                                  <td className={`py-2 px-2 text-right font-mono font-bold ${improvement >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {improvement >= 0 ? '+' : ''}${(improvement / 100).toLocaleString()}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      
-                      <div className="mt-4 p-3 bg-slate-800/50 rounded-lg">
-                        <div className="text-sm text-slate-400">
-                          <strong className="text-purple-400">💡 Click a row to see detailed breakdown • Using real candlestick data</strong>
-                        </div>
-                      </div>
-                      
-                      {/* Detailed Breakdown for Selected Threshold */}
-                      {selectedThreshold && (() => {
-                        const selectedScenario = scenariosData.scenarios.find(s => s.threshold === selectedThreshold);
-                        if (!selectedScenario || !selectedScenario.breakdown) return null;
-                        
-                        return (
-                          <div className="mt-6 bg-slate-900 rounded-xl p-4 border border-purple-500/50">
-                            <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-lg font-bold text-purple-400">
-                                Detailed Breakdown: {selectedThreshold}¢ Threshold + 75¢ Stop-Loss
-                              </h4>
-                              <button 
-                                onClick={() => setSelectedThreshold(null)}
-                                className="text-slate-400 hover:text-white text-sm"
-                              >
-                                ✕ Close
-                              </button>
-                            </div>
-                            
-                            <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                              <table className="w-full text-xs">
-                                <thead className="sticky top-0 bg-slate-900">
-                                  <tr className="text-slate-400 border-b border-slate-700 text-xs uppercase">
-                                    <th className="text-left py-2 px-2">Event</th>
-                                    <th className="text-center py-2 px-2">Side</th>
-                                    <th className="text-right py-2 px-2">Entry</th>
-                                    <th className="text-right py-2 px-2">Low</th>
-                                    <th className="text-center py-2 px-2">Actual</th>
-                                    <th className="text-center py-2 px-2">With SL</th>
-                                    <th className="text-right py-2 px-2">Cost</th>
-                                    <th className="text-right py-2 px-2">Actual P&L</th>
-                                    <th className="text-right py-2 px-2">Sim P&L</th>
-                                    <th className="text-right py-2 px-2">Δ</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {selectedScenario.breakdown.map((event, idx) => {
-                                    const delta = event.simulated_pnl - event.actual_pnl;
-                                    return (
-                                      <tr 
-                                        key={event.event_ticker} 
-                                        className={`border-b border-slate-800 ${idx % 2 === 0 ? 'bg-slate-800/20' : ''}`}
-                                      >
-                                        <td className="py-2 px-2 max-w-48 truncate" title={event.event_title}>
-                                          {event.event_title}
-                                        </td>
-                                        <td className="py-2 px-2 text-center">
-                                          <span className={event.side === 'YES' ? 'text-emerald-400' : 'text-red-400'}>
-                                            {event.side}
-                                          </span>
-                                        </td>
-                                        <td className="py-2 px-2 text-right font-mono">{event.entry_price}¢</td>
-                                        <td className="py-2 px-2 text-right font-mono">
-                                          {event.min_price !== null ? (
-                                            <span className={event.min_price < 75 ? 'text-amber-400' : 'text-slate-400'}>
-                                              {event.min_price}¢
-                                            </span>
-                                          ) : '—'}
-                                        </td>
-                                        <td className="py-2 px-2 text-center">
-                                          {event.actual_result === 'won' ? (
-                                            <span className="text-emerald-400">✓ Won</span>
-                                          ) : (
-                                            <span className="text-red-400">✗ Lost</span>
-                                          )}
-                                        </td>
-                                        <td className="py-2 px-2 text-center">
-                                          {event.simulated_result === 'won' && (
-                                            <span className="text-emerald-400">✓ Win</span>
-                                          )}
-                                          {event.simulated_result === 'stopped' && event.actual_result === 'lost' && (
-                                            <span className="text-emerald-400">💰 Saved</span>
-                                          )}
-                                          {event.simulated_result === 'stopped' && event.actual_result === 'won' && (
-                                            <span className="text-amber-400">😢 Missed</span>
-                                          )}
-                                          {event.simulated_result === 'lost' && (
-                                            <span className="text-red-400">✗ Loss</span>
-                                          )}
-                                        </td>
-                                        <td className="py-2 px-2 text-right font-mono text-slate-400">
-                                          ${(event.cost / 100).toFixed(2)}
-                                        </td>
-                                        <td className={`py-2 px-2 text-right font-mono ${event.actual_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                          {event.actual_pnl >= 0 ? '+' : ''}${(event.actual_pnl / 100).toFixed(2)}
-                                        </td>
-                                        <td className={`py-2 px-2 text-right font-mono ${event.simulated_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                          {event.simulated_pnl >= 0 ? '+' : ''}${(event.simulated_pnl / 100).toFixed(2)}
-                                        </td>
-                                        <td className={`py-2 px-2 text-right font-mono font-bold ${delta >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                          {delta >= 0 ? '+' : ''}${(delta / 100).toFixed(2)}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                            
-                            <div className="mt-4 pt-4 border-t border-slate-700 grid grid-cols-4 gap-4 text-sm">
-                              <div>
-                                <div className="text-slate-500 text-xs">Events</div>
-                                <div className="text-white font-bold">{selectedScenario.breakdown.length}</div>
-                              </div>
-                              <div>
-                                <div className="text-slate-500 text-xs">Actual P&L</div>
-                                <div className={`font-bold ${selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  ${(selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0) / 100).toFixed(2)}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-slate-500 text-xs">Simulated P&L</div>
-                                <div className={`font-bold ${selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  ${(selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) / 100).toFixed(2)}
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-slate-500 text-xs">Δ with SL</div>
-                                <div className={`font-bold ${(selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) - selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0)) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                  {(selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) - selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0)) >= 0 ? '+' : ''}
-                                  ${((selectedScenario.breakdown.reduce((sum, e) => sum + e.simulated_pnl, 0) - selectedScenario.breakdown.reduce((sum, e) => sum + e.actual_pnl, 0)) / 100).toFixed(2)}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </>
-                  ) : (
-                    <div className="text-center py-8 text-slate-500">No data available</div>
-                  )}
-                </div>
-
-                {/* Note about data */}
-                <div className="bg-purple-500/10 border border-purple-500/30 rounded-xl p-4 text-purple-300 text-sm">
-                  <strong>📊 Data Source:</strong> Historical price data is fetched from Kalshi&apos;s candlestick API where available.
-                  For orders without price history, estimates are used based on entry price proximity to stop-loss.
-                </div>
-              </>
-            ) : (
-              <div className="text-center py-12 text-slate-400">
-                No settled orders to analyze yet.
-              </div>
-            )}
+              )}
             </div>
           </div>
         )}
