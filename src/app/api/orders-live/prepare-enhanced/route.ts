@@ -456,10 +456,46 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
   const deduplicatedAnalyses = Array.from(eventBestMarket.values());
   console.log(`Deduplicated: ${analyses.length} markets -> ${deduplicatedAnalyses.length} unique events`);
 
+  // ========================================
+  // CRITICAL: CHECK EXISTING POSITIONS/ORDERS
+  // Skip events where we already have exposure
+  // ========================================
+  const { data: existingOrders } = await supabase
+    .from('orders')
+    .select('event_ticker, ticker, cost_cents, executed_cost_cents, placement_status')
+    .in('placement_status', ['pending', 'placed', 'confirmed']);
+  
+  const existingEventExposure = new Map<string, number>();
+  for (const order of existingOrders || []) {
+    const cost = order.executed_cost_cents || order.cost_cents || 0;
+    const existing = existingEventExposure.get(order.event_ticker) || 0;
+    existingEventExposure.set(order.event_ticker, existing + cost);
+  }
+  console.log(`Found existing exposure on ${existingEventExposure.size} events`);
+
+  // Filter out events we already have positions on (at or above 3% cap)
+  const maxPositionCentsForFilter = Math.floor(totalPortfolioCents * maxPositionPercent);
+  const analysesAfterExposureCheck = deduplicatedAnalyses.filter(analysis => {
+    const eventTicker = analysis.market.event_ticker;
+    const existingExposure = existingEventExposure.get(eventTicker) || 0;
+    const remainingCapacity = maxPositionCentsForFilter - existingExposure;
+    
+    if (remainingCapacity <= 0) {
+      console.log(`Skipping ${analysis.market.ticker} - event ${eventTicker} already at max exposure (${existingExposure}¢ >= ${maxPositionCentsForFilter}¢)`);
+      return false;
+    }
+    return true;
+  });
+  console.log(`After exposure check: ${analysesAfterExposureCheck.length} markets`);
+
+  if (analysesAfterExposureCheck.length === 0) {
+    return { success: false, error: 'All qualifying events already have maximum exposure' };
+  }
+
   // Distribute capital based on liquidity
   // Pass both available capital (for deployment) and total portfolio (for 3% calculation)
   const allocatedMarkets = distributeCapitalByLiquidity(
-    deduplicatedAnalyses,
+    analysesAfterExposureCheck,
     availableCapitalCents,
     totalPortfolioCents,
     maxPositionPercent

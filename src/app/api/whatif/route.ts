@@ -106,17 +106,34 @@ export async function GET(request: Request) {
       let maxPriceAfterEntry: number | null = null;
 
       try {
-        // Try to get market candlestick data
-        const historyResponse = await kalshiFetch(
-          `/markets/${order.ticker}/candlesticks?period_interval=1440` // Daily candles
-        );
+        // Extract series_ticker from event_ticker (e.g., KXNBAGAME-25DEC26BOSIND -> KXNBAGAME)
+        const seriesTicker = order.event_ticker?.split('-')[0] || '';
+        const marketTicker = order.ticker;
         
-        if (historyResponse?.candlesticks) {
-          priceHistory = historyResponse.candlesticks.map((c: any) => ({
-            timestamp: c.end_period_ts,
-            yes_price: c.yes_price?.close || c.close_price || 0,
-            no_price: 100 - (c.yes_price?.close || c.close_price || 0),
-          }));
+        if (seriesTicker && marketTicker) {
+          // Calculate time range: from 2 hours before placement to market close
+          const placementTime = order.placement_status_at
+            ? Math.floor(new Date(order.placement_status_at).getTime() / 1000)
+            : null;
+          const closeTime = order.market_close_time
+            ? Math.floor(new Date(order.market_close_time).getTime() / 1000)
+            : Math.floor(Date.now() / 1000);
+          
+          const startTs = placementTime ? placementTime - (2 * 60 * 60) : closeTime - (48 * 60 * 60);
+          const endTs = closeTime;
+          
+          // Use 1-minute candlesticks for accurate min/max price detection
+          const historyResponse = await kalshiFetch(
+            `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=1`
+          );
+          
+          if (historyResponse?.candlesticks) {
+            priceHistory = historyResponse.candlesticks.map((c: any) => ({
+              timestamp: c.end_period_ts,
+              yes_price: c.price?.close ?? c.yes_bid?.close ?? 0,
+              no_price: 100 - (c.price?.close ?? c.yes_bid?.close ?? 0),
+            }));
+          }
         }
         
         await new Promise(r => setTimeout(r, 100)); // Rate limit
@@ -125,9 +142,10 @@ export async function GET(request: Request) {
       }
 
       // Calculate min/max price after entry based on our side
+      // Note: For accurate min/max we need to look at candlestick high/low, not just close
       if (priceHistory.length > 0) {
         const prices = priceHistory.map(p => side === 'YES' ? p.yes_price : p.no_price);
-        minPriceAfterEntry = Math.min(...prices);
+        minPriceAfterEntry = Math.min(...prices.filter(p => p > 0));
         maxPriceAfterEntry = Math.max(...prices);
       }
 

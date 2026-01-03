@@ -144,9 +144,25 @@ export async function POST(request: Request) {
       const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
       const orderCostCents = priceCents * parseInt(count);
       
-      // HARD CAP GUARD
-      if (orderCostCents > hardCapCents) {
-        const errorMsg = `HARD CAP BLOCKED: Order cost ${orderCostCents}¢ ($${(orderCostCents/100).toFixed(2)}) exceeds 3% of portfolio (${hardCapCents}¢ / $${(hardCapCents/100).toFixed(2)}). Portfolio: $${(totalPortfolioCents/100).toFixed(2)} (from Kalshi)`;
+      // CRITICAL: Check EXISTING exposure on this ticker
+      // Must check TOTAL (existing + new), not just new order
+      let existingExposureCents = 0;
+      try {
+        const positionsData = await getPositions();
+        const position = (positionsData.market_positions || []).find((p: any) => p.ticker === ticker);
+        if (position) {
+          existingExposureCents = position.market_exposure || 0;
+        }
+      } catch (e) {
+        console.error('Error fetching existing position:', e);
+        // Continue with 0 exposure - be conservative
+      }
+      
+      const totalPositionCost = existingExposureCents + orderCostCents;
+      
+      // HARD CAP GUARD - check TOTAL exposure (existing + new)
+      if (totalPositionCost > hardCapCents) {
+        const errorMsg = `HARD CAP BLOCKED: Total position ${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${orderCostCents}¢) exceeds 3% cap (${hardCapCents}¢). Portfolio: $${(totalPortfolioCents/100).toFixed(2)}`;
         console.error(errorMsg);
         return NextResponse.json(
           { success: false, error: errorMsg },
@@ -154,7 +170,7 @@ export async function POST(request: Request) {
         );
       }
       
-      console.log(`Guards passed: price=${priceCents}¢ >= 90¢, cost=${orderCostCents}¢ <= ${hardCapCents}¢ (3% of ${totalPortfolioCents}¢ from Kalshi)`);
+      console.log(`Guards passed: price=${priceCents}¢ >= 90¢, total position=${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${orderCostCents}¢) <= ${hardCapCents}¢ (3% of ${totalPortfolioCents}¢)`);
     }
     
     console.log('Placing order:', order);

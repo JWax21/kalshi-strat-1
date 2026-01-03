@@ -238,7 +238,8 @@ export async function GET(request: Request) {
           console.log(`[Candlestick] Fetching for ${marketTicker}, series=${seriesTicker}, start=${startTs}, end=${endTs}`);
           
           if (seriesTicker && marketTicker) {
-            const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+            // Use 1-minute candlesticks for accurate min/max price detection
+            const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=1`;
             console.log(`[Candlestick] URL: ${url}`);
             
             const candlestickResponse = await kalshiFetch(url);

@@ -4434,31 +4434,108 @@ export default function Dashboard() {
                 {/* Teams Sub-Tab */}
                 {lossesSubTab === "teams" && (
                   <>
-                    {lossesData.summary.top_losing_teams &&
-                    lossesData.summary.top_losing_teams.length > 0 ? (
-                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                        <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Teams We Lost Betting On (Most Frequent)
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                          {lossesData.summary.top_losing_teams.map(
-                            ({ team, count }) => (
-                              <span
-                                key={team}
-                                className="px-3 py-1 bg-red-500/20 text-red-400 rounded-full text-sm"
-                              >
-                                {team}{" "}
-                                <span className="text-red-300">({count})</span>
-                              </span>
-                            )
-                          )}
+                    {(() => {
+                      // Build team data with league info from losses
+                      const teamLeagueMap: Record<
+                        string,
+                        { count: number; league: string; totalLost: number }
+                      > = {};
+
+                      for (const loss of lossesData.losses) {
+                        // Extract team name from title (e.g., "Team A at Team B Winner?")
+                        const match = loss.title.match(
+                          /^(.+?)\s+(?:at|vs)\s+(.+?)\s+Winner\?$/i
+                        );
+                        if (match) {
+                          const [, team1, team2] = match;
+                          // We bet on the favorite - determine which team based on side
+                          const bettedTeam =
+                            loss.side === "YES" ? team1.trim() : team2.trim();
+                          const key = `${bettedTeam}|${loss.league}`;
+
+                          if (!teamLeagueMap[key]) {
+                            teamLeagueMap[key] = {
+                              count: 0,
+                              league: loss.league,
+                              totalLost: 0,
+                            };
+                          }
+                          teamLeagueMap[key].count++;
+                          teamLeagueMap[key].totalLost += loss.cost_cents;
+                        }
+                      }
+
+                      // Convert to array and sort by count descending
+                      const teamsWithLeague = Object.entries(teamLeagueMap)
+                        .map(([key, data]) => ({
+                          team: key.split("|")[0],
+                          league: data.league,
+                          count: data.count,
+                          totalLost: data.totalLost,
+                        }))
+                        .sort(
+                          (a, b) =>
+                            b.count - a.count || b.totalLost - a.totalLost
+                        );
+
+                      if (teamsWithLeague.length === 0) {
+                        return (
+                          <div className="text-center py-12 text-slate-400">
+                            No team data available
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-800/50">
+                              <tr>
+                                <th className="text-left p-3 text-slate-400 font-medium">
+                                  Team
+                                </th>
+                                <th className="text-center p-3 text-slate-400 font-medium">
+                                  Losses
+                                </th>
+                                <th className="text-right p-3 text-slate-400 font-medium">
+                                  Total Lost
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {teamsWithLeague.map(
+                                ({ team, league, count, totalLost }) => (
+                                  <tr
+                                    key={`${team}-${league}`}
+                                    className="border-t border-slate-800 hover:bg-slate-800/30"
+                                  >
+                                    <td className="p-3 text-white">
+                                      {team}{" "}
+                                      <span className="text-slate-500">
+                                        ({league})
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-center text-red-400 font-mono">
+                                      {count}
+                                    </td>
+                                    <td className="p-3 text-right text-red-400 font-mono">
+                                      -$
+                                      {(totalLost / 100).toLocaleString(
+                                        "en-US",
+                                        {
+                                          minimumFractionDigits: 2,
+                                          maximumFractionDigits: 2,
+                                        }
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              )}
+                            </tbody>
+                          </table>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 text-slate-400">
-                        No team data available
-                      </div>
-                    )}
+                      );
+                    })()}
                   </>
                 )}
 

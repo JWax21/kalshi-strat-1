@@ -73,7 +73,8 @@ async function getPriceRangeForOrder(
       : closeTime - 48 * 60 * 60;
     const endTs = closeTime;
 
-    const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=60`;
+    // Use 1-minute candlesticks for accurate min/max price detection
+    const url = `/series/${seriesTicker}/markets/${marketTicker}/candlesticks?start_ts=${startTs}&end_ts=${endTs}&period_interval=1`;
 
     const response = await kalshiFetch(url);
 
