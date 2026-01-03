@@ -367,6 +367,12 @@ export async function POST(request: Request) {
     const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet below 90 cents
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
+    // ========================================
+    // CRITICAL: Build runtime EVENT-level exposure map 
+    // This is a FINAL SAFETY BARRIER during execution
+    // ========================================
+    const runtimeEventExposure = new Map<string, number>(existingEventExposure);
+    
     for (const order of insertedOrders || []) {
       try {
         // ========================================
@@ -426,6 +432,35 @@ export async function POST(request: Request) {
           continue;
         }
         
+        // ========================================
+        // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
+        // This prevents betting on both sides of the same game
+        // CRITICAL: Check at EVENT level, not just ticker level
+        // ========================================
+        const currentEventExposure = runtimeEventExposure.get(order.event_ticker) || 0;
+        const totalEventExposure = currentEventExposure + order.cost_cents;
+        
+        if (totalEventExposure > hardCapCents) {
+          const errorMsg = `EVENT CAP BLOCKED: ${order.ticker} event ${order.event_ticker} total ${totalEventExposure}¢ (existing ${currentEventExposure}¢ + new ${order.cost_cents}¢) exceeds 3% cap (${hardCapCents}¢)`;
+          console.error(errorMsg);
+          
+          // Mark as queued instead of placing
+          await supabase
+            .from('orders')
+            .update({
+              placement_status: 'queue',
+              placement_status_at: new Date().toISOString(),
+            })
+            .eq('id', order.id);
+          
+          results.push({
+            ticker: order.ticker,
+            status: 'blocked',
+            reason: errorMsg,
+          });
+          continue;
+        }
+        
         const payload: any = {
           ticker: order.ticker,
           action: 'buy',
@@ -461,6 +496,11 @@ export async function POST(request: Request) {
           .eq('id', order.id);
 
         successCount++;
+        
+        // Update event exposure map to prevent over-betting on same event in this batch
+        const newEventExposure = (runtimeEventExposure.get(order.event_ticker) || 0) + order.cost_cents;
+        runtimeEventExposure.set(order.event_ticker, newEventExposure);
+        
         results.push({
           ticker: order.ticker,
           units: order.units,

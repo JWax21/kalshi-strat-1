@@ -347,6 +347,24 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           ? (kalshiOrder as any).yes_price 
           : (kalshiOrder as any).no_price;
         const newPrice = Math.min(currentPrice + PRICE_IMPROVEMENT_CENTS, 99);
+        const units = order.units || 1;
+        
+        // ========================================
+        // HARD CAP GUARD: NEVER exceed 3% of total portfolio on price improvement
+        // When we improve price, the total cost increases - must check cap!
+        // ========================================
+        const hardCapCents = Math.floor(totalPortfolioValue * MAX_POSITION_PERCENT);
+        const existingPosition = currentPositions.get(order.ticker);
+        // For resting orders, existing exposure is 0 (order hasn't filled yet)
+        // But we need to check if the NEW cost would exceed cap
+        const newOrderCost = newPrice * units;
+        
+        if (newOrderCost > hardCapCents) {
+          const errorMsg = `PRICE IMPROVE BLOCKED: ${order.ticker} new cost ${newOrderCost}¢ (${newPrice}¢ x ${units}) exceeds 3% cap (${hardCapCents}¢)`;
+          console.error(errorMsg);
+          result.details.errors.push(errorMsg);
+          continue; // Skip improvement, leave original order
+        }
 
         // Cancel old order
         await kalshiFetch(`/portfolio/orders/${order.kalshi_order_id}`, 'DELETE');
@@ -356,7 +374,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           ticker: order.ticker,
           action: 'buy',
           side: order.side.toLowerCase(),
-          count: order.units || 1,
+          count: units,
           type: 'limit',
           client_order_id: `improve_${order.id}_${Date.now()}`,
         };
@@ -400,6 +418,26 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   // Only execute after 6am ET
   if (isAfter6amET()) {
     const todayForPending = getTodayET();
+    
+    // ========================================
+    // BUILD EVENT-LEVEL EXPOSURE MAP for pending orders
+    // This prevents betting on both sides of the same game
+    // ========================================
+    const pendingEventExposure = new Map<string, number>();
+    
+    // Get all placed/confirmed orders to track event-level exposure
+    const { data: existingExposureOrders } = await supabase
+      .from('orders')
+      .select('event_ticker, cost_cents, executed_cost_cents')
+      .in('placement_status', ['placed', 'confirmed']);
+    
+    for (const order of existingExposureOrders || []) {
+      const cost = order.executed_cost_cents || order.cost_cents || 0;
+      const existing = pendingEventExposure.get(order.event_ticker) || 0;
+      pendingEventExposure.set(order.event_ticker, existing + cost);
+    }
+    console.log(`Built pending event exposure map: ${pendingEventExposure.size} events with exposure`);
+    
     // Fetch both 'pending' and 'queue' orders - queue orders are retried when capital frees up
     const { data: pendingOrders, error: pendingError } = await supabase
       .from('orders')
@@ -525,6 +563,30 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             continue; // Skip this order entirely
           }
           
+          // ========================================
+          // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
+          // This prevents betting on both sides of the same game
+          // CRITICAL: Check at EVENT level, not just ticker level
+          // ========================================
+          const currentEventExposure = pendingEventExposure.get(order.event_ticker) || 0;
+          const totalEventExposure = currentEventExposure + recalculatedCost;
+          
+          if (totalEventExposure > hardCapCents) {
+            const errorMsg = `EVENT CAP BLOCKED: ${order.ticker} event ${order.event_ticker} total ${totalEventExposure}¢ (existing ${currentEventExposure}¢ + new ${recalculatedCost}¢) exceeds 3% cap (${hardCapCents}¢)`;
+            console.error(errorMsg);
+            result.details.errors.push(errorMsg);
+            
+            // Mark as queued instead of placing
+            await supabase
+              .from('orders')
+              .update({
+                placement_status: 'queue',
+                placement_status_at: new Date().toISOString(),
+              })
+              .eq('id', order.id);
+            continue; // Skip this order entirely
+          }
+          
           console.log(`Recalculated ${order.ticker}: ${order.units}u -> ${recalculatedUnits}u @ ${priceCents}¢ (cost: ${recalculatedCost}¢)`);
           
           // Place order on Kalshi with recalculated units
@@ -567,6 +629,11 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             .eq('id', order.id);
 
           capitalUsed += recalculatedCost;
+          
+          // Update event exposure map to prevent over-betting on same event in this batch
+          const newEventExposure = (pendingEventExposure.get(order.event_ticker) || 0) + recalculatedCost;
+          pendingEventExposure.set(order.event_ticker, newEventExposure);
+          
           result.actions.new_orders_placed++;
           result.details.new_placements.push(
             `[PENDING] ${order.ticker}: ${recalculatedUnits}u @ ${priceCents}¢ ${order.side} (${status}) [recalc from ${order.units}u]`
@@ -941,6 +1008,21 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         
         if (totalPositionCost > hardCapCents) {
           const errorMsg = `HARD CAP BLOCKED: ${market.ticker} total ${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${thisBetCost}¢) exceeds 3% cap (${hardCapCents}¢). Portfolio: ${totalPortfolioValue}¢`;
+          console.error(errorMsg);
+          result.details.errors.push(errorMsg);
+          continue; // Skip this order entirely
+        }
+        
+        // ========================================
+        // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
+        // This prevents betting on both sides of the same game
+        // CRITICAL: Check at EVENT level, not just ticker level
+        // ========================================
+        const currentEventExposure = sessionEventExposure.get(market.event_ticker) || 0;
+        const totalEventExposure = currentEventExposure + thisBetCost;
+        
+        if (totalEventExposure > hardCapCents) {
+          const errorMsg = `EVENT CAP BLOCKED: ${market.ticker} event ${market.event_ticker} total ${totalEventExposure}¢ (existing ${currentEventExposure}¢ + new ${thisBetCost}¢) exceeds 3% cap (${hardCapCents}¢)`;
           console.error(errorMsg);
           result.details.errors.push(errorMsg);
           continue; // Skip this order entirely

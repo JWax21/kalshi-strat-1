@@ -179,6 +179,25 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
     console.log(`Rebalance: Portfolio=${totalPortfolioCents}¢ (from Kalshi), 3% cap=${hardCapCents}¢`);
+    
+    // ========================================
+    // BUILD EVENT-LEVEL EXPOSURE MAP
+    // This prevents exceeding 3% on any single event
+    // ========================================
+    const eventExposureCents = new Map<string, number>();
+    
+    // Get all placed/confirmed orders to track event-level exposure
+    const { data: existingExposureOrders } = await supabase
+      .from('orders')
+      .select('event_ticker, cost_cents, executed_cost_cents')
+      .in('placement_status', ['placed', 'confirmed']);
+    
+    for (const order of existingExposureOrders || []) {
+      const cost = order.executed_cost_cents || order.cost_cents || 0;
+      const existing = eventExposureCents.get(order.event_ticker) || 0;
+      eventExposureCents.set(order.event_ticker, existing + cost);
+    }
+    console.log(`Built event exposure map: ${eventExposureCents.size} events with exposure`);
 
     // Get today's batch
     const today = new Date().toISOString().split('T')[0];
@@ -240,6 +259,17 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
                 continue;
               }
               
+              // ========================================
+              // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
+              // ========================================
+              const currentEventExposure = eventExposureCents.get(order.event_ticker) || 0;
+              const totalEventExposure = currentEventExposure + orderCostCents;
+              
+              if (totalEventExposure > hardCapCents) {
+                console.log(`Skipping ${order.ticker} - event ${order.event_ticker} total ${totalEventExposure}¢ would exceed 3% cap ${hardCapCents}¢`);
+                continue;
+              }
+              
               // Place additional order using LIMIT order (not market order!)
               // This ensures we only fill at our expected price, not worse
               try {
@@ -276,6 +306,11 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
                     .eq('id', order.id);
 
                   availableCapitalCents -= additionalCost;
+                  
+                  // Update event exposure map to prevent over-betting on same event
+                  const newEventExposure = (eventExposureCents.get(order.event_ticker) || 0) + additionalCost;
+                  eventExposureCents.set(order.event_ticker, newEventExposure);
+                  
                   result.redeployed++;
                   result.redeployed_units += unitsToAdd;
                 }

@@ -170,6 +170,43 @@ export async function POST(request: Request) {
         );
       }
       
+      // ========================================
+      // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
+      // This prevents betting on both sides of the same game
+      // Extract event_ticker from ticker (format: KXNBAGAME-25JAN03-DALCHI-M1 -> KXNBAGAME-25JAN03-DALCHI)
+      // ========================================
+      const tickerParts = ticker.split('-');
+      // Remove the last part (market identifier like M1, SPREAD, etc.)
+      const eventTicker = tickerParts.length > 2 ? tickerParts.slice(0, -1).join('-') : ticker;
+      
+      // Get event-level exposure from database
+      let eventExposureCents = 0;
+      try {
+        const { data: eventOrders } = await supabase
+          .from('orders')
+          .select('cost_cents, executed_cost_cents')
+          .eq('event_ticker', eventTicker)
+          .in('placement_status', ['placed', 'confirmed']);
+        
+        for (const order of eventOrders || []) {
+          eventExposureCents += order.executed_cost_cents || order.cost_cents || 0;
+        }
+      } catch (e) {
+        console.error('Error fetching event exposure:', e);
+        // Continue with 0 exposure
+      }
+      
+      const totalEventExposure = eventExposureCents + orderCostCents;
+      
+      if (totalEventExposure > hardCapCents) {
+        const errorMsg = `EVENT CAP BLOCKED: Event ${eventTicker} total ${totalEventExposure}¢ (existing ${eventExposureCents}¢ + new ${orderCostCents}¢) exceeds 3% cap (${hardCapCents}¢). Portfolio: $${(totalPortfolioCents/100).toFixed(2)}`;
+        console.error(errorMsg);
+        return NextResponse.json(
+          { success: false, error: errorMsg },
+          { status: 400 }
+        );
+      }
+      
       console.log(`Guards passed: price=${priceCents}¢ >= 90¢, total position=${totalPositionCost}¢ (existing ${existingExposureCents}¢ + new ${orderCostCents}¢) <= ${hardCapCents}¢ (3% of ${totalPortfolioCents}¢)`);
     }
     

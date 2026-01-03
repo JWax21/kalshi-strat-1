@@ -111,7 +111,7 @@ async function executeOrders() {
     };
   }
 
-  // Get current positions to check existing exposure for each ticker
+  // Get current positions to check existing exposure for each ticker AND event
   // CRITICAL: Must check TOTAL exposure (existing + new) against 3% cap
   let currentPositions = new Map<string, any>();
   try {
@@ -123,6 +123,25 @@ async function executeOrders() {
   } catch (e) {
     console.error('Error fetching positions (will proceed without existing exposure check):', e);
   }
+
+  // ========================================
+  // CRITICAL: Build EVENT-level exposure map to prevent betting both sides of same game
+  // This is a FINAL SAFETY BARRIER - even if prepare routes missed it
+  // ========================================
+  const eventExposureCents = new Map<string, number>();
+  
+  // Add exposure from existing confirmed/placed orders in database
+  const { data: existingOrders } = await supabase
+    .from('orders')
+    .select('event_ticker, ticker, cost_cents, executed_cost_cents, placement_status')
+    .in('placement_status', ['placed', 'confirmed']);
+  
+  for (const order of existingOrders || []) {
+    const cost = order.executed_cost_cents || order.cost_cents || 0;
+    const existing = eventExposureCents.get(order.event_ticker) || 0;
+    eventExposureCents.set(order.event_ticker, existing + cost);
+  }
+  console.log(`Built event exposure map: ${eventExposureCents.size} events with exposure`);
 
   // Calculate hard cap (UNBREAKABLE 3% barrier)
   // CRITICAL: Use portfolio_value from Kalshi directly
@@ -217,6 +236,30 @@ async function executeOrders() {
         continue;
       }
       
+      // ========================================
+      // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
+      // This prevents betting on both sides of the same game
+      // CRITICAL: Check at EVENT level, not just ticker level
+      // ========================================
+      const currentEventExposure = eventExposureCents.get(order.event_ticker) || 0;
+      const totalEventExposure = currentEventExposure + orderCost;
+      
+      if (totalEventExposure > hardCapCents) {
+        const errorMsg = `EVENT CAP BLOCKED: ${order.ticker} event ${order.event_ticker} total ${totalEventExposure}¢ (existing ${currentEventExposure}¢ + new ${orderCost}¢) exceeds 3% cap (${hardCapCents}¢)`;
+        console.error(errorMsg);
+        errors.push(errorMsg);
+        
+        // Mark as queued
+        await supabase
+          .from('orders')
+          .update({
+            placement_status: 'queue',
+            placement_status_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+        continue;
+      }
+      
       // Build order payload
       const payload: any = {
         ticker: order.ticker,
@@ -274,6 +317,10 @@ async function executeOrders() {
       if (isExecuted) {
         confirmedCount++;
       }
+      
+      // Update event exposure map to prevent over-betting on same event in this batch
+      const newEventExposure = (eventExposureCents.get(order.event_ticker) || 0) + orderCost;
+      eventExposureCents.set(order.event_ticker, newEventExposure);
       
       console.log(`Order ${order.ticker}: status=${status}, executed=${isExecuted}, resting=${isResting}`);
 
