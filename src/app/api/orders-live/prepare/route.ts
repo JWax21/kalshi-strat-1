@@ -186,15 +186,16 @@ async function prepareOrders(params: PrepareParams) {
   }
 
   // Get available balance AND portfolio_value directly from Kalshi
-  // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
+  // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
   let availableCapitalCents = 0;
   let totalPortfolioCents = 0;
   try {
     const balanceData = await kalshiFetch('/portfolio/balance');
     availableCapitalCents = balanceData?.balance || 0;
-    // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
-    totalPortfolioCents = balanceData?.portfolio_value || availableCapitalCents;
-    console.log(`Kalshi balance: available=${availableCapitalCents}¢, portfolio_value=${totalPortfolioCents}¢`);
+    const positionsValue = balanceData?.portfolio_value || 0;
+    // Total portfolio = cash + positions value (Kalshi returns these separately)
+    totalPortfolioCents = availableCapitalCents + positionsValue;
+    console.log(`Kalshi balance: cash=${availableCapitalCents}¢, positions=${positionsValue}¢, total=${totalPortfolioCents}¢`);
   } catch (e) {
     console.error('Failed to fetch balance:', e);
     return {
@@ -203,7 +204,7 @@ async function prepareOrders(params: PrepareParams) {
     };
   }
 
-  console.log(`Portfolio: ${totalPortfolioCents}¢ (from Kalshi), available: ${availableCapitalCents}¢`);
+  console.log(`Total Portfolio: ${totalPortfolioCents}¢, available cash: ${availableCapitalCents}¢`);
 
   // Apply reserve if specified
   if (capitalReservePercent > 0) {

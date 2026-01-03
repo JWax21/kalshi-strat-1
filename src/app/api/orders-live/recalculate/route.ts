@@ -81,15 +81,16 @@ export async function POST(request: Request) {
     }
 
     // Get available balance AND portfolio_value directly from Kalshi
-    // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
+    // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
     let availableCapitalCents = 0;
     let totalPortfolioCents = 0;
     try {
       const balanceData = await kalshiFetch('/portfolio/balance');
       availableCapitalCents = balanceData?.balance || 0;
-      // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
-      totalPortfolioCents = balanceData?.portfolio_value || availableCapitalCents;
-      console.log(`Kalshi balance: available=${availableCapitalCents}¢, portfolio_value=${totalPortfolioCents}¢`);
+      const positionsValue = balanceData?.portfolio_value || 0;
+      // Total portfolio = cash + positions value (Kalshi returns these separately)
+      totalPortfolioCents = availableCapitalCents + positionsValue;
+      console.log(`Kalshi balance: cash=${availableCapitalCents}¢, positions=${positionsValue}¢, total=${totalPortfolioCents}¢`);
     } catch (e) {
       return NextResponse.json({ success: false, error: 'Failed to fetch balance from Kalshi' }, { status: 500 });
     }
@@ -98,7 +99,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No available capital' }, { status: 400 });
     }
 
-    console.log(`Portfolio: ${totalPortfolioCents}¢ (from Kalshi), available: ${availableCapitalCents}¢`);
+    console.log(`Total Portfolio: ${totalPortfolioCents}¢, available cash: ${availableCapitalCents}¢`);
 
     // Calculate max per market based on 3% of TOTAL PORTFOLIO
     const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);

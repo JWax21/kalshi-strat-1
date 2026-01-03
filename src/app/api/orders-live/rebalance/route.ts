@@ -149,13 +149,14 @@ async function rebalanceOrders(): Promise<RebalanceResult> {
 
   // Now redeploy the freed capital to existing confirmed positions
   if (availableCapitalCents > 0) {
-    // CRITICAL: Get portfolio_value directly from Kalshi balance endpoint (the source of truth)
+    // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
     let totalPortfolioCents = availableCapitalCents; // fallback if fetch fails
     try {
       const balanceData = await kalshiFetch('/portfolio/balance');
-      // portfolio_value = cash + all positions (from Kalshi directly)
-      totalPortfolioCents = balanceData.portfolio_value || availableCapitalCents;
-      console.log(`Kalshi portfolio_value: ${totalPortfolioCents}¢`);
+      const positionsValue = balanceData.portfolio_value || 0;
+      // Total portfolio = cash + positions value (Kalshi returns these separately)
+      totalPortfolioCents = (balanceData.balance || 0) + positionsValue;
+      console.log(`Kalshi balance: cash=${balanceData.balance || 0}¢, positions=${positionsValue}¢, total=${totalPortfolioCents}¢`);
     } catch (e) {
       result.errors.push(`Failed to fetch portfolio_value: ${e}`);
     }

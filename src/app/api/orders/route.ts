@@ -123,14 +123,16 @@ export async function POST(request: Request) {
       }
       
       // Get portfolio_value directly from Kalshi
-      // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
+      // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
       let totalPortfolioCents = 0;
       
       try {
         const balanceData = await getBalance();
-        // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
-        totalPortfolioCents = balanceData.portfolio_value || balanceData.balance || 0;
-        console.log(`Kalshi portfolio_value: ${totalPortfolioCents}¢`);
+        const cashBalance = balanceData.balance || 0;
+        const positionsValue = balanceData.portfolio_value || 0;
+        // Total portfolio = cash + positions value (Kalshi returns these separately)
+        totalPortfolioCents = cashBalance + positionsValue;
+        console.log(`Kalshi balance: cash=${cashBalance}¢, positions=${positionsValue}¢, total=${totalPortfolioCents}¢`);
       } catch (e) {
         console.error('Error fetching portfolio for hard cap check:', e);
         return NextResponse.json(

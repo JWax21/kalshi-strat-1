@@ -70,20 +70,21 @@ export async function POST(request: Request) {
     console.log('Old batches cleared, proceeding with fresh preparation...');
 
     // Step 2: Get available balance AND portfolio_value directly from Kalshi
-    // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
+    // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
     let availableBalance = 0;
     let totalPortfolioCents = 0;
     try {
       const balanceData = await getBalance();
       availableBalance = balanceData.balance || 0;
-      // portfolio_value = cash + all positions (from Kalshi directly - the source of truth)
-      totalPortfolioCents = balanceData.portfolio_value || availableBalance;
-      console.log(`Kalshi balance: available=${availableBalance}¢, portfolio_value=${totalPortfolioCents}¢`);
+      const positionsValue = balanceData.portfolio_value || 0;
+      // Total portfolio = cash + positions value (Kalshi returns these separately)
+      totalPortfolioCents = availableBalance + positionsValue;
+      console.log(`Kalshi balance: cash=${availableBalance}¢, positions=${positionsValue}¢, total=${totalPortfolioCents}¢`);
     } catch (e) {
       return NextResponse.json({ success: false, error: 'Could not fetch balance' }, { status: 500 });
     }
 
-    console.log(`Portfolio: $${(totalPortfolioCents / 100).toFixed(2)} (from Kalshi), available: $${(availableBalance / 100).toFixed(2)}`);
+    console.log(`Total Portfolio: $${(totalPortfolioCents / 100).toFixed(2)}, available cash: $${(availableBalance / 100).toFixed(2)}`);
 
     // Get current positions to check existing exposure for each ticker
     // CRITICAL: Must check TOTAL exposure (existing + new) against 3% cap

@@ -174,16 +174,17 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
   const today = new Date().toISOString().split('T')[0];
 
   // Step 1: Get current balance AND portfolio_value from Kalshi
-  // CRITICAL: Use portfolio_value from Kalshi (not manual calculation) for 3% limit
+  // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
   let availableBalance = 0;
-  let totalPortfolioValue = 0; // This is what Kalshi says the total portfolio is worth
+  let totalPortfolioValue = 0; // This is the true total portfolio value
   try {
     const balanceData = await getBalance();
     availableBalance = balanceData.balance || 0;
-    // portfolio_value = cash + all positions market value (from Kalshi directly)
-    totalPortfolioValue = balanceData.portfolio_value || availableBalance;
+    const positionsValue = balanceData.portfolio_value || 0;
+    // Total portfolio = cash + positions value (Kalshi returns these separately)
+    totalPortfolioValue = availableBalance + positionsValue;
     result.capital.available_cents = availableBalance;
-    console.log(`Kalshi balance: available=${availableBalance}¢, portfolio_value=${totalPortfolioValue}¢`);
+    console.log(`Kalshi balance: cash=${availableBalance}¢, positions=${positionsValue}¢, total=${totalPortfolioValue}¢`);
   } catch (e) {
     result.details.errors.push(`Failed to fetch balance: ${e}`);
     result.success = false;

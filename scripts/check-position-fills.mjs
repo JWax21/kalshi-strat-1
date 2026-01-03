@@ -86,12 +86,16 @@ async function main() {
   
   // Get balance first
   const balance = await kalshiFetch('/portfolio/balance');
-  const portfolioValue = balance.portfolio_value || 0;
-  const threePercentCap = Math.floor(portfolioValue * 0.03);
+  const cashBalance = balance.balance || 0;
+  const positionsValue = balance.portfolio_value || 0;
+  // Total portfolio = cash + positions value (Kalshi returns these separately)
+  const totalPortfolio = cashBalance + positionsValue;
+  const threePercentCap = Math.floor(totalPortfolio * 0.03);
   console.log('=== Current Balance ===');
-  console.log(`Portfolio: $${(portfolioValue / 100).toFixed(2)}`);
+  console.log(`Available cash: $${(cashBalance / 100).toFixed(2)}`);
+  console.log(`Positions value: $${(positionsValue / 100).toFixed(2)}`);
+  console.log(`Total Portfolio: $${(totalPortfolio / 100).toFixed(2)}`);
   console.log(`3% Cap should be: $${(threePercentCap / 100).toFixed(2)}`);
-  console.log(`Available cash: $${(balance.balance / 100).toFixed(2)}`);
   
   // Get current positions
   console.log('\n=== Current Positions (High Cost) ===');
