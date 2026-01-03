@@ -170,18 +170,87 @@ export async function POST(request: Request) {
       return { ...market, favorite_side: favoriteSide, favorite_odds: favoriteOdds, price_cents: priceCents };
     });
 
+    // ========================================
+    // CRITICAL: DEDUPLICATE BY EVENT
+    // Only keep ONE market per event (the favorite with highest odds)
+    // This prevents betting on BOTH sides of the same game
+    // ========================================
+    const eventBestMarket = new Map<string, typeof enrichedMarkets[0]>();
+    for (const market of enrichedMarkets) {
+      const eventTicker = market.event_ticker;
+      const existing = eventBestMarket.get(eventTicker);
+      if (!existing) {
+        eventBestMarket.set(eventTicker, market);
+      } else {
+        // Keep the one with higher favorite odds
+        if (market.favorite_odds > existing.favorite_odds) {
+          eventBestMarket.set(eventTicker, market);
+        }
+      }
+    }
+    const deduplicatedMarkets = Array.from(eventBestMarket.values());
+    console.log(`DEDUPLICATION: ${enrichedMarkets.length} markets -> ${deduplicatedMarkets.length} unique events`);
+
+    // ========================================
+    // CRITICAL: CHECK EXISTING POSITIONS/ORDERS
+    // Skip events where we already have exposure
+    // ========================================
+    // Get existing exposure from current positions (live on Kalshi)
+    const existingEventTickers = new Set<string>();
+    for (const [ticker, position] of currentPositions) {
+      // Extract event_ticker from ticker if possible, or use ticker itself
+      // Kalshi tickers often have event info embedded
+      existingEventTickers.add(ticker);
+    }
+    
+    // Also check pending/placed/confirmed orders in database
+    const { data: existingOrders } = await supabase
+      .from('orders')
+      .select('event_ticker, ticker, cost_cents, executed_cost_cents, placement_status')
+      .in('placement_status', ['pending', 'placed', 'confirmed']);
+    
+    const existingEventExposure = new Map<string, number>();
+    for (const order of existingOrders || []) {
+      existingEventTickers.add(order.event_ticker);
+      const cost = order.executed_cost_cents || order.cost_cents || 0;
+      const existing = existingEventExposure.get(order.event_ticker) || 0;
+      existingEventExposure.set(order.event_ticker, existing + cost);
+    }
+    console.log(`Found existing exposure on ${existingEventExposure.size} events`);
+
+    // Filter out events we already have positions on
+    const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+    const marketsAfterExposureCheck = deduplicatedMarkets.filter(market => {
+      const eventTicker = market.event_ticker;
+      const existingExposure = existingEventExposure.get(eventTicker) || 0;
+      const remainingCapacity = maxPositionCents - existingExposure;
+      
+      if (remainingCapacity <= 0) {
+        console.log(`Skipping ${market.ticker} - event ${eventTicker} already at max exposure (${existingExposure}¢ >= ${maxPositionCents}¢)`);
+        return false;
+      }
+      return true;
+    });
+    console.log(`After exposure check: ${marketsAfterExposureCheck.length} markets`);
+
+    if (marketsAfterExposureCheck.length === 0) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'All qualifying events already have maximum exposure',
+        events_checked: deduplicatedMarkets.length,
+      });
+    }
+
     // Step 7: Distribute capital - SPREAD FIRST, 3% cap second
     // Calculate even distribution across all markets
-    const evenDistributionCents = Math.floor(availableBalance / enrichedMarkets.length);
-    // Use 3% of TOTAL PORTFOLIO (available + deployed), not just available
-    const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+    const evenDistributionCents = Math.floor(availableBalance / marketsAfterExposureCheck.length);
     // Use even distribution, capped at 3%
     const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
     
-    console.log(`Capital distribution: ${availableBalance}¢ / ${enrichedMarkets.length} markets = ${evenDistributionCents}¢ each (3% of ${totalPortfolioCents}¢ = ${maxPositionCents}¢ cap, target: ${targetAllocationCents}¢)`);
+    console.log(`Capital distribution: ${availableBalance}¢ / ${marketsAfterExposureCheck.length} markets = ${evenDistributionCents}¢ each (3% cap: ${maxPositionCents}¢, target: ${targetAllocationCents}¢)`);
     
     type MarketAllocation = { market: typeof enrichedMarkets[0]; units: number; cost: number };
-    const allocations: MarketAllocation[] = enrichedMarkets.map(m => ({
+    const allocations: MarketAllocation[] = marketsAfterExposureCheck.map(m => ({
       market: m,
       units: 0,
       cost: 0,

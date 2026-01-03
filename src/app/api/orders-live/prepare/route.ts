@@ -294,8 +294,68 @@ async function prepareOrders(params: PrepareParams) {
     };
   }
 
+  // ========================================
+  // CRITICAL: DEDUPLICATE BY EVENT
+  // Only keep ONE market per event (the favorite with highest odds)
+  // This prevents betting on BOTH sides of the same game
+  // ========================================
+  const eventBestMarket = new Map<string, typeof enrichedMarkets[0]>();
+  for (const market of enrichedMarkets) {
+    const eventTicker = market.event_ticker;
+    const existing = eventBestMarket.get(eventTicker);
+    if (!existing) {
+      eventBestMarket.set(eventTicker, market);
+    } else {
+      // Keep the one with higher favorite odds
+      if (market.favorite_odds > existing.favorite_odds) {
+        eventBestMarket.set(eventTicker, market);
+      }
+    }
+  }
+  const deduplicatedMarkets = Array.from(eventBestMarket.values());
+  console.log(`DEDUPLICATION: ${enrichedMarkets.length} markets -> ${deduplicatedMarkets.length} unique events`);
+
+  // ========================================
+  // CRITICAL: CHECK EXISTING POSITIONS/ORDERS
+  // Skip events where we already have exposure
+  // ========================================
+  const { data: existingOrders } = await supabase
+    .from('orders')
+    .select('event_ticker, ticker, cost_cents, executed_cost_cents, placement_status')
+    .in('placement_status', ['pending', 'placed', 'confirmed']);
+  
+  const existingEventExposure = new Map<string, number>();
+  for (const order of existingOrders || []) {
+    const cost = order.executed_cost_cents || order.cost_cents || 0;
+    const existing = existingEventExposure.get(order.event_ticker) || 0;
+    existingEventExposure.set(order.event_ticker, existing + cost);
+  }
+  console.log(`Found existing exposure on ${existingEventExposure.size} events`);
+
+  // Filter out events we already have positions on
+  const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+  const marketsAfterExposureCheck = deduplicatedMarkets.filter(market => {
+    const eventTicker = market.event_ticker;
+    const existingExposure = existingEventExposure.get(eventTicker) || 0;
+    const remainingCapacity = maxPositionCents - existingExposure;
+    
+    if (remainingCapacity <= 0) {
+      console.log(`Skipping ${market.ticker} - event ${eventTicker} already at max exposure (${existingExposure}¢ >= ${maxPositionCents}¢)`);
+      return false;
+    }
+    return true;
+  });
+  console.log(`After exposure check: ${marketsAfterExposureCheck.length} markets`);
+
+  if (marketsAfterExposureCheck.length === 0) {
+    return {
+      success: false,
+      error: 'All qualifying events already have maximum exposure',
+    };
+  }
+
   // Distribute capital across all markets (use total portfolio for 3% cap calculation)
-  const allocatedMarkets = distributeCapital(enrichedMarkets, availableCapitalCents, totalPortfolioCents);
+  const allocatedMarkets = distributeCapital(marketsAfterExposureCheck, availableCapitalCents, totalPortfolioCents);
 
   if (allocatedMarkets.length === 0) {
     return {
