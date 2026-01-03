@@ -171,16 +171,34 @@ export async function getMarkets(
 
 export function filterHighOddsMarkets(markets: KalshiMarket[], minOdds: number = 0.92, maxOdds: number = 0.995): KalshiMarket[] {
   return markets.filter((market) => {
-    const yesPrice = parseFloat(market.last_price_dollars) || 0;
-    const noPrice = 1 - yesPrice;
-    const favoriteOdds = Math.max(yesPrice, noPrice);
+    // CRITICAL FIX: Use bid/ask midpoint instead of stale last_price_dollars
+    // last_price_dollars can be 0 (no trades) or from an old trade
+    const yesMidpoint = ((market.yes_bid || 0) + (market.yes_ask || 0)) / 2 / 100; // Convert cents to decimal
+    const noMidpoint = ((market.no_bid || 0) + (market.no_ask || 0)) / 2 / 100;
+    
+    // If no bid/ask data, skip this market entirely
+    if (yesMidpoint === 0 && noMidpoint === 0) {
+      return false;
+    }
+    
+    // Use the higher of yes or no as the favorite odds
+    // Note: yes + no should roughly equal 1.0 (with some spread)
+    const favoriteOdds = Math.max(yesMidpoint, noMidpoint);
     return favoriteOdds >= minOdds && favoriteOdds <= maxOdds;
   });
 }
 
 export function getMarketOdds(market: KalshiMarket): { yes: number; no: number } {
-  const yesPrice = parseFloat(market.last_price_dollars) || 0;
-  return { yes: yesPrice, no: 1 - yesPrice };
+  // CRITICAL FIX: Use bid/ask midpoint instead of stale last_price_dollars
+  const yesMidpoint = ((market.yes_bid || 0) + (market.yes_ask || 0)) / 2 / 100; // Convert cents to decimal
+  const noMidpoint = ((market.no_bid || 0) + (market.no_ask || 0)) / 2 / 100;
+  
+  // If no bid/ask data, return 0.5/0.5 (will be filtered out by 90% minimum)
+  if (yesMidpoint === 0 && noMidpoint === 0) {
+    return { yes: 0.5, no: 0.5 };
+  }
+  
+  return { yes: yesMidpoint, no: noMidpoint };
 }
 
 // Order interfaces
