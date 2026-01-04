@@ -10,9 +10,8 @@ export const dynamic = 'force-dynamic';
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
 
 // Helper to make authenticated Kalshi API calls
-async function kalshiFetch(endpoint: string): Promise<any> {
+async function kalshiFetch(endpoint: string, method: string = 'GET'): Promise<any> {
   const timestampMs = Date.now().toString();
-  const method = 'GET';
   const pathWithoutQuery = endpoint.split('?')[0];
   const fullPath = `/trade-api/v2${pathWithoutQuery}`;
 
@@ -38,6 +37,11 @@ async function kalshiFetch(endpoint: string): Promise<any> {
     throw new Error(`Kalshi API error: ${response.status}`);
   }
 
+  // DELETE requests may return empty body
+  if (method === 'DELETE') {
+    return { success: true };
+  }
+
   return response.json();
 }
 
@@ -55,6 +59,8 @@ export async function POST(request: Request) {
     console.log(`=== Prepare and Execute for ${targetDateStr} ===`);
 
     // Step 1: Delete existing batch and orders for this date (if any)
+    // CRITICAL: Cancel any resting Kalshi orders before deleting from DB
+    // This prevents orphaned orders on Kalshi that aren't tracked in our DB
     const { data: existingBatches } = await supabase
       .from('order_batches')
       .select('id')
@@ -63,11 +69,32 @@ export async function POST(request: Request) {
     if (existingBatches && existingBatches.length > 0) {
       for (const batch of existingBatches) {
         console.log(`Deleting existing batch ${batch.id}`);
+        
+        // First, get all orders with kalshi_order_ids that might be resting
+        const { data: ordersToCancel } = await supabase
+          .from('orders')
+          .select('kalshi_order_id, ticker, placement_status')
+          .eq('batch_id', batch.id)
+          .not('kalshi_order_id', 'is', null);
+        
+        // Cancel any resting orders on Kalshi before deleting from DB
+        for (const order of ordersToCancel || []) {
+          if (order.kalshi_order_id && order.placement_status === 'placed') {
+            try {
+              await kalshiFetch(`/portfolio/orders/${order.kalshi_order_id}`, 'DELETE');
+              console.log(`Cancelled Kalshi order ${order.kalshi_order_id} for ${order.ticker}`);
+            } catch (e) {
+              // Order might already be filled/cancelled, that's OK
+              console.log(`Could not cancel ${order.kalshi_order_id} (may be already filled): ${e}`);
+            }
+          }
+        }
+        
         await supabase.from('orders').delete().eq('batch_id', batch.id);
         await supabase.from('order_batches').delete().eq('id', batch.id);
       }
     }
-    console.log('Old batches cleared, proceeding with fresh preparation...');
+    console.log('Old batches cleared (and any resting Kalshi orders cancelled), proceeding with fresh preparation...');
 
     // Step 2: Get available balance AND portfolio_value directly from Kalshi
     // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
