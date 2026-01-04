@@ -68,6 +68,24 @@ export async function POST(request: Request) {
 
     if (existingBatches && existingBatches.length > 0) {
       for (const batch of existingBatches) {
+        // RACE CONDITION GUARD: Check if any orders are in 'pending' status
+        // Pending orders might be actively being placed by monitor right now
+        // If we delete them mid-placement, we'll orphan Kalshi orders
+        const { data: pendingOrders, error: pendingError } = await supabase
+          .from('orders')
+          .select('id, ticker')
+          .eq('batch_id', batch.id)
+          .eq('placement_status', 'pending');
+        
+        if (!pendingError && pendingOrders && pendingOrders.length > 0) {
+          console.log(`WARNING: Found ${pendingOrders.length} pending orders that might be mid-placement`);
+          return NextResponse.json({
+            success: false,
+            error: `Cannot run prepare-and-execute while ${pendingOrders.length} orders are pending. They may be actively being placed by monitor. Wait a few minutes and try again, or manually update their status first.`,
+            pending_orders: pendingOrders.map(o => o.ticker),
+          }, { status: 409 }); // 409 Conflict
+        }
+        
         console.log(`Deleting existing batch ${batch.id}`);
         
         // First, get all orders with kalshi_order_ids that might be resting
