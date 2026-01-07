@@ -4494,10 +4494,45 @@ export default function Dashboard() {
 
                     {/* Granular Losses Table */}
                     <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                      <div className="p-4 border-b border-slate-800">
+                      <div className="p-4 border-b border-slate-800 flex justify-between items-center">
                         <h3 className="text-sm font-medium text-slate-400">
                           All Losses ({lossesData.losses.length})
                         </h3>
+                        <button
+                          onClick={() => {
+                            const headers = ['Sport', 'Game', 'Date', 'Entry Price', 'Open Interest', 'Venue', 'Lost'];
+                            const rows = lossesData.losses
+                              .sort((a, b) => a.league.localeCompare(b.league))
+                              .map(loss => [
+                                loss.league,
+                                (loss.title?.replace(' Winner?', '') || loss.ticker).replace(/,/g, ''),
+                                loss.batch_date ? new Date(loss.batch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '',
+                                `${loss.entry_price_cents}`,
+                                loss.open_interest ? (loss.open_interest >= 1000000 
+                                  ? `${(loss.open_interest / 1000000).toFixed(1)}M`
+                                  : loss.open_interest >= 1000 
+                                    ? `${(loss.open_interest / 1000).toFixed(0)}K`
+                                    : String(loss.open_interest)
+                                ) : '',
+                                loss.venue,
+                                `-${(loss.cost_cents / 100).toFixed(2)}`
+                              ]);
+                            const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+                            const blob = new Blob([csv], { type: 'text/csv' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `losses-${new Date().toISOString().split('T')[0]}.csv`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="px-3 py-1.5 text-xs font-medium bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors flex items-center gap-1.5"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Export CSV
+                        </button>
                       </div>
                       <div className="overflow-x-auto max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
