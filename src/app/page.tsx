@@ -4505,6 +4505,7 @@ export default function Dashboard() {
                             <tr>
                               <th className="text-left p-3 text-slate-400 font-medium">Sport</th>
                               <th className="text-left p-3 text-slate-400 font-medium">Game</th>
+                              <th className="text-center p-3 text-slate-400 font-medium">Date</th>
                               <th className="text-center p-3 text-slate-400 font-medium">Entry Price</th>
                               <th className="text-center p-3 text-slate-400 font-medium">Open Interest</th>
                               <th className="text-center p-3 text-slate-400 font-medium">Venue</th>
@@ -4541,6 +4542,9 @@ export default function Dashboard() {
                                     <div className="max-w-xs truncate" title={loss.title}>
                                       {loss.title?.replace(' Winner?', '') || loss.ticker}
                                     </div>
+                                  </td>
+                                  <td className="p-3 text-center text-slate-300 text-xs">
+                                    {loss.batch_date ? new Date(loss.batch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-'}
                                   </td>
                                   <td className="p-3 text-center font-mono text-white">
                                     {loss.entry_price_cents}¢
