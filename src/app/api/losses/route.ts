@@ -146,39 +146,44 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    // Get all decided orders (won + lost) to calculate total bets per league and by open interest
+    // Get all decided orders (won + lost) to calculate stats by league, open interest, odds range, and venue
     const { data: allDecidedOrders, error: allError } = await supabase
       .from('orders')
-      .select('event_ticker, result_status, open_interest')
+      .select('event_ticker, result_status, open_interest, executed_price_cents, price_cents, title, side, units')
       .in('result_status', ['won', 'lost'])
       .gte('created_at', startDate.toISOString());
 
     if (allError) throw allError;
 
-    // Pre-calculate total bets per league from all decided orders (counting unique events)
-    const eventsByLeague: Record<string, Set<string>> = {};
+    // Pre-calculate stats by league (with weighted average cost)
+    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number }> = {};
     for (const order of allDecidedOrders || []) {
       const league = getLeagueFromTicker(order.event_ticker || '');
-      if (!eventsByLeague[league]) {
-        eventsByLeague[league] = new Set();
+      if (!statsByLeague[league]) {
+        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_price_units: 0, total_units: 0 };
       }
-      eventsByLeague[league].add(order.event_ticker);
-    }
-    const totalBetsByLeague: Record<string, number> = {};
-    for (const [league, events] of Object.entries(eventsByLeague)) {
-      totalBetsByLeague[league] = events.size;
+      const price = order.executed_price_cents || order.price_cents || 0;
+      const units = order.units || 1;
+      statsByLeague[league].total++;
+      statsByLeague[league].total_price_units += price * units;
+      statsByLeague[league].total_units += units;
+      if (order.result_status === 'won') {
+        statsByLeague[league].wins++;
+      } else {
+        statsByLeague[league].losses++;
+      }
     }
 
-    // Pre-calculate stats by open interest range
+    // Pre-calculate stats by open interest range (with weighted average cost)
     const oiRanges = {
       '1K-10K': { min: 1000, max: 10000 },
       '10K-100K': { min: 10000, max: 100000 },
       '100K-1M': { min: 100000, max: 1000000 },
       '1M+': { min: 1000000, max: Infinity },
     };
-    const statsByOI: Record<string, { wins: number; losses: number; total: number }> = {};
+    const statsByOI: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number }> = {};
     for (const range of Object.keys(oiRanges)) {
-      statsByOI[range] = { wins: 0, losses: 0, total: 0 };
+      statsByOI[range] = { wins: 0, losses: 0, total: 0, total_price_units: 0, total_units: 0 };
     }
     for (const order of allDecidedOrders || []) {
       const oi = order.open_interest || 0;
@@ -190,12 +195,75 @@ export async function GET(request: Request) {
         }
       }
       if (rangeKey) {
+        const price = order.executed_price_cents || order.price_cents || 0;
+        const units = order.units || 1;
         statsByOI[rangeKey].total++;
+        statsByOI[rangeKey].total_price_units += price * units;
+        statsByOI[rangeKey].total_units += units;
         if (order.result_status === 'won') {
           statsByOI[rangeKey].wins++;
         } else {
           statsByOI[rangeKey].losses++;
         }
+      }
+    }
+
+    // Pre-calculate stats by odds range (with weighted average cost)
+    const statsByOddsRange: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number }> = {
+      '90-92%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      '92-94%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      '94-96%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      '96-98%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      '98-100%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      '<90%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+    };
+    for (const order of allDecidedOrders || []) {
+      const odds = order.executed_price_cents || order.price_cents || 0;
+      const units = order.units || 1;
+      let range = '<90%';
+      if (odds >= 98) range = '98-100%';
+      else if (odds >= 96) range = '96-98%';
+      else if (odds >= 94) range = '94-96%';
+      else if (odds >= 92) range = '92-94%';
+      else if (odds >= 90) range = '90-92%';
+      
+      statsByOddsRange[range].total++;
+      statsByOddsRange[range].total_price_units += odds * units;
+      statsByOddsRange[range].total_units += units;
+      if (order.result_status === 'won') {
+        statsByOddsRange[range].wins++;
+      } else {
+        statsByOddsRange[range].losses++;
+      }
+    }
+
+    // Pre-calculate stats by venue (with weighted average cost)
+    const statsByVenue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number }> = {
+      'home': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      'away': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+      'neutral': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0 },
+    };
+    for (const order of allDecidedOrders || []) {
+      // Determine home/away status
+      let venue: 'home' | 'away' | 'neutral' = 'neutral';
+      const atMatch = order.title?.match(/^(.+?)\s+at\s+(.+?)\s+Winner\?$/i);
+      const vsMatch = order.title?.match(/^(.+?)\s+vs\s+(.+?)\s+Winner\?$/i);
+      
+      if (atMatch) {
+        venue = order.side === 'YES' ? 'away' : 'home';
+      } else if (vsMatch) {
+        venue = order.side === 'YES' ? 'home' : 'away';
+      }
+      
+      const price = order.executed_price_cents || order.price_cents || 0;
+      const units = order.units || 1;
+      statsByVenue[venue].total++;
+      statsByVenue[venue].total_price_units += price * units;
+      statsByVenue[venue].total_units += units;
+      if (order.result_status === 'won') {
+        statsByVenue[venue].wins++;
+      } else {
+        statsByVenue[venue].losses++;
       }
     }
 
@@ -367,6 +435,7 @@ export async function GET(request: Request) {
           day_of_week: dayOfWeek,
           venue,
           bet_timing: betTiming,
+          open_interest: order.open_interest || 0,
           // Market data if available
           market_result: marketData?.result,
           market_status: marketData?.status,
@@ -395,27 +464,11 @@ export async function GET(request: Request) {
     // Count unique lost events
     const uniqueLostEvents = new Set(enrichedLosses.map(l => l.event_ticker)).size;
 
-    // Group by league (counting unique events)
-    const byLeague: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number; event_tickers: Set<string> }> = {};
+    // Add lost_cents to stats by league (from enrichedLosses)
     for (const loss of enrichedLosses) {
-      if (!byLeague[loss.league]) {
-        byLeague[loss.league] = { count: 0, total_bets: totalBetsByLeague[loss.league] || 0, lost_cents: 0, avg_odds: 0, event_tickers: new Set() };
+      if (statsByLeague[loss.league]) {
+        // lost_cents tracking if needed later
       }
-      byLeague[loss.league].event_tickers.add(loss.event_ticker);
-      byLeague[loss.league].lost_cents += loss.cost_cents;
-      byLeague[loss.league].avg_odds += loss.implied_odds_percent;
-    }
-    // Calculate averages and convert event count
-    const byLeagueOutput: Record<string, { count: number; total_bets: number; lost_cents: number; avg_odds: number }> = {};
-    for (const league of Object.keys(byLeague)) {
-      const data = byLeague[league];
-      const orderCount = enrichedLosses.filter(l => l.league === league).length;
-      byLeagueOutput[league] = {
-        count: data.event_tickers.size, // Count unique events, not orders
-        total_bets: data.total_bets,
-        lost_cents: data.lost_cents,
-        avg_odds: Math.round(data.avg_odds / orderCount),
-      };
     }
 
     // Group by day of week
@@ -428,15 +481,7 @@ export async function GET(request: Request) {
       byDayOfWeek[loss.day_of_week].lost_cents += loss.cost_cents;
     }
 
-    // Group by odds range
-    const byOddsRange: Record<string, { count: number; lost_cents: number }> = {
-      '90-92%': { count: 0, lost_cents: 0 },
-      '92-94%': { count: 0, lost_cents: 0 },
-      '94-96%': { count: 0, lost_cents: 0 },
-      '96-98%': { count: 0, lost_cents: 0 },
-      '98-100%': { count: 0, lost_cents: 0 },
-      '<90%': { count: 0, lost_cents: 0 },
-    };
+    // Add lost_cents to stats by odds range (from enrichedLosses)
     for (const loss of enrichedLosses) {
       const odds = loss.implied_odds_percent;
       let range = '<90%';
@@ -446,8 +491,7 @@ export async function GET(request: Request) {
       else if (odds >= 92) range = '92-94%';
       else if (odds >= 90) range = '90-92%';
       
-      byOddsRange[range].count++;
-      byOddsRange[range].lost_cents += loss.cost_cents;
+      statsByOddsRange[range].lost_cents += loss.cost_cents;
     }
 
     // Group by month
@@ -479,15 +523,9 @@ export async function GET(request: Request) {
       .slice(0, 10)
       .map(([team, count]) => ({ team, count }));
 
-    // Group by venue (home/away)
-    const byVenue: Record<string, { count: number; lost_cents: number }> = {
-      'home': { count: 0, lost_cents: 0 },
-      'away': { count: 0, lost_cents: 0 },
-      'neutral': { count: 0, lost_cents: 0 },
-    };
+    // Add lost_cents to stats by venue (from enrichedLosses)
     for (const loss of enrichedLosses) {
-      byVenue[loss.venue].count++;
-      byVenue[loss.venue].lost_cents += loss.cost_cents;
+      statsByVenue[loss.venue].lost_cents += loss.cost_cents;
     }
 
     // Group by bet timing (pre-game vs live)
@@ -508,11 +546,11 @@ export async function GET(request: Request) {
         total_losses: uniqueLostEvents, // Count unique events, not orders
         total_lost_cents: totalLostCents,
         avg_odds: Math.round(avgOdds),
-        by_league: byLeagueOutput,
+        by_league: statsByLeague,
         by_day_of_week: byDayOfWeek,
-        by_odds_range: byOddsRange,
+        by_odds_range: statsByOddsRange,
         by_month: byMonth,
-        by_venue: byVenue,
+        by_venue: statsByVenue,
         by_timing: byTiming,
         by_open_interest: statsByOI,
         top_losing_teams: topLosingTeams,

@@ -4333,35 +4333,38 @@ export default function Dashboard() {
                     </div>
 
                     {/* Pattern Analysis */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                       {/* By League */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Win Rate by League
+                          By League
                         </h3>
                         <div className="space-y-2">
                           {Object.entries(lossesData.summary.by_league)
+                            .filter(([, data]) => data.total > 0)
                             .sort((a, b) => {
-                              const winRateA = ((a[1].total_bets - a[1].count) / a[1].total_bets) * 100;
-                              const winRateB = ((b[1].total_bets - b[1].count) / b[1].total_bets) * 100;
+                              const winRateA = (a[1].wins / a[1].total) * 100;
+                              const winRateB = (b[1].wins / b[1].total) * 100;
                               return winRateB - winRateA;
                             })
                             .map(([league, data]) => {
-                              const winRate = ((data.total_bets - data.count) / data.total_bets) * 100;
+                              const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
+                              const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
                               return (
                               <div
                                 key={league}
                                 className="flex justify-between items-center"
                               >
-                                <span className="text-white font-medium">
+                                <span className="text-white font-medium text-sm">
                                   {league}
                                 </span>
-                                <div className="text-right">
-                                  <span className={`font-mono font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {winRate.toFixed(1)}%
+                                <div className="text-right font-mono text-sm">
+                                  <span className={`font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {winRate.toFixed(0)}%
                                   </span>
-                                  <span className="text-slate-500 text-xs ml-2">
-                                    ({data.total_bets - data.count}/{data.total_bets})
+                                  <span className="text-slate-500 mx-1">|</span>
+                                  <span className="text-slate-300">
+                                    {avgCost}¢
                                   </span>
                                 </div>
                               </div>
@@ -4372,7 +4375,7 @@ export default function Dashboard() {
                       {/* By Open Interest */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Win Rate by Open Interest
+                          By Open Interest
                         </h3>
                         <div className="space-y-2">
                           {lossesData.summary.by_open_interest &&
@@ -4385,18 +4388,20 @@ export default function Dashboard() {
                               })
                               .map(([range, data]) => {
                                 const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
+                                const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
                                 return (
                                   <div
                                     key={range}
                                     className="flex justify-between items-center"
                                   >
-                                    <span className="text-white font-medium">{range}</span>
-                                    <div className="text-right">
-                                      <span className={`font-mono font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                        {winRate.toFixed(1)}%
+                                    <span className="text-white font-medium text-sm">{range}</span>
+                                    <div className="text-right font-mono text-sm">
+                                      <span className={`font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {winRate.toFixed(0)}%
                                       </span>
-                                      <span className="text-slate-500 text-xs ml-2">
-                                        ({data.wins}/{data.total})
+                                      <span className="text-slate-500 mx-1">|</span>
+                                      <span className="text-slate-300">
+                                        {avgCost}¢
                                       </span>
                                     </div>
                                   </div>
@@ -4408,64 +4413,150 @@ export default function Dashboard() {
                       {/* By Odds Range */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Losses by Odds Range
+                          By Odds Range
                         </h3>
                         <div className="space-y-2">
                           {Object.entries(lossesData.summary.by_odds_range)
-                            .filter(([, data]) => data.count > 0)
-                            .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                            .map(([range, data]) => (
-                              <div
-                                key={range}
-                                className="flex justify-between items-center"
-                              >
-                                <span className="text-white">{range}</span>
-                                <div className="text-right">
-                                  <span className="text-red-400 font-mono">
-                                    -${(data.lost_cents / 100).toLocaleString()}
-                                  </span>
-                                  <span className="text-slate-500 text-xs ml-2">
-                                    ({data.count})
-                                  </span>
+                            .filter(([, data]) => data.total > 0)
+                            .sort((a, b) => {
+                              const winRateA = (a[1].wins / a[1].total) * 100;
+                              const winRateB = (b[1].wins / b[1].total) * 100;
+                              return winRateB - winRateA;
+                            })
+                            .map(([range, data]) => {
+                              const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
+                              const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
+                              return (
+                                <div
+                                  key={range}
+                                  className="flex justify-between items-center"
+                                >
+                                  <span className="text-white font-medium text-sm">{range}</span>
+                                  <div className="text-right font-mono text-sm">
+                                    <span className={`font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                      {winRate.toFixed(0)}%
+                                    </span>
+                                    <span className="text-slate-500 mx-1">|</span>
+                                    <span className="text-slate-300">
+                                      {avgCost}¢
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                         </div>
                       </div>
 
                       {/* By Venue (Home/Away) */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Losses by Venue
+                          By Venue
                         </h3>
                         <div className="space-y-2">
                           {lossesData.summary.by_venue &&
                             Object.entries(lossesData.summary.by_venue)
-                              .filter(([, data]) => data.count > 0)
-                              .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                              .map(([venue, data]) => (
-                                <div
-                                  key={venue}
-                                  className="flex justify-between items-center"
-                                >
-                                  <span className="text-white capitalize flex items-center gap-2">
-                                    {venue === "home" && "🏠"}
-                                    {venue === "away" && "✈️"}
-                                    {venue === "neutral" && "⚖️"}
-                                    {venue}
-                                  </span>
-                                  <div className="text-right">
-                                    <span className="text-red-400 font-mono">
-                                      -$
-                                      {(data.lost_cents / 100).toLocaleString()}
+                              .filter(([, data]) => data.total > 0)
+                              .sort((a, b) => {
+                                const winRateA = (a[1].wins / a[1].total) * 100;
+                                const winRateB = (b[1].wins / b[1].total) * 100;
+                                return winRateB - winRateA;
+                              })
+                              .map(([venue, data]) => {
+                                const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
+                                const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
+                                return (
+                                  <div
+                                    key={venue}
+                                    className="flex justify-between items-center"
+                                  >
+                                    <span className="text-white font-medium text-sm capitalize flex items-center gap-1">
+                                      {venue === "home" && "🏠"}
+                                      {venue === "away" && "✈️"}
+                                      {venue === "neutral" && "⚖️"}
+                                      {venue}
                                     </span>
-                                    <span className="text-slate-500 text-xs ml-2">
-                                      ({data.count})
-                                    </span>
+                                    <div className="text-right font-mono text-sm">
+                                      <span className={`font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {winRate.toFixed(0)}%
+                                      </span>
+                                      <span className="text-slate-500 mx-1">|</span>
+                                      <span className="text-slate-300">
+                                        {avgCost}¢
+                                      </span>
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Granular Losses Table */}
+                    <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                      <div className="p-4 border-b border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400">
+                          All Losses ({lossesData.losses.length})
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-800/50 sticky top-0">
+                            <tr>
+                              <th className="text-left p-3 text-slate-400 font-medium">Game</th>
+                              <th className="text-center p-3 text-slate-400 font-medium">Date</th>
+                              <th className="text-center p-3 text-slate-400 font-medium">Entry Price</th>
+                              <th className="text-center p-3 text-slate-400 font-medium">Open Interest</th>
+                              <th className="text-center p-3 text-slate-400 font-medium">Venue</th>
+                              <th className="text-right p-3 text-slate-400 font-medium">Lost</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {lossesData.losses
+                              .sort((a, b) => new Date(b.batch_date || '').getTime() - new Date(a.batch_date || '').getTime())
+                              .map((loss) => (
+                                <tr
+                                  key={loss.id}
+                                  className="border-t border-slate-800 hover:bg-slate-800/30"
+                                >
+                                  <td className="p-3 text-white">
+                                    <div className="max-w-xs truncate" title={loss.title}>
+                                      {loss.title?.replace(' Winner?', '') || loss.ticker}
+                                    </div>
+                                    <div className="text-xs text-slate-500">{loss.league}</div>
+                                  </td>
+                                  <td className="p-3 text-center text-slate-300">
+                                    {loss.batch_date ? new Date(loss.batch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-'}
+                                  </td>
+                                  <td className="p-3 text-center font-mono text-white">
+                                    {loss.entry_price_cents}¢
+                                  </td>
+                                  <td className="p-3 text-center font-mono text-slate-300">
+                                    {loss.open_interest ? (loss.open_interest >= 1000000 
+                                      ? `${(loss.open_interest / 1000000).toFixed(1)}M`
+                                      : loss.open_interest >= 1000 
+                                        ? `${(loss.open_interest / 1000).toFixed(0)}K`
+                                        : loss.open_interest.toLocaleString()
+                                    ) : '-'}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      loss.venue === 'home' ? 'bg-emerald-500/20 text-emerald-400' :
+                                      loss.venue === 'away' ? 'bg-blue-500/20 text-blue-400' :
+                                      'bg-slate-500/20 text-slate-400'
+                                    }`}>
+                                      {loss.venue === 'home' && '🏠'}
+                                      {loss.venue === 'away' && '✈️'}
+                                      {loss.venue === 'neutral' && '⚖️'}
+                                      {loss.venue}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right font-mono text-red-400">
+                                    -${(loss.cost_cents / 100).toFixed(2)}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   </>
