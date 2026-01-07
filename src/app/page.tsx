@@ -4336,12 +4336,18 @@ export default function Dashboard() {
                       {/* By League */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
-                          Losses by League
+                          Win Rate by League
                         </h3>
                         <div className="space-y-2">
                           {Object.entries(lossesData.summary.by_league)
-                            .sort((a, b) => b[1].lost_cents - a[1].lost_cents)
-                            .map(([league, data]) => (
+                            .sort((a, b) => {
+                              const winRateA = ((a[1].total_bets - a[1].count) / a[1].total_bets) * 100;
+                              const winRateB = ((b[1].total_bets - b[1].count) / b[1].total_bets) * 100;
+                              return winRateB - winRateA;
+                            })
+                            .map(([league, data]) => {
+                              const winRate = ((data.total_bets - data.count) / data.total_bets) * 100;
+                              return (
                               <div
                                 key={league}
                                 className="flex justify-between items-center"
@@ -4350,18 +4356,15 @@ export default function Dashboard() {
                                   {league}
                                 </span>
                                 <div className="text-right">
-                                  <span className="text-red-400 font-mono">
-                                    -${(data.lost_cents / 100).toLocaleString()}
+                                  <span className={`font-mono font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {winRate.toFixed(1)}%
                                   </span>
                                   <span className="text-slate-500 text-xs ml-2">
-                                    ({data.count}/{data.total_bets})
-                                  </span>
-                                  <span className="text-slate-400 text-xs ml-2">
-                                    {data.avg_odds}¢
+                                    ({data.total_bets - data.count}/{data.total_bets})
                                   </span>
                                 </div>
                               </div>
-                            ))}
+                            )})}
                         </div>
                       </div>
 
