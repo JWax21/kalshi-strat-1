@@ -4367,6 +4367,10 @@ export default function Dashboard() {
                                   <span className="text-slate-300">
                                     {avgCost}¢
                                   </span>
+                                  <span className="text-slate-500 mx-1">|</span>
+                                  <span className="text-slate-400 text-xs">
+                                    {data.wins}-{data.losses}
+                                  </span>
                                 </div>
                               </div>
                             )})}
@@ -4404,6 +4408,10 @@ export default function Dashboard() {
                                       <span className="text-slate-300">
                                         {avgCost}¢
                                       </span>
+                                      <span className="text-slate-500 mx-1">|</span>
+                                      <span className="text-slate-400 text-xs">
+                                        {data.wins}-{data.losses}
+                                      </span>
                                     </div>
                                   </div>
                                 );
@@ -4440,6 +4448,10 @@ export default function Dashboard() {
                                     <span className="text-slate-500 mx-1">|</span>
                                     <span className="text-slate-300">
                                       {avgCost}¢
+                                    </span>
+                                    <span className="text-slate-500 mx-1">|</span>
+                                    <span className="text-slate-400 text-xs">
+                                      {data.wins}-{data.losses}
                                     </span>
                                   </div>
                                 </div>
@@ -4483,6 +4495,10 @@ export default function Dashboard() {
                                       <span className="text-slate-500 mx-1">|</span>
                                       <span className="text-slate-300">
                                         {avgCost}¢
+                                      </span>
+                                      <span className="text-slate-500 mx-1">|</span>
+                                      <span className="text-slate-400 text-xs">
+                                        {data.wins}-{data.losses}
                                       </span>
                                     </div>
                                   </div>
