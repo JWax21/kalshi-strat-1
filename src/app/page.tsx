@@ -114,14 +114,14 @@ interface LossesSummary {
   avg_odds: number;
   by_league: Record<
     string,
-    { count: number; total_bets: number; lost_cents: number; avg_odds: number }
+    { wins: number; losses: number; total: number; total_price_units: number; total_units: number }
   >;
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
-  by_odds_range: Record<string, { count: number; lost_cents: number }>;
+  by_odds_range: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
-  by_venue: Record<string, { count: number; lost_cents: number }>;
+  by_venue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number }>;
   by_timing: Record<string, { count: number; lost_cents: number }>;
-  by_open_interest: Record<string, { wins: number; losses: number; total: number }>;
+  by_open_interest: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number }>;
   top_losing_teams: { team: string; count: number }[];
 }
 
@@ -4333,7 +4333,7 @@ export default function Dashboard() {
                     </div>
 
                     {/* Pattern Analysis */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                       {/* By League */}
                       <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">
