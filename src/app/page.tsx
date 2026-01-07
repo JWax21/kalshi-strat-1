@@ -4503,8 +4503,8 @@ export default function Dashboard() {
                         <table className="w-full text-sm">
                           <thead className="bg-slate-800/50 sticky top-0">
                             <tr>
+                              <th className="text-left p-3 text-slate-400 font-medium">Sport</th>
                               <th className="text-left p-3 text-slate-400 font-medium">Game</th>
-                              <th className="text-center p-3 text-slate-400 font-medium">Date</th>
                               <th className="text-center p-3 text-slate-400 font-medium">Entry Price</th>
                               <th className="text-center p-3 text-slate-400 font-medium">Open Interest</th>
                               <th className="text-center p-3 text-slate-400 font-medium">Venue</th>
@@ -4513,20 +4513,34 @@ export default function Dashboard() {
                           </thead>
                           <tbody>
                             {lossesData.losses
-                              .sort((a, b) => new Date(b.batch_date || '').getTime() - new Date(a.batch_date || '').getTime())
-                              .map((loss) => (
+                              .sort((a, b) => a.league.localeCompare(b.league))
+                              .map((loss) => {
+                                const sportColors: Record<string, string> = {
+                                  'NBA': 'bg-orange-500/20 text-orange-400',
+                                  'NFL': 'bg-green-500/20 text-green-400',
+                                  'NHL': 'bg-cyan-500/20 text-cyan-400',
+                                  'MLB': 'bg-red-500/20 text-red-400',
+                                  'NCAAM': 'bg-blue-500/20 text-blue-400',
+                                  'NCAAW': 'bg-pink-500/20 text-pink-400',
+                                  'NCAAF': 'bg-amber-500/20 text-amber-400',
+                                  'UFC': 'bg-purple-500/20 text-purple-400',
+                                  'Tennis': 'bg-lime-500/20 text-lime-400',
+                                  'EuroLeague': 'bg-indigo-500/20 text-indigo-400',
+                                };
+                                return (
                                 <tr
                                   key={loss.id}
                                   className="border-t border-slate-800 hover:bg-slate-800/30"
                                 >
+                                  <td className="p-3">
+                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-medium ${sportColors[loss.league] || 'bg-slate-500/20 text-slate-400'}`}>
+                                      {loss.league}
+                                    </span>
+                                  </td>
                                   <td className="p-3 text-white">
                                     <div className="max-w-xs truncate" title={loss.title}>
                                       {loss.title?.replace(' Winner?', '') || loss.ticker}
                                     </div>
-                                    <div className="text-xs text-slate-500">{loss.league}</div>
-                                  </td>
-                                  <td className="p-3 text-center text-slate-300">
-                                    {loss.batch_date ? new Date(loss.batch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-'}
                                   </td>
                                   <td className="p-3 text-center font-mono text-white">
                                     {loss.entry_price_cents}¢
@@ -4555,7 +4569,7 @@ export default function Dashboard() {
                                     -${(loss.cost_cents / 100).toFixed(2)}
                                   </td>
                                 </tr>
-                              ))}
+                              )})}
                           </tbody>
                         </table>
                       </div>
