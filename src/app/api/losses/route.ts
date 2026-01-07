@@ -146,10 +146,10 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    // Get all decided orders (won + lost) to calculate total bets per league
+    // Get all decided orders (won + lost) to calculate total bets per league and by open interest
     const { data: allDecidedOrders, error: allError } = await supabase
       .from('orders')
-      .select('event_ticker, result_status')
+      .select('event_ticker, result_status, open_interest')
       .in('result_status', ['won', 'lost'])
       .gte('created_at', startDate.toISOString());
 
@@ -167,6 +167,36 @@ export async function GET(request: Request) {
     const totalBetsByLeague: Record<string, number> = {};
     for (const [league, events] of Object.entries(eventsByLeague)) {
       totalBetsByLeague[league] = events.size;
+    }
+
+    // Pre-calculate stats by open interest range
+    const oiRanges = {
+      '1K-10K': { min: 1000, max: 10000 },
+      '10K-100K': { min: 10000, max: 100000 },
+      '100K-1M': { min: 100000, max: 1000000 },
+      '1M+': { min: 1000000, max: Infinity },
+    };
+    const statsByOI: Record<string, { wins: number; losses: number; total: number }> = {};
+    for (const range of Object.keys(oiRanges)) {
+      statsByOI[range] = { wins: 0, losses: 0, total: 0 };
+    }
+    for (const order of allDecidedOrders || []) {
+      const oi = order.open_interest || 0;
+      let rangeKey: string | null = null;
+      for (const [key, { min, max }] of Object.entries(oiRanges)) {
+        if (oi >= min && oi < max) {
+          rangeKey = key;
+          break;
+        }
+      }
+      if (rangeKey) {
+        statsByOI[rangeKey].total++;
+        if (order.result_status === 'won') {
+          statsByOI[rangeKey].wins++;
+        } else {
+          statsByOI[rangeKey].losses++;
+        }
+      }
     }
 
     if (!lostOrders || lostOrders.length === 0) {
@@ -484,6 +514,7 @@ export async function GET(request: Request) {
         by_month: byMonth,
         by_venue: byVenue,
         by_timing: byTiming,
+        by_open_interest: statsByOI,
         top_losing_teams: topLosingTeams,
       },
     });

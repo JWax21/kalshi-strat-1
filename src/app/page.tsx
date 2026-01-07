@@ -121,6 +121,7 @@ interface LossesSummary {
   by_month: Record<string, { count: number; lost_cents: number }>;
   by_venue: Record<string, { count: number; lost_cents: number }>;
   by_timing: Record<string, { count: number; lost_cents: number }>;
+  by_open_interest: Record<string, { wins: number; losses: number; total: number }>;
   top_losing_teams: { team: string; count: number }[];
 }
 
@@ -4365,6 +4366,42 @@ export default function Dashboard() {
                                 </div>
                               </div>
                             )})}
+                        </div>
+                      </div>
+
+                      {/* By Open Interest */}
+                      <div className="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 className="text-sm font-medium text-slate-400 mb-3">
+                          Win Rate by Open Interest
+                        </h3>
+                        <div className="space-y-2">
+                          {lossesData.summary.by_open_interest &&
+                            Object.entries(lossesData.summary.by_open_interest)
+                              .filter(([, data]) => data.total > 0)
+                              .sort((a, b) => {
+                                // Sort by range order: 1K-10K, 10K-100K, 100K-1M, 1M+
+                                const order: Record<string, number> = { '1K-10K': 1, '10K-100K': 2, '100K-1M': 3, '1M+': 4 };
+                                return (order[a[0]] || 99) - (order[b[0]] || 99);
+                              })
+                              .map(([range, data]) => {
+                                const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
+                                return (
+                                  <div
+                                    key={range}
+                                    className="flex justify-between items-center"
+                                  >
+                                    <span className="text-white font-medium">{range}</span>
+                                    <div className="text-right">
+                                      <span className={`font-mono font-bold ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {winRate.toFixed(1)}%
+                                      </span>
+                                      <span className="text-slate-500 text-xs ml-2">
+                                        ({data.wins}/{data.total})
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                         </div>
                       </div>
 
