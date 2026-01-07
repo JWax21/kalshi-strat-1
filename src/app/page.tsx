@@ -96,6 +96,7 @@ interface LossEntry {
   venue: "home" | "away" | "neutral";
   bet_timing: "pre-game" | "live" | "unknown";
   implied_odds_percent: number;
+  open_interest: number;
   fills: { price: number; count: number; created_time: string; side: string }[];
   candlesticks: {
     ts: string;
