@@ -527,19 +527,6 @@ export async function GET(request: Request) {
       byDayOfWeek[loss.day_of_week].lost_cents += loss.cost_cents;
     }
 
-    // Add lost_cents to stats by odds range (from enrichedLosses)
-    for (const loss of enrichedLosses) {
-      const odds = loss.implied_odds_percent;
-      let range = '<90%';
-      if (odds >= 98) range = '98-100%';
-      else if (odds >= 96) range = '96-98%';
-      else if (odds >= 94) range = '94-96%';
-      else if (odds >= 92) range = '92-94%';
-      else if (odds >= 90) range = '90-92%';
-      
-      statsByOddsRange[range].lost_cents += loss.cost_cents;
-    }
-
     // Group by month
     const byMonth: Record<string, { count: number; lost_cents: number }> = {};
     for (const loss of enrichedLosses) {
@@ -568,11 +555,6 @@ export async function GET(request: Request) {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
       .map(([team, count]) => ({ team, count }));
-
-    // Add lost_cents to stats by venue (from enrichedLosses)
-    for (const loss of enrichedLosses) {
-      statsByVenue[loss.venue].lost_cents += loss.cost_cents;
-    }
 
     // Group by bet timing (pre-game vs live)
     const byTiming: Record<string, { count: number; lost_cents: number }> = {
