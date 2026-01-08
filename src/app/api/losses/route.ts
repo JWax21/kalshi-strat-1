@@ -155,33 +155,71 @@ export async function GET(request: Request) {
 
     if (allError) throw allError;
 
-    // Pre-calculate stats by league (with simple average cost and P&L)
-    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
+    // First, aggregate orders by event to count unique games (not individual orders)
+    const eventAggregates: Record<string, { 
+      event_ticker: string;
+      result_status: string;
+      total_cost: number;
+      total_payout: number;
+      total_price: number;
+      order_count: number;
+      open_interest: number;
+      title: string;
+      side: string;
+    }> = {};
+    
     for (const order of allDecidedOrders || []) {
-      const league = getLeagueFromTicker(order.event_ticker || '');
-      if (!statsByLeague[league]) {
-        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
-      }
+      const eventKey = order.event_ticker || order.title || 'unknown';
       const price = order.executed_price_cents || order.price_cents || 0;
       const units = order.units || 1;
       const cost = order.executed_cost_cents || order.cost_cents || (price * units);
       const payout = order.potential_payout_cents || (units * 100);
+      
+      if (!eventAggregates[eventKey]) {
+        eventAggregates[eventKey] = {
+          event_ticker: order.event_ticker || '',
+          result_status: order.result_status || '',
+          total_cost: 0,
+          total_payout: 0,
+          total_price: 0,
+          order_count: 0,
+          open_interest: order.open_interest || 0,
+          title: order.title || '',
+          side: order.side || '',
+        };
+      }
+      eventAggregates[eventKey].total_cost += cost;
+      eventAggregates[eventKey].total_payout += payout;
+      eventAggregates[eventKey].total_price += price;
+      eventAggregates[eventKey].order_count++;
+    }
+    
+    // Convert to array of unique events
+    const uniqueEvents = Object.values(eventAggregates);
+
+    // Pre-calculate stats by league (counting unique games, not orders)
+    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
+    for (const event of uniqueEvents) {
+      const league = getLeagueFromTicker(event.event_ticker || '');
+      if (!statsByLeague[league]) {
+        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
+      }
+      // Average price per order for this event
+      const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
       statsByLeague[league].total++;
-      statsByLeague[league].total_price += price; // Simple sum for simple average
-      statsByLeague[league].total_price_units += price * units;
-      statsByLeague[league].total_units += units;
-      if (order.result_status === 'won') {
+      statsByLeague[league].total_price += avgPrice;
+      statsByLeague[league].total_price_units += event.total_cost;
+      statsByLeague[league].total_units += event.order_count;
+      if (event.result_status === 'won') {
         statsByLeague[league].wins++;
-        // Win P&L: got payout, paid cost
-        statsByLeague[league].total_pnl_cents += (payout - cost);
+        statsByLeague[league].total_pnl_cents += (event.total_payout - event.total_cost);
       } else {
         statsByLeague[league].losses++;
-        // Loss P&L: got nothing, paid cost
-        statsByLeague[league].total_pnl_cents -= cost;
+        statsByLeague[league].total_pnl_cents -= event.total_cost;
       }
     }
 
-    // Pre-calculate stats by open interest range (with simple average cost and P&L)
+    // Pre-calculate stats by open interest range (counting unique games)
     const oiRanges = {
       '1K-10K': { min: 1000, max: 10000 },
       '10K-100K': { min: 10000, max: 100000 },
@@ -192,8 +230,8 @@ export async function GET(request: Request) {
     for (const range of Object.keys(oiRanges)) {
       statsByOI[range] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
     }
-    for (const order of allDecidedOrders || []) {
-      const oi = order.open_interest || 0;
+    for (const event of uniqueEvents) {
+      const oi = event.open_interest || 0;
       let rangeKey: string | null = null;
       for (const [key, { min, max }] of Object.entries(oiRanges)) {
         if (oi >= min && oi < max) {
@@ -202,25 +240,22 @@ export async function GET(request: Request) {
         }
       }
       if (rangeKey) {
-        const price = order.executed_price_cents || order.price_cents || 0;
-        const units = order.units || 1;
-        const cost = order.executed_cost_cents || order.cost_cents || (price * units);
-        const payout = order.potential_payout_cents || (units * 100);
+        const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
         statsByOI[rangeKey].total++;
-        statsByOI[rangeKey].total_price += price;
-        statsByOI[rangeKey].total_price_units += price * units;
-        statsByOI[rangeKey].total_units += units;
-        if (order.result_status === 'won') {
+        statsByOI[rangeKey].total_price += avgPrice;
+        statsByOI[rangeKey].total_price_units += event.total_cost;
+        statsByOI[rangeKey].total_units += event.order_count;
+        if (event.result_status === 'won') {
           statsByOI[rangeKey].wins++;
-          statsByOI[rangeKey].total_pnl_cents += (payout - cost);
+          statsByOI[rangeKey].total_pnl_cents += (event.total_payout - event.total_cost);
         } else {
           statsByOI[rangeKey].losses++;
-          statsByOI[rangeKey].total_pnl_cents -= cost;
+          statsByOI[rangeKey].total_pnl_cents -= event.total_cost;
         }
       }
     }
 
-    // Pre-calculate stats by odds range (with simple average cost and P&L)
+    // Pre-calculate stats by odds range (counting unique games)
     const statsByOddsRange: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
       '90-92%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
       '92-94%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
@@ -229,63 +264,57 @@ export async function GET(request: Request) {
       '98-100%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
       '<90%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
     };
-    for (const order of allDecidedOrders || []) {
-      const odds = order.executed_price_cents || order.price_cents || 0;
-      const units = order.units || 1;
-      const cost = order.executed_cost_cents || order.cost_cents || (odds * units);
-      const payout = order.potential_payout_cents || (units * 100);
+    for (const event of uniqueEvents) {
+      const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
       let range = '<90%';
-      if (odds >= 98) range = '98-100%';
-      else if (odds >= 96) range = '96-98%';
-      else if (odds >= 94) range = '94-96%';
-      else if (odds >= 92) range = '92-94%';
-      else if (odds >= 90) range = '90-92%';
+      if (avgPrice >= 98) range = '98-100%';
+      else if (avgPrice >= 96) range = '96-98%';
+      else if (avgPrice >= 94) range = '94-96%';
+      else if (avgPrice >= 92) range = '92-94%';
+      else if (avgPrice >= 90) range = '90-92%';
       
       statsByOddsRange[range].total++;
-      statsByOddsRange[range].total_price += odds;
-      statsByOddsRange[range].total_price_units += odds * units;
-      statsByOddsRange[range].total_units += units;
-      if (order.result_status === 'won') {
+      statsByOddsRange[range].total_price += avgPrice;
+      statsByOddsRange[range].total_price_units += event.total_cost;
+      statsByOddsRange[range].total_units += event.order_count;
+      if (event.result_status === 'won') {
         statsByOddsRange[range].wins++;
-        statsByOddsRange[range].total_pnl_cents += (payout - cost);
+        statsByOddsRange[range].total_pnl_cents += (event.total_payout - event.total_cost);
       } else {
         statsByOddsRange[range].losses++;
-        statsByOddsRange[range].total_pnl_cents -= cost;
+        statsByOddsRange[range].total_pnl_cents -= event.total_cost;
       }
     }
 
-    // Pre-calculate stats by venue (with simple average cost and P&L)
+    // Pre-calculate stats by venue (counting unique games)
     const statsByVenue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
       'home': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
       'away': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
       'neutral': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
     };
-    for (const order of allDecidedOrders || []) {
+    for (const event of uniqueEvents) {
       // Determine home/away status
       let venue: 'home' | 'away' | 'neutral' = 'neutral';
-      const atMatch = order.title?.match(/^(.+?)\s+at\s+(.+?)\s+Winner\?$/i);
-      const vsMatch = order.title?.match(/^(.+?)\s+vs\s+(.+?)\s+Winner\?$/i);
+      const atMatch = event.title?.match(/^(.+?)\s+at\s+(.+?)\s+Winner\?$/i);
+      const vsMatch = event.title?.match(/^(.+?)\s+vs\s+(.+?)\s+Winner\?$/i);
       
       if (atMatch) {
-        venue = order.side === 'YES' ? 'away' : 'home';
+        venue = event.side === 'YES' ? 'away' : 'home';
       } else if (vsMatch) {
-        venue = order.side === 'YES' ? 'home' : 'away';
+        venue = event.side === 'YES' ? 'home' : 'away';
       }
       
-      const price = order.executed_price_cents || order.price_cents || 0;
-      const units = order.units || 1;
-      const cost = order.executed_cost_cents || order.cost_cents || (price * units);
-      const payout = order.potential_payout_cents || (units * 100);
+      const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
       statsByVenue[venue].total++;
-      statsByVenue[venue].total_price += price;
-      statsByVenue[venue].total_price_units += price * units;
-      statsByVenue[venue].total_units += units;
-      if (order.result_status === 'won') {
+      statsByVenue[venue].total_price += avgPrice;
+      statsByVenue[venue].total_price_units += event.total_cost;
+      statsByVenue[venue].total_units += event.order_count;
+      if (event.result_status === 'won') {
         statsByVenue[venue].wins++;
-        statsByVenue[venue].total_pnl_cents += (payout - cost);
+        statsByVenue[venue].total_pnl_cents += (event.total_payout - event.total_cost);
       } else {
         statsByVenue[venue].losses++;
-        statsByVenue[venue].total_pnl_cents -= cost;
+        statsByVenue[venue].total_pnl_cents -= event.total_cost;
       }
     }
 
