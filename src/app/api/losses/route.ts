@@ -155,18 +155,19 @@ export async function GET(request: Request) {
 
     if (allError) throw allError;
 
-    // Pre-calculate stats by league (with weighted average cost and P&L)
-    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
+    // Pre-calculate stats by league (with simple average cost and P&L)
+    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
     for (const order of allDecidedOrders || []) {
       const league = getLeagueFromTicker(order.event_ticker || '');
       if (!statsByLeague[league]) {
-        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
+        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
       }
       const price = order.executed_price_cents || order.price_cents || 0;
       const units = order.units || 1;
       const cost = order.executed_cost_cents || order.cost_cents || (price * units);
       const payout = order.potential_payout_cents || (units * 100);
       statsByLeague[league].total++;
+      statsByLeague[league].total_price += price; // Simple sum for simple average
       statsByLeague[league].total_price_units += price * units;
       statsByLeague[league].total_units += units;
       if (order.result_status === 'won') {
@@ -180,16 +181,16 @@ export async function GET(request: Request) {
       }
     }
 
-    // Pre-calculate stats by open interest range (with weighted average cost and P&L)
+    // Pre-calculate stats by open interest range (with simple average cost and P&L)
     const oiRanges = {
       '1K-10K': { min: 1000, max: 10000 },
       '10K-100K': { min: 10000, max: 100000 },
       '100K-1M': { min: 100000, max: 1000000 },
       '1M+': { min: 1000000, max: Infinity },
     };
-    const statsByOI: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
+    const statsByOI: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
     for (const range of Object.keys(oiRanges)) {
-      statsByOI[range] = { wins: 0, losses: 0, total: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
+      statsByOI[range] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
     }
     for (const order of allDecidedOrders || []) {
       const oi = order.open_interest || 0;
@@ -206,6 +207,7 @@ export async function GET(request: Request) {
         const cost = order.executed_cost_cents || order.cost_cents || (price * units);
         const payout = order.potential_payout_cents || (units * 100);
         statsByOI[rangeKey].total++;
+        statsByOI[rangeKey].total_price += price;
         statsByOI[rangeKey].total_price_units += price * units;
         statsByOI[rangeKey].total_units += units;
         if (order.result_status === 'won') {
@@ -218,14 +220,14 @@ export async function GET(request: Request) {
       }
     }
 
-    // Pre-calculate stats by odds range (with weighted average cost and P&L)
-    const statsByOddsRange: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
-      '90-92%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '92-94%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '94-96%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '96-98%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '98-100%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '<90%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+    // Pre-calculate stats by odds range (with simple average cost and P&L)
+    const statsByOddsRange: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
+      '90-92%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      '92-94%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      '94-96%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      '96-98%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      '98-100%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      '<90%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
     };
     for (const order of allDecidedOrders || []) {
       const odds = order.executed_price_cents || order.price_cents || 0;
@@ -240,6 +242,7 @@ export async function GET(request: Request) {
       else if (odds >= 90) range = '90-92%';
       
       statsByOddsRange[range].total++;
+      statsByOddsRange[range].total_price += odds;
       statsByOddsRange[range].total_price_units += odds * units;
       statsByOddsRange[range].total_units += units;
       if (order.result_status === 'won') {
@@ -251,11 +254,11 @@ export async function GET(request: Request) {
       }
     }
 
-    // Pre-calculate stats by venue (with weighted average cost and P&L)
-    const statsByVenue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
-      'home': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      'away': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      'neutral': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+    // Pre-calculate stats by venue (with simple average cost and P&L)
+    const statsByVenue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
+      'home': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      'away': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+      'neutral': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
     };
     for (const order of allDecidedOrders || []) {
       // Determine home/away status
@@ -274,6 +277,7 @@ export async function GET(request: Request) {
       const cost = order.executed_cost_cents || order.cost_cents || (price * units);
       const payout = order.potential_payout_cents || (units * 100);
       statsByVenue[venue].total++;
+      statsByVenue[venue].total_price += price;
       statsByVenue[venue].total_price_units += price * units;
       statsByVenue[venue].total_units += units;
       if (order.result_status === 'won') {

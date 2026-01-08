@@ -115,14 +115,14 @@ interface LossesSummary {
   avg_odds: number;
   by_league: Record<
     string,
-    { wins: number; losses: number; total: number; total_price_units: number; total_units: number; total_pnl_cents: number }
+    { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }
   >;
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
-  by_odds_range: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
+  by_odds_range: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
-  by_venue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
+  by_venue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
   by_timing: Record<string, { count: number; lost_cents: number }>;
-  by_open_interest: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
+  by_open_interest: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
   top_losing_teams: { team: string; count: number }[];
 }
 
@@ -4350,7 +4350,7 @@ export default function Dashboard() {
                             })
                             .map(([league, data]) => {
                               const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
-                              const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
+                              const avgCost = data.total > 0 ? Math.round(data.total_price / data.total) : 0;
                               return (
                               <div
                                 key={league}
@@ -4397,7 +4397,7 @@ export default function Dashboard() {
                               })
                               .map(([range, data]) => {
                                 const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
-                                const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
+                                const avgCost = data.total > 0 ? Math.round(data.total_price / data.total) : 0;
                                 return (
                                   <div
                                     key={range}
@@ -4442,7 +4442,7 @@ export default function Dashboard() {
                             })
                             .map(([range, data]) => {
                               const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
-                              const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
+                              const avgCost = data.total > 0 ? Math.round(data.total_price / data.total) : 0;
                               return (
                                 <div
                                   key={range}
@@ -4488,7 +4488,7 @@ export default function Dashboard() {
                               })
                               .map(([venue, data]) => {
                                 const winRate = data.total > 0 ? (data.wins / data.total) * 100 : 0;
-                                const avgCost = data.total_units > 0 ? Math.round(data.total_price_units / data.total_units) : 0;
+                                const avgCost = data.total > 0 ? Math.round(data.total_price / data.total) : 0;
                                 return (
                                   <div
                                     key={venue}
