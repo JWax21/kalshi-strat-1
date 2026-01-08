@@ -149,7 +149,7 @@ export async function GET(request: Request) {
     // Get all decided orders (won + lost) to calculate stats by league, open interest, odds range, and venue
     const { data: allDecidedOrders, error: allError } = await supabase
       .from('orders')
-      .select('event_ticker, result_status, open_interest, executed_price_cents, price_cents, title, side, units')
+      .select('event_ticker, result_status, open_interest, executed_price_cents, price_cents, title, side, units, executed_cost_cents, cost_cents, potential_payout_cents')
       .in('result_status', ['won', 'lost'])
       .gte('created_at', startDate.toISOString());
 
@@ -164,17 +164,19 @@ export async function GET(request: Request) {
       }
       const price = order.executed_price_cents || order.price_cents || 0;
       const units = order.units || 1;
+      const cost = order.executed_cost_cents || order.cost_cents || (price * units);
+      const payout = order.potential_payout_cents || (units * 100);
       statsByLeague[league].total++;
       statsByLeague[league].total_price_units += price * units;
       statsByLeague[league].total_units += units;
       if (order.result_status === 'won') {
         statsByLeague[league].wins++;
-        // Win P&L: paid price cents, got 100 cents back per unit
-        statsByLeague[league].total_pnl_cents += (100 - price) * units;
+        // Win P&L: got payout, paid cost
+        statsByLeague[league].total_pnl_cents += (payout - cost);
       } else {
         statsByLeague[league].losses++;
-        // Loss P&L: paid price cents, got 0 cents back per unit
-        statsByLeague[league].total_pnl_cents -= price * units;
+        // Loss P&L: got nothing, paid cost
+        statsByLeague[league].total_pnl_cents -= cost;
       }
     }
 
@@ -201,15 +203,17 @@ export async function GET(request: Request) {
       if (rangeKey) {
         const price = order.executed_price_cents || order.price_cents || 0;
         const units = order.units || 1;
+        const cost = order.executed_cost_cents || order.cost_cents || (price * units);
+        const payout = order.potential_payout_cents || (units * 100);
         statsByOI[rangeKey].total++;
         statsByOI[rangeKey].total_price_units += price * units;
         statsByOI[rangeKey].total_units += units;
         if (order.result_status === 'won') {
           statsByOI[rangeKey].wins++;
-          statsByOI[rangeKey].total_pnl_cents += (100 - price) * units;
+          statsByOI[rangeKey].total_pnl_cents += (payout - cost);
         } else {
           statsByOI[rangeKey].losses++;
-          statsByOI[rangeKey].total_pnl_cents -= price * units;
+          statsByOI[rangeKey].total_pnl_cents -= cost;
         }
       }
     }
@@ -226,6 +230,8 @@ export async function GET(request: Request) {
     for (const order of allDecidedOrders || []) {
       const odds = order.executed_price_cents || order.price_cents || 0;
       const units = order.units || 1;
+      const cost = order.executed_cost_cents || order.cost_cents || (odds * units);
+      const payout = order.potential_payout_cents || (units * 100);
       let range = '<90%';
       if (odds >= 98) range = '98-100%';
       else if (odds >= 96) range = '96-98%';
@@ -238,10 +244,10 @@ export async function GET(request: Request) {
       statsByOddsRange[range].total_units += units;
       if (order.result_status === 'won') {
         statsByOddsRange[range].wins++;
-        statsByOddsRange[range].total_pnl_cents += (100 - odds) * units;
+        statsByOddsRange[range].total_pnl_cents += (payout - cost);
       } else {
         statsByOddsRange[range].losses++;
-        statsByOddsRange[range].total_pnl_cents -= odds * units;
+        statsByOddsRange[range].total_pnl_cents -= cost;
       }
     }
 
@@ -265,15 +271,17 @@ export async function GET(request: Request) {
       
       const price = order.executed_price_cents || order.price_cents || 0;
       const units = order.units || 1;
+      const cost = order.executed_cost_cents || order.cost_cents || (price * units);
+      const payout = order.potential_payout_cents || (units * 100);
       statsByVenue[venue].total++;
       statsByVenue[venue].total_price_units += price * units;
       statsByVenue[venue].total_units += units;
       if (order.result_status === 'won') {
         statsByVenue[venue].wins++;
-        statsByVenue[venue].total_pnl_cents += (100 - price) * units;
+        statsByVenue[venue].total_pnl_cents += (payout - cost);
       } else {
         statsByVenue[venue].losses++;
-        statsByVenue[venue].total_pnl_cents -= price * units;
+        statsByVenue[venue].total_pnl_cents -= cost;
       }
     }
 
