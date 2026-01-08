@@ -161,7 +161,7 @@ export async function GET(request: Request) {
       result_status: string;
       total_cost: number;
       total_payout: number;
-      total_price: number;
+      total_units: number;
       order_count: number;
       open_interest: number;
       title: string;
@@ -181,7 +181,7 @@ export async function GET(request: Request) {
           result_status: order.result_status || '',
           total_cost: 0,
           total_payout: 0,
-          total_price: 0,
+          total_units: 0,
           order_count: 0,
           open_interest: order.open_interest || 0,
           title: order.title || '',
@@ -190,7 +190,7 @@ export async function GET(request: Request) {
       }
       eventAggregates[eventKey].total_cost += cost;
       eventAggregates[eventKey].total_payout += payout;
-      eventAggregates[eventKey].total_price += price;
+      eventAggregates[eventKey].total_units += units;
       eventAggregates[eventKey].order_count++;
     }
     
@@ -198,18 +198,16 @@ export async function GET(request: Request) {
     const uniqueEvents = Object.values(eventAggregates);
 
     // Pre-calculate stats by league (counting unique games, not orders)
-    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
+    // Use cost-weighted average: total_cost / total_units gives true avg price per unit
+    const statsByLeague: Record<string, { wins: number; losses: number; total: number; total_cost: number; total_units: number; total_pnl_cents: number }> = {};
     for (const event of uniqueEvents) {
       const league = getLeagueFromTicker(event.event_ticker || '');
       if (!statsByLeague[league]) {
-        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
+        statsByLeague[league] = { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 };
       }
-      // Average price per order for this event
-      const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
       statsByLeague[league].total++;
-      statsByLeague[league].total_price += avgPrice;
-      statsByLeague[league].total_price_units += event.total_cost;
-      statsByLeague[league].total_units += event.order_count;
+      statsByLeague[league].total_cost += event.total_cost;
+      statsByLeague[league].total_units += event.total_units;
       if (event.result_status === 'won') {
         statsByLeague[league].wins++;
         statsByLeague[league].total_pnl_cents += (event.total_payout - event.total_cost);
@@ -226,9 +224,9 @@ export async function GET(request: Request) {
       '100K-1M': { min: 100000, max: 1000000 },
       '1M+': { min: 1000000, max: Infinity },
     };
-    const statsByOI: Record<string, { wins: number; losses: number; total: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {};
+    const statsByOI: Record<string, { wins: number; losses: number; total: number; total_cost: number; total_units: number; total_pnl_cents: number }> = {};
     for (const range of Object.keys(oiRanges)) {
-      statsByOI[range] = { wins: 0, losses: 0, total: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 };
+      statsByOI[range] = { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 };
     }
     for (const event of uniqueEvents) {
       const oi = event.open_interest || 0;
@@ -240,11 +238,9 @@ export async function GET(request: Request) {
         }
       }
       if (rangeKey) {
-        const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
         statsByOI[rangeKey].total++;
-        statsByOI[rangeKey].total_price += avgPrice;
-        statsByOI[rangeKey].total_price_units += event.total_cost;
-        statsByOI[rangeKey].total_units += event.order_count;
+        statsByOI[rangeKey].total_cost += event.total_cost;
+        statsByOI[rangeKey].total_units += event.total_units;
         if (event.result_status === 'won') {
           statsByOI[rangeKey].wins++;
           statsByOI[rangeKey].total_pnl_cents += (event.total_payout - event.total_cost);
@@ -256,16 +252,18 @@ export async function GET(request: Request) {
     }
 
     // Pre-calculate stats by odds range (counting unique games)
-    const statsByOddsRange: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
-      '90-92%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '92-94%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '94-96%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '96-98%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '98-100%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      '<90%': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+    // Use cost-weighted average price for categorization: total_cost / total_units
+    const statsByOddsRange: Record<string, { wins: number; losses: number; total: number; total_cost: number; total_units: number; total_pnl_cents: number }> = {
+      '90-92%': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      '92-94%': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      '94-96%': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      '96-98%': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      '98-100%': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      '<90%': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
     };
     for (const event of uniqueEvents) {
-      const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
+      // Cost-weighted average price for this event
+      const avgPrice = event.total_units > 0 ? event.total_cost / event.total_units : 0;
       let range = '<90%';
       if (avgPrice >= 98) range = '98-100%';
       else if (avgPrice >= 96) range = '96-98%';
@@ -274,9 +272,8 @@ export async function GET(request: Request) {
       else if (avgPrice >= 90) range = '90-92%';
       
       statsByOddsRange[range].total++;
-      statsByOddsRange[range].total_price += avgPrice;
-      statsByOddsRange[range].total_price_units += event.total_cost;
-      statsByOddsRange[range].total_units += event.order_count;
+      statsByOddsRange[range].total_cost += event.total_cost;
+      statsByOddsRange[range].total_units += event.total_units;
       if (event.result_status === 'won') {
         statsByOddsRange[range].wins++;
         statsByOddsRange[range].total_pnl_cents += (event.total_payout - event.total_cost);
@@ -287,10 +284,10 @@ export async function GET(request: Request) {
     }
 
     // Pre-calculate stats by venue (counting unique games)
-    const statsByVenue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price: number; total_price_units: number; total_units: number; total_pnl_cents: number }> = {
-      'home': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      'away': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
-      'neutral': { wins: 0, losses: 0, total: 0, lost_cents: 0, total_price: 0, total_price_units: 0, total_units: 0, total_pnl_cents: 0 },
+    const statsByVenue: Record<string, { wins: number; losses: number; total: number; total_cost: number; total_units: number; total_pnl_cents: number }> = {
+      'home': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      'away': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
+      'neutral': { wins: 0, losses: 0, total: 0, total_cost: 0, total_units: 0, total_pnl_cents: 0 },
     };
     for (const event of uniqueEvents) {
       // Determine home/away status
@@ -304,11 +301,9 @@ export async function GET(request: Request) {
         venue = event.side === 'YES' ? 'home' : 'away';
       }
       
-      const avgPrice = event.order_count > 0 ? event.total_price / event.order_count : 0;
       statsByVenue[venue].total++;
-      statsByVenue[venue].total_price += avgPrice;
-      statsByVenue[venue].total_price_units += event.total_cost;
-      statsByVenue[venue].total_units += event.order_count;
+      statsByVenue[venue].total_cost += event.total_cost;
+      statsByVenue[venue].total_units += event.total_units;
       if (event.result_status === 'won') {
         statsByVenue[venue].wins++;
         statsByVenue[venue].total_pnl_cents += (event.total_payout - event.total_cost);
