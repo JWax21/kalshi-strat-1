@@ -115,14 +115,14 @@ interface LossesSummary {
   avg_odds: number;
   by_league: Record<
     string,
-    { wins: number; losses: number; total: number; total_price_units: number; total_units: number }
+    { wins: number; losses: number; total: number; total_price_units: number; total_units: number; total_pnl_cents: number }
   >;
   by_day_of_week: Record<string, { count: number; lost_cents: number }>;
-  by_odds_range: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number }>;
+  by_odds_range: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
   by_month: Record<string, { count: number; lost_cents: number }>;
-  by_venue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number }>;
+  by_venue: Record<string, { wins: number; losses: number; total: number; lost_cents: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
   by_timing: Record<string, { count: number; lost_cents: number }>;
-  by_open_interest: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number }>;
+  by_open_interest: Record<string, { wins: number; losses: number; total: number; total_price_units: number; total_units: number; total_pnl_cents: number }>;
   top_losing_teams: { team: string; count: number }[];
 }
 
@@ -4371,6 +4371,10 @@ export default function Dashboard() {
                                   <span className="text-slate-400 text-xs">
                                     {data.wins}-{data.losses}
                                   </span>
+                                  <span className="text-slate-500 mx-1">|</span>
+                                  <span className={`text-xs ${data.total_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {data.total_pnl_cents >= 0 ? '+' : ''}${(data.total_pnl_cents / 100).toFixed(0)}
+                                  </span>
                                 </div>
                               </div>
                             )})}
@@ -4412,6 +4416,10 @@ export default function Dashboard() {
                                       <span className="text-slate-400 text-xs">
                                         {data.wins}-{data.losses}
                                       </span>
+                                      <span className="text-slate-500 mx-1">|</span>
+                                      <span className={`text-xs ${data.total_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {data.total_pnl_cents >= 0 ? '+' : ''}${(data.total_pnl_cents / 100).toFixed(0)}
+                                      </span>
                                     </div>
                                   </div>
                                 );
@@ -4452,6 +4460,10 @@ export default function Dashboard() {
                                     <span className="text-slate-500 mx-1">|</span>
                                     <span className="text-slate-400 text-xs">
                                       {data.wins}-{data.losses}
+                                    </span>
+                                    <span className="text-slate-500 mx-1">|</span>
+                                    <span className={`text-xs ${data.total_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                      {data.total_pnl_cents >= 0 ? '+' : ''}${(data.total_pnl_cents / 100).toFixed(0)}
                                     </span>
                                   </div>
                                 </div>
@@ -4499,6 +4511,10 @@ export default function Dashboard() {
                                       <span className="text-slate-500 mx-1">|</span>
                                       <span className="text-slate-400 text-xs">
                                         {data.wins}-{data.losses}
+                                      </span>
+                                      <span className="text-slate-500 mx-1">|</span>
+                                      <span className={`text-xs ${data.total_pnl_cents >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {data.total_pnl_cents >= 0 ? '+' : ''}${(data.total_pnl_cents / 100).toFixed(0)}
                                       </span>
                                     </div>
                                   </div>
