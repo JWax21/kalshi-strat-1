@@ -947,7 +947,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       const newExposure = (projectedEventExposure.get(market.event_ticker) || 0) + actualCostCents;
       projectedEventExposure.set(market.event_ticker, newExposure);
       
-      console.log(`  ${market.ticker}: ${maxUnitsFromAllocation}u @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢ (fav was ${favoritePriceCents}¢)`);
+      console.log(`  ${market.ticker}: ${units}u @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢ (fav was ${favoritePriceCents}¢)`);
     }
     
     console.log(`Pre-check: ${ordersToPlace.length} orders to place, ${ordersToQueue.length} orders to queue`);
