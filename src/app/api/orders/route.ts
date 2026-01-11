@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market - UNBREAKABLE
-const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet on favorites below 90 cents
+// UNDERDOG STRATEGY: No minimum price - we WANT low underdog prices!
 
 // GET - Fetch positions and balance
 export async function GET() {
@@ -106,21 +106,11 @@ export async function POST(request: Request) {
     }
     
     // ========================================
-    // GUARDS: NEVER exceed 3% of portfolio, NEVER bet below 90 cents (BUY orders only)
-    // These are UNBREAKABLE barriers - final safety check before placing
+    // GUARDS: NEVER exceed 3% of portfolio (BUY orders only)
+    // UNDERDOG STRATEGY: No minimum price guard - we WANT low underdog prices!
     // ========================================
     if (action === 'buy') {
       const priceCents = yes_price ? parseInt(yes_price) : no_price ? parseInt(no_price) : 0;
-      
-      // MIN PRICE GUARD
-      if (priceCents < MIN_PRICE_CENTS) {
-        const errorMsg = `MIN PRICE BLOCKED: Price ${priceCents}¢ below minimum ${MIN_PRICE_CENTS}¢ - cannot bet on favorites below 90%`;
-        console.error(errorMsg);
-        return NextResponse.json(
-          { success: false, error: errorMsg },
-          { status: 400 }
-        );
-      }
       
       // Get portfolio_value directly from Kalshi
       // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)

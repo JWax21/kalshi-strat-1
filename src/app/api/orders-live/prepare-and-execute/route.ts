@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getMarkets, filterHighOddsMarkets, getMarketOdds, getBalance, placeOrder, KalshiMarket } from '@/lib/kalshi';
+import { getMarkets, filterHighOddsMarkets, getMarketOdds, getBalance, placeOrder, KalshiMarket, calculateUnderdogBet } from '@/lib/kalshi';
 import crypto from 'crypto';
 import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
@@ -204,15 +204,29 @@ export async function POST(request: Request) {
       });
     }
 
-    // Step 6: Sort by OI and enrich with favorite info
+    // Step 6: Sort by OI and enrich with UNDERDOG info
     filteredMarkets.sort((a, b) => b.open_interest - a.open_interest);
 
     const enrichedMarkets = filteredMarkets.map(market => {
       const odds = getMarketOdds(market);
       const favoriteSide = odds.yes >= odds.no ? 'YES' : 'NO';
       const favoriteOdds = Math.max(odds.yes, odds.no);
-      const priceCents = Math.round(favoriteOdds * 100);
-      return { ...market, favorite_side: favoriteSide, favorite_odds: favoriteOdds, price_cents: priceCents };
+      const favoritePriceCents = Math.round(favoriteOdds * 100);
+      
+      // UNDERDOG STRATEGY: We bet on the opposite side
+      const underdogSide = favoriteSide === 'YES' ? 'NO' : 'YES';
+      const underdogPriceCents = 100 - favoritePriceCents;
+      
+      return { 
+        ...market, 
+        favorite_side: favoriteSide, 
+        favorite_odds: favoriteOdds, 
+        favorite_price_cents: favoritePriceCents,
+        underdog_side: underdogSide,
+        underdog_price_cents: underdogPriceCents,
+        // Keep price_cents as favorite for unit calculation
+        price_cents: favoritePriceCents 
+      };
     });
 
     // ========================================
@@ -286,63 +300,52 @@ export async function POST(request: Request) {
       });
     }
 
-    // Step 7: Distribute capital - SPREAD FIRST, 3% cap second
-    // Calculate even distribution across all markets
+    // Step 7: UNDERDOG STRATEGY - Calculate units from favorite price, buy underdog
+    // Units = allocation / favorite_price
+    // Actual cost = units × underdog_price (much lower!)
+    
     const evenDistributionCents = Math.floor(availableBalance / marketsAfterExposureCheck.length);
-    // Use even distribution, capped at 3%
     const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
     
-    console.log(`Capital distribution: ${availableBalance}¢ / ${marketsAfterExposureCheck.length} markets = ${evenDistributionCents}¢ each (3% cap: ${maxPositionCents}¢, target: ${targetAllocationCents}¢)`);
+    console.log(`UNDERDOG STRATEGY: ${availableBalance}¢ / ${marketsAfterExposureCheck.length} markets`);
+    console.log(`Target allocation: ${targetAllocationCents}¢ (min of even=${evenDistributionCents}¢, 3% cap=${maxPositionCents}¢)`);
     
-    type MarketAllocation = { market: typeof enrichedMarkets[0]; units: number; cost: number };
-    const allocations: MarketAllocation[] = marketsAfterExposureCheck.map(m => ({
-      market: m,
-      units: 0,
-      cost: 0,
-    }));
-
+    type MarketAllocation = { 
+      market: typeof enrichedMarkets[0]; 
+      units: number; 
+      cost: number;
+      underdog_side: 'YES' | 'NO';
+      underdog_price_cents: number;
+    };
+    const allocations: MarketAllocation[] = [];
     let remainingBalance = availableBalance;
-    let madeProgress = true;
 
-    // First pass: distribute up to target allocation (even distribution or 3%, whichever is lower)
-    while (remainingBalance > 0 && madeProgress) {
-      madeProgress = false;
-      for (const alloc of allocations) {
-        if (remainingBalance <= 0) break;
-        const costPerUnit = alloc.market.price_cents;
-        const maxUnits = Math.floor(targetAllocationCents / costPerUnit);
+    for (const market of marketsAfterExposureCheck) {
+      const favoritePriceCents = market.favorite_price_cents;
+      const underdogPriceCents = market.underdog_price_cents;
+      const underdogSide = market.underdog_side;
+      
+      // Calculate units based on FAVORITE price (what we'd allocate to a favorite bet)
+      const maxUnitsFromAllocation = Math.floor(targetAllocationCents / favoritePriceCents);
+      
+      // Calculate ACTUAL cost = units × underdog_price
+      const actualCostCents = maxUnitsFromAllocation * underdogPriceCents;
+      
+      if (actualCostCents <= remainingBalance && maxUnitsFromAllocation > 0) {
+        allocations.push({
+          market,
+          units: maxUnitsFromAllocation,
+          cost: actualCostCents,
+          underdog_side: underdogSide,
+          underdog_price_cents: underdogPriceCents,
+        });
+        remainingBalance -= actualCostCents;
         
-        if (alloc.units < maxUnits && remainingBalance >= costPerUnit) {
-          alloc.units += 1;
-          alloc.cost += costPerUnit;
-          remainingBalance -= costPerUnit;
-          madeProgress = true;
-        }
-      }
-    }
-    
-    // Second pass: if we still have balance, distribute up to 3% cap
-    if (remainingBalance > 0 && targetAllocationCents < maxPositionCents) {
-      console.log(`Second pass: ${remainingBalance}¢ remaining, distributing up to 3% cap...`);
-      madeProgress = true;
-      while (remainingBalance > 0 && madeProgress) {
-        madeProgress = false;
-        for (const alloc of allocations) {
-          if (remainingBalance <= 0) break;
-          const costPerUnit = alloc.market.price_cents;
-          const maxUnits = Math.floor(maxPositionCents / costPerUnit);
-          
-          if (alloc.units < maxUnits && remainingBalance >= costPerUnit) {
-            alloc.units += 1;
-            alloc.cost += costPerUnit;
-            remainingBalance -= costPerUnit;
-            madeProgress = true;
-          }
-        }
+        console.log(`  ${market.ticker}: ${maxUnitsFromAllocation} units @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢`);
       }
     }
 
-    const ordersToPlace = allocations.filter(a => a.units > 0);
+    const ordersToPlace = allocations;
     console.log(`Orders to place: ${ordersToPlace.length}`);
 
     if (ordersToPlace.length === 0) {
@@ -372,17 +375,17 @@ export async function POST(request: Request) {
     let successCount = 0;
     let failCount = 0;
 
-    // First, insert all orders as pending
-    const ordersToInsert = ordersToPlace.map(({ market, units, cost }) => ({
+    // First, insert all orders as pending (UNDERDOG STRATEGY)
+    const ordersToInsert = ordersToPlace.map(({ market, units, cost, underdog_side, underdog_price_cents }) => ({
       batch_id: batch.id,
       ticker: market.ticker,
       event_ticker: market.event_ticker,
       title: market.title,
-      side: market.favorite_side,
-      price_cents: market.price_cents,
+      side: underdog_side, // BET ON UNDERDOG
+      price_cents: underdog_price_cents, // UNDERDOG PRICE
       units: units,
       cost_cents: cost,
-      potential_payout_cents: units * 100,
+      potential_payout_cents: units * 100, // Full payout if underdog wins
       open_interest: market.open_interest,
       market_close_time: market.close_time,
       placement_status: 'pending',
@@ -408,8 +411,8 @@ export async function POST(request: Request) {
     console.log(`Saved ${insertedOrders?.length || 0} orders to database`);
 
     // Now try to place each order on Kalshi
-    // HARD CAP: 3% of total portfolio is the absolute maximum
-    const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet below 90 cents
+    // UNDERDOG STRATEGY: We're betting on underdogs (5-10¢ range)
+    // No minimum price guard needed - we WANT low prices!
     const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
     
     // ========================================
@@ -420,30 +423,7 @@ export async function POST(request: Request) {
     
     for (const order of insertedOrders || []) {
       try {
-        // ========================================
-        // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
-        // ========================================
-        if (order.price_cents < MIN_PRICE_CENTS) {
-          const errorMsg = `MIN PRICE BLOCKED: ${order.ticker} price ${order.price_cents}¢ below minimum ${MIN_PRICE_CENTS}¢`;
-          console.error(errorMsg);
-          
-          // Cancel - odds too low
-          await supabase
-            .from('orders')
-            .update({
-              placement_status: 'cancelled',
-              cancelled_at: new Date().toISOString(),
-              cancel_reason: `Price ${order.price_cents}¢ below minimum 90¢`,
-            })
-            .eq('id', order.id);
-          
-          results.push({
-            ticker: order.ticker,
-            status: 'blocked',
-            reason: errorMsg,
-          });
-          continue;
-        }
+        // UNDERDOG STRATEGY: No minimum price guard - we WANT low underdog prices!
         
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio

@@ -201,6 +201,50 @@ export function getMarketOdds(market: KalshiMarket): { yes: number; no: number }
   return { yes: yesMidpoint, no: noMidpoint };
 }
 
+/**
+ * UNDERDOG STRATEGY: Calculate units based on favorite price, buy underdog
+ * 
+ * Example: Portfolio $5000, 3% = $150
+ * - Favorite price: 95¢ → Units = $150 / $0.95 = 158 units
+ * - Underdog price: 5¢ → Cost = 158 × $0.05 = $7.90
+ * 
+ * @returns { underdogSide, underdogPriceCents, favoritePriceCents, units, costCents }
+ */
+export function calculateUnderdogBet(
+  market: KalshiMarket,
+  allocationCents: number  // How much we'd allocate if betting on favorite (e.g., 3% cap)
+): {
+  underdogSide: 'YES' | 'NO';
+  underdogPriceCents: number;
+  favoritePriceCents: number;
+  units: number;
+  costCents: number;
+} {
+  const odds = getMarketOdds(market);
+  const favoriteIsYes = odds.yes >= odds.no;
+  const favoriteOdds = Math.max(odds.yes, odds.no);
+  const favoritePriceCents = Math.round(favoriteOdds * 100);
+  
+  // Underdog is the opposite side
+  const underdogSide = favoriteIsYes ? 'NO' : 'YES';
+  const underdogPriceCents = 100 - favoritePriceCents;
+  
+  // Calculate units based on what we'd buy of the FAVORITE
+  // units = allocation / favorite_price
+  const units = Math.floor(allocationCents / favoritePriceCents);
+  
+  // Actual cost = units × underdog_price
+  const costCents = units * underdogPriceCents;
+  
+  return {
+    underdogSide,
+    underdogPriceCents,
+    favoritePriceCents,
+    units,
+    costCents,
+  };
+}
+
 // Order interfaces
 export interface KalshiOrder {
   ticker: string;

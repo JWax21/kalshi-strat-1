@@ -204,17 +204,22 @@ async function prepareForDay(
       };
     }
 
-    // Enrich with favorite info
+    // Enrich with UNDERDOG info (we bet on underdogs, not favorites)
     const enrichedMarkets = filteredMarkets.map(market => {
       const odds = getMarketOdds(market);
-      const favoriteSide = odds.yes >= odds.no ? 'YES' : 'NO';
+      const favoriteIsYes = odds.yes >= odds.no;
       const favoriteOdds = Math.max(odds.yes, odds.no);
-      const priceCents = Math.round(favoriteOdds * 100);
+      const favoritePriceCents = Math.round(favoriteOdds * 100);
+      
+      // UNDERDOG STRATEGY: Bet on the opposite side
+      const underdogSide = favoriteIsYes ? 'NO' : 'YES';
+      const underdogPriceCents = 100 - favoritePriceCents;
       
       return {
         market,
-        side: favoriteSide as 'YES' | 'NO',
-        price_cents: priceCents,
+        side: underdogSide as 'YES' | 'NO', // BET ON UNDERDOG
+        price_cents: underdogPriceCents, // UNDERDOG PRICE
+        favorite_price_cents: favoritePriceCents, // For unit calculation
         open_interest: market.open_interest || 0,
         volume_24h: market.volume_24h || 0,
       };
@@ -275,7 +280,9 @@ async function prepareForDay(
     
     console.log(`Capital distribution: ${availableCapitalCents}¢ / ${deduplicatedMarkets.length} markets = ${evenDistributionCents}¢ each (capped at ${baseMaxPositionCents}¢ = ${targetAllocationCents}¢ target)`);
 
-    // Allocate capital - ONE position per event, respecting remaining capacity AND even distribution
+    // Allocate capital - UNDERDOG STRATEGY
+    // Units = allocation / FAVORITE price (what we'd buy of favorite)
+    // Cost = units × UNDERDOG price (much lower actual cost)
     const allocatedMarkets: Array<{
       market: KalshiMarket;
       side: 'YES' | 'NO';
@@ -286,6 +293,8 @@ async function prepareForDay(
       volume_24h: number;
     }> = [];
 
+    console.log(`UNDERDOG STRATEGY: Allocating across ${deduplicatedMarkets.length} markets`);
+
     for (const em of deduplicatedMarkets) {
       // Calculate remaining capacity for this event (3% - existing exposure)
       const existingExposure = existingEventExposure.get(em.market.event_ticker) || 0;
@@ -294,19 +303,24 @@ async function prepareForDay(
       // Use target allocation (even distribution) capped by remaining capacity
       const targetForThisMarket = Math.min(targetAllocationCents, remainingCapacity);
       
-      // Calculate units based on target allocation
-      const units = Math.floor(targetForThisMarket / em.price_cents);
+      // Calculate units based on FAVORITE price (what we'd allocate to a favorite bet)
+      const units = Math.floor(targetForThisMarket / em.favorite_price_cents);
+      
+      // Calculate ACTUAL cost = units × underdog_price
+      const actualCostCents = units * em.price_cents; // price_cents is already underdog price
       
       if (units > 0) {
         allocatedMarkets.push({
           market: em.market,
-          side: em.side,
-          price_cents: em.price_cents,
+          side: em.side, // Already set to underdog side
+          price_cents: em.price_cents, // Already underdog price
           units,
-          cost_cents: units * em.price_cents,
+          cost_cents: actualCostCents,
           open_interest: em.open_interest,
           volume_24h: em.volume_24h,
         });
+        
+        console.log(`  ${em.market.ticker}: ${units}u @ ${em.price_cents}¢ (underdog) = ${actualCostCents}¢`);
       }
     }
 

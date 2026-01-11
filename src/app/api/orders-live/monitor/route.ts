@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getBalance, placeOrder, getMarkets, filterHighOddsMarkets, getMarketOdds, KalshiMarket } from '@/lib/kalshi';
+import { getBalance, placeOrder, getMarkets, filterHighOddsMarkets, getMarketOdds, calculateUnderdogBet, KalshiMarket } from '@/lib/kalshi';
 import crypto from 'crypto';
 import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
@@ -12,10 +12,10 @@ const MAX_POSITION_PERCENT_SPLIT = 0.015; // 1.5% max when betting both YES and 
 const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
-const MIN_ODDS = 0.90; // Minimum favorite odds (90%)
-const MIN_PRICE_CENTS = 90; // UNBREAKABLE: NEVER bet on favorites below 90 cents
-const MAX_ODDS = 0.995; // Maximum favorite odds (99.5%)
+const MIN_ODDS = 0.90; // Minimum FAVORITE odds (90%) - we bet on the UNDERDOG
+const MAX_ODDS = 0.995; // Maximum FAVORITE odds (99.5%)
 const MIN_OPEN_INTEREST = 50; // Minimum open interest
+// UNDERDOG STRATEGY: No minimum price for underdogs - we WANT low prices!
 
 // Extract game date from expected_expiration_time (in ET)
 // Subtract 15 hours to account for: ET offset (5h) + game duration (4h) + settlement buffer (6h)
@@ -515,26 +515,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         const priceCents = order.price_cents;
         
         try {
-          // ========================================
-          // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
-          // This prevents betting on games where odds have dropped
-          // ========================================
-          if (priceCents < MIN_PRICE_CENTS) {
-            const errorMsg = `MIN PRICE BLOCKED: ${order.ticker} price ${priceCents}¢ below minimum ${MIN_PRICE_CENTS}¢ - odds dropped`;
-            console.error(errorMsg);
-            result.details.errors.push(errorMsg);
-            
-            // Cancel this order - odds have dropped below our threshold
-            await supabase
-              .from('orders')
-              .update({
-                placement_status: 'cancelled',
-                cancelled_at: new Date().toISOString(),
-                cancel_reason: `Price ${priceCents}¢ below minimum 90¢ - odds dropped`,
-              })
-              .eq('id', order.id);
-            continue;
-          }
+          // UNDERDOG STRATEGY: No minimum price guard - we WANT low underdog prices!
           
           // ========================================
           // HARD CAP GUARD: NEVER exceed 3% of total portfolio
@@ -892,24 +873,30 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
     
     console.log(`Capital distribution: ${availableBalance}¢ / ${eligibleMarkets.length} markets = ${evenAllocationCents}¢ each (capped at ${maxEventExposureCents}¢ = ${targetAllocationCents}¢)`);
 
-    // PRE-CALCULATE: Determine which orders we can afford BEFORE placing any
-    // This prevents placing orders that Kalshi will reject due to insufficient funds
+    // PRE-CALCULATE: UNDERDOG STRATEGY
+    // Units = allocation / favorite_price (what we'd buy of favorite)
+    // Cost = units × underdog_price (much lower actual cost!)
     interface MarketOrder {
       market: KalshiMarket;
-      favoriteSide: 'YES' | 'NO';
-      priceCents: number;
+      underdogSide: 'YES' | 'NO';
+      underdogPriceCents: number;
+      favoritePriceCents: number;
       units: number;
       cost: number;
     }
     const ordersToPlace: MarketOrder[] = [];
-    const ordersToQueue: Array<{market: KalshiMarket, favoriteSide: 'YES' | 'NO', priceCents: number, reason: string}> = [];
+    const ordersToQueue: Array<{market: KalshiMarket, underdogSide: 'YES' | 'NO', underdogPriceCents: number, reason: string}> = [];
     let projectedCapitalUsed = 0;
     const projectedEventExposure: Map<string, number> = new Map(eventExposureCents);
 
+    console.log(`UNDERDOG STRATEGY: Processing ${eligibleMarkets.length} markets`);
+
     for (const market of eligibleMarkets) {
       const odds = getMarketOdds(market);
-      const favoriteSide = (odds.yes >= odds.no ? 'YES' : 'NO') as 'YES' | 'NO';
-      const priceCents = Math.round(Math.max(odds.yes, odds.no) * 100);
+      const favoriteIsYes = odds.yes >= odds.no;
+      const favoritePriceCents = Math.round(Math.max(odds.yes, odds.no) * 100);
+      const underdogSide = (favoriteIsYes ? 'NO' : 'YES') as 'YES' | 'NO';
+      const underdogPriceCents = 100 - favoritePriceCents;
 
       // Calculate REMAINING CAPACITY for this event (3% - existing exposure)
       const currentExposure = projectedEventExposure.get(market.event_ticker) || 0;
@@ -920,43 +907,45 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         continue;
       }
 
-      // Skip if single unit exceeds remaining capacity
-      if (priceCents > remainingCapacity) {
-        console.log(`Skipping ${market.ticker} - price ${priceCents}¢ exceeds remaining capacity ${remainingCapacity}¢`);
-        continue;
-      }
-      
       const remainingBalance = availableBalance - projectedCapitalUsed;
-      if (remainingBalance < priceCents) {
-        // Queue this order instead of trying to place it
-        ordersToQueue.push({ market, favoriteSide, priceCents, reason: `Need ${priceCents}¢, have ${remainingBalance}¢` });
+      
+      // Calculate units based on FAVORITE price (what we'd allocate to a favorite bet)
+      const maxUnitsFromAllocation = Math.floor(Math.min(targetAllocationCents, remainingCapacity) / favoritePriceCents);
+      
+      // Calculate ACTUAL cost = units × underdog_price
+      const actualCostCents = maxUnitsFromAllocation * underdogPriceCents;
+      
+      if (actualCostCents > remainingBalance) {
+        ordersToQueue.push({ market, underdogSide, underdogPriceCents, reason: `Need ${actualCostCents}¢, have ${remainingBalance}¢` });
         continue;
       }
 
-      // Calculate units: use EVEN DISTRIBUTION first, then cap by 3% and remaining capacity
-      const targetForThisMarket = Math.min(targetAllocationCents, remainingCapacity);
-      const maxUnitsForTarget = Math.floor(targetForThisMarket / priceCents);
-      const affordableUnits = Math.floor(remainingBalance / priceCents);
-      const units = Math.min(maxUnitsForTarget, affordableUnits);
-
-      if (units <= 0) {
-        ordersToQueue.push({ market, favoriteSide, priceCents, reason: 'Cannot afford any units' });
+      if (maxUnitsFromAllocation <= 0) {
+        ordersToQueue.push({ market, underdogSide, underdogPriceCents, reason: 'Cannot calculate units' });
         continue;
       }
       
-      const thisBetCost = units * priceCents;
-      ordersToPlace.push({ market, favoriteSide, priceCents, units, cost: thisBetCost });
-      projectedCapitalUsed += thisBetCost;
+      ordersToPlace.push({ 
+        market, 
+        underdogSide, 
+        underdogPriceCents, 
+        favoritePriceCents,
+        units: maxUnitsFromAllocation, 
+        cost: actualCostCents 
+      });
+      projectedCapitalUsed += actualCostCents;
       
       // Update projected event exposure for subsequent calculations
-      const newExposure = (projectedEventExposure.get(market.event_ticker) || 0) + thisBetCost;
+      const newExposure = (projectedEventExposure.get(market.event_ticker) || 0) + actualCostCents;
       projectedEventExposure.set(market.event_ticker, newExposure);
+      
+      console.log(`  ${market.ticker}: ${maxUnitsFromAllocation}u @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢ (fav was ${favoritePriceCents}¢)`);
     }
     
     console.log(`Pre-check: ${ordersToPlace.length} orders to place, ${ordersToQueue.length} orders to queue`);
 
-    // Save queued orders to DB with 'queue' status (so they can be placed when capital frees up)
-    for (const { market, favoriteSide, priceCents, reason } of ordersToQueue) {
+    // Save queued orders to DB with 'queue' status (UNDERDOG STRATEGY)
+    for (const { market, underdogSide, underdogPriceCents, reason } of ordersToQueue) {
       await supabase
         .from('orders')
         .insert({
@@ -964,10 +953,10 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           ticker: market.ticker,
           event_ticker: market.event_ticker,
           title: market.title,
-          side: favoriteSide,
-          price_cents: priceCents,
+          side: underdogSide, // BET ON UNDERDOG
+          price_cents: underdogPriceCents, // UNDERDOG PRICE
           units: 1, // Minimum units for queue
-          cost_cents: priceCents,
+          cost_cents: underdogPriceCents,
           potential_payout_cents: 100,
           open_interest: market.open_interest,
           market_close_time: market.close_time,
@@ -981,18 +970,10 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       console.log(`Queued: ${market.ticker} - ${reason}`);
     }
 
-    // Now place the orders we know we can afford
-    for (const { market, favoriteSide, priceCents, units, cost: thisBetCost } of ordersToPlace) {
+    // Now place the UNDERDOG orders we can afford
+    for (const { market, underdogSide, underdogPriceCents, favoritePriceCents, units, cost: thisBetCost } of ordersToPlace) {
       try {
-        // ========================================
-        // MIN PRICE GUARD: NEVER bet on favorites below 90 cents
-        // ========================================
-        if (priceCents < MIN_PRICE_CENTS) {
-          const errorMsg = `MIN PRICE BLOCKED: ${market.ticker} price ${priceCents}¢ below minimum ${MIN_PRICE_CENTS}¢`;
-          console.error(errorMsg);
-          result.details.errors.push(errorMsg);
-          continue;
-        }
+        // UNDERDOG STRATEGY: No minimum price guard - we WANT low underdog prices!
         
         // ========================================
         // HARD CAP GUARD: NEVER exceed 3% of total portfolio
@@ -1015,8 +996,6 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         
         // ========================================
         // EVENT-LEVEL CAP GUARD: NEVER exceed 3% on any single EVENT
-        // This prevents betting on both sides of the same game
-        // CRITICAL: Check at EVENT level, not just ticker level
         // ========================================
         const currentEventExposure = sessionEventExposure.get(market.event_ticker) || 0;
         const totalEventExposure = currentEventExposure + thisBetCost;
@@ -1028,20 +1007,20 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
           continue; // Skip this order entirely
         }
         
-        // Place order on Kalshi
+        // Place UNDERDOG order on Kalshi
         const payload: any = {
           ticker: market.ticker,
           action: 'buy',
-          side: favoriteSide.toLowerCase(),
+          side: underdogSide.toLowerCase(),
           count: units,
           type: 'limit',
           client_order_id: `monitor_${market.ticker}_${Date.now()}`,
         };
 
-        if (favoriteSide === 'YES') {
-          payload.yes_price = priceCents;
+        if (underdogSide === 'YES') {
+          payload.yes_price = underdogPriceCents;
         } else {
-          payload.no_price = priceCents;
+          payload.no_price = underdogPriceCents;
         }
 
         const orderResult = await placeOrder(payload);
@@ -1050,7 +1029,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         const isExecuted = status === 'executed';
         const filledCount = (orderResult.order as any)?.filled_count || units;
 
-        // Save to DB
+        // Save to DB (UNDERDOG)
         await supabase
           .from('orders')
           .insert({
@@ -1058,18 +1037,18 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
             ticker: market.ticker,
             event_ticker: market.event_ticker,
             title: market.title,
-            side: favoriteSide,
-            price_cents: priceCents,
+            side: underdogSide, // BET ON UNDERDOG
+            price_cents: underdogPriceCents, // UNDERDOG PRICE
             units: units,
-            cost_cents: priceCents * units,
-            potential_payout_cents: 100 * units,
+            cost_cents: thisBetCost,
+            potential_payout_cents: 100 * units, // Full payout if underdog wins
             open_interest: market.open_interest,
             market_close_time: market.close_time,
             placement_status: isExecuted ? 'confirmed' : 'placed',
             placement_status_at: new Date().toISOString(),
             kalshi_order_id: kalshiOrderId,
-            executed_price_cents: isExecuted ? priceCents : null,
-            executed_cost_cents: isExecuted ? priceCents * filledCount : null,
+            executed_price_cents: isExecuted ? underdogPriceCents : null,
+            executed_cost_cents: isExecuted ? underdogPriceCents * filledCount : null,
             result_status: 'undecided',
             settlement_status: 'pending',
           });
@@ -1081,10 +1060,10 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         availableBalance -= thisBetCost;
         result.actions.new_orders_placed++;
         result.details.new_placements.push(
-          `${market.ticker}: ${units}u @ ${priceCents}¢ ${favoriteSide} (${status}) [event: ${newExposure}¢/${maxEventExposureCents}¢]`
+          `${market.ticker}: ${units}u @ ${underdogPriceCents}¢ ${underdogSide} UNDERDOG (${status}) [fav was ${favoritePriceCents}¢]`
         );
 
-        console.log(`Placed: ${market.ticker} - ${units}u @ ${priceCents}¢ ${favoriteSide} (event exposure: ${newExposure}¢/${maxEventExposureCents}¢)`);
+        console.log(`Placed UNDERDOG: ${market.ticker} - ${units}u @ ${underdogPriceCents}¢ ${underdogSide} (favorite was ${favoritePriceCents}¢)`);
         await new Promise(r => setTimeout(r, 300)); // Rate limit
       } catch (e) {
         result.details.errors.push(`Failed to place ${market.ticker}: ${e}`);

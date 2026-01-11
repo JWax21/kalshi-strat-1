@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { getMarkets, filterHighOddsMarkets, getMarketOdds, KalshiMarket } from '@/lib/kalshi';
+import { getMarkets, filterHighOddsMarkets, getMarketOdds, calculateUnderdogBet, KalshiMarket } from '@/lib/kalshi';
 import crypto from 'crypto';
 import { KALSHI_CONFIG } from '@/lib/kalshi-config';
 
@@ -52,21 +52,25 @@ interface MarketWithUnits {
   units: number;
   cost_cents: number;
   potential_payout_cents: number;
+  underdog_side: 'YES' | 'NO';
+  underdog_price_cents: number;
+  favorite_price_cents: number;
 }
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
 
 /**
- * Distribute capital across markets as evenly as possible.
+ * UNDERDOG STRATEGY: Distribute capital across markets
  * 
- * STRATEGY: Spread first, 3% cap second
- * 1. Calculate even distribution = capital / number of markets
- * 2. Use 3% cap only when we don't have enough markets to deploy all capital
+ * KEY INSIGHT: Units are calculated based on what we'd buy of the FAVORITE,
+ * but we actually BUY THE UNDERDOG at a much lower price.
  * 
- * Markets are sorted by open interest (highest first).
- * Higher OI markets get priority for extra units.
+ * Example: Portfolio $5000, 3% = $150, Favorite at 95¢
+ * - Units = $150 / 95¢ = 158 units  
+ * - Underdog price = 5¢
+ * - Actual cost = 158 × 5¢ = $7.90
  * 
- * @param totalPortfolioCents - Total portfolio value for 3% cap calculation (available + deployed)
+ * @param totalPortfolioCents - Total portfolio value for 3% cap calculation
  */
 function distributeCapital(
   markets: any[],
@@ -77,87 +81,53 @@ function distributeCapital(
     return [];
   }
 
-  // Sort by open interest descending (already sorted, but ensure)
+  // Sort by open interest descending
   const sortedMarkets = [...markets].sort((a, b) => b.open_interest - a.open_interest);
   
-  // SPREAD FIRST: Calculate even distribution across all markets
-  const evenDistributionCents = Math.floor(availableCapitalCents / sortedMarkets.length);
-  
-  // 3% CAP SECOND: Use 3% of TOTAL PORTFOLIO (available + deployed), not just available
+  // 3% CAP: Based on FAVORITE price (determines how many units we'd buy)
   const maxPositionCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
+  
+  // SPREAD: Calculate even distribution across all markets (based on favorite prices)
+  const evenDistributionCents = Math.floor(availableCapitalCents / sortedMarkets.length);
   const targetAllocationCents = Math.min(evenDistributionCents, maxPositionCents);
   
-  console.log(`Capital distribution: ${availableCapitalCents}¢ / ${sortedMarkets.length} markets = ${evenDistributionCents}¢ each (3% of ${totalPortfolioCents}¢ = ${maxPositionCents}¢ cap, target: ${targetAllocationCents}¢)`);
-  
-  // Calculate max units for each market based on target allocation
-  const marketsWithLimits = sortedMarkets.map(market => ({
-    market,
-    maxUnits: Math.floor(targetAllocationCents / market.price_cents),
-    currentUnits: 0,
-  }));
+  console.log(`UNDERDOG STRATEGY: ${availableCapitalCents}¢ / ${sortedMarkets.length} markets`);
+  console.log(`Target allocation per market: ${targetAllocationCents}¢ (min of even=${evenDistributionCents}¢, 3% cap=${maxPositionCents}¢)`);
 
-  // Initialize result array
-  const result: MarketWithUnits[] = marketsWithLimits.map(m => ({
-    market: m.market,
-    units: 0,
-    cost_cents: 0,
-    potential_payout_cents: 0,
-  }));
-
+  // Calculate underdog bets for each market
+  const result: MarketWithUnits[] = [];
   let remainingCapital = availableCapitalCents;
-  let madeProgress = true;
 
-  // Keep distributing units until we can't anymore (round-robin for fairness)
-  while (remainingCapital > 0 && madeProgress) {
-    madeProgress = false;
+  for (const market of sortedMarkets) {
+    const favoritePriceCents = market.price_cents; // This is the favorite's price
+    const underdogPriceCents = 100 - favoritePriceCents;
+    const underdogSide = market.favorite_side === 'YES' ? 'NO' : 'YES';
     
-    // Try to add one unit to each market (respecting limits)
-    for (let i = 0; i < result.length && remainingCapital > 0; i++) {
-      const marketLimit = marketsWithLimits[i];
-      const marketResult = result[i];
-      const costForOne = marketResult.market.price_cents;
+    // Calculate units based on FAVORITE price (what we'd buy if betting favorites)
+    const maxUnitsFromAllocation = Math.floor(targetAllocationCents / favoritePriceCents);
+    
+    // Calculate ACTUAL cost = units × underdog_price
+    const actualCostCents = maxUnitsFromAllocation * underdogPriceCents;
+    
+    // Check if we can afford this
+    if (actualCostCents <= remainingCapital && maxUnitsFromAllocation > 0) {
+      result.push({
+        market,
+        units: maxUnitsFromAllocation,
+        cost_cents: actualCostCents,
+        potential_payout_cents: maxUnitsFromAllocation * 100, // Full payout if underdog wins
+        underdog_side: underdogSide,
+        underdog_price_cents: underdogPriceCents,
+        favorite_price_cents: favoritePriceCents,
+      });
+      remainingCapital -= actualCostCents;
       
-      // Check if we can add another unit (within target limit and have capital)
-      if (marketResult.units < marketLimit.maxUnits && remainingCapital >= costForOne) {
-        marketResult.units += 1;
-        marketResult.cost_cents += costForOne;
-        marketResult.potential_payout_cents += 100;
-        remainingCapital -= costForOne;
-        madeProgress = true;
-      }
-    }
-  }
-  
-  // If we still have leftover capital (all markets at target), do a second pass up to 3% cap
-  if (remainingCapital > 0 && targetAllocationCents < maxPositionCents) {
-    console.log(`Second pass: ${remainingCapital}¢ remaining, distributing up to 3% cap...`);
-    
-    // Update limits to 3% cap for second pass
-    for (let i = 0; i < marketsWithLimits.length; i++) {
-      marketsWithLimits[i].maxUnits = Math.floor(maxPositionCents / marketsWithLimits[i].market.price_cents);
-    }
-    
-    madeProgress = true;
-    while (remainingCapital > 0 && madeProgress) {
-      madeProgress = false;
-      for (let i = 0; i < result.length && remainingCapital > 0; i++) {
-        const marketLimit = marketsWithLimits[i];
-        const marketResult = result[i];
-        const costForOne = marketResult.market.price_cents;
-        
-        if (marketResult.units < marketLimit.maxUnits && remainingCapital >= costForOne) {
-          marketResult.units += 1;
-          marketResult.cost_cents += costForOne;
-          marketResult.potential_payout_cents += 100;
-          remainingCapital -= costForOne;
-          madeProgress = true;
-        }
-      }
+      console.log(`  ${market.ticker}: ${maxUnitsFromAllocation} units @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢ cost`);
     }
   }
 
-  // Filter out markets with 0 units
-  return result.filter(r => r.units > 0);
+  console.log(`Allocated ${result.length} markets, remaining capital: ${remainingCapital}¢`);
+  return result;
 }
 
 async function prepareOrders(params: PrepareParams) {
@@ -387,14 +357,14 @@ async function prepareOrders(params: PrepareParams) {
 
   if (batchError) throw batchError;
 
-  // Create orders for each market with variable units
-  const orders = allocatedMarkets.map(({ market, units, cost_cents, potential_payout_cents }) => ({
+  // Create orders for each market with UNDERDOG strategy
+  const orders = allocatedMarkets.map(({ market, units, cost_cents, potential_payout_cents, underdog_side, underdog_price_cents, favorite_price_cents }) => ({
     batch_id: batch.id,
     ticker: market.ticker,
     event_ticker: market.event_ticker,
     title: market.title,
-    side: market.favorite_side,
-    price_cents: market.price_cents,
+    side: underdog_side, // BET ON UNDERDOG
+    price_cents: underdog_price_cents, // UNDERDOG PRICE (much lower than favorite)
     units: units,
     cost_cents: cost_cents,
     potential_payout_cents: potential_payout_cents,

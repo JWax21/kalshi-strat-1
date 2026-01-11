@@ -384,12 +384,16 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
 
   for (const market of filteredMarkets) {
     const odds = getMarketOdds(market);
-    const favoriteSide: 'YES' | 'NO' = odds.yes >= odds.no ? 'YES' : 'NO';
+    const favoriteIsYes = odds.yes >= odds.no;
     const favoriteOdds = Math.max(odds.yes, odds.no);
-    const priceCents = Math.round(favoriteOdds * 100);
+    const favoritePriceCents = Math.round(favoriteOdds * 100);
+    
+    // UNDERDOG STRATEGY: Bet on the opposite side
+    const underdogSide: 'YES' | 'NO' = favoriteIsYes ? 'NO' : 'YES';
+    const underdogPriceCents = 100 - favoritePriceCents;
 
-    // Get orderbook analysis
-    const { depth, spread } = await analyzeLiquidity(market, priceCents, favoriteSide);
+    // Get orderbook analysis for the UNDERDOG side
+    const { depth, spread } = await analyzeLiquidity(market, underdogPriceCents, underdogSide);
 
     // Calculate liquidity score
     const liquidityScore = calculateLiquidityScore(
@@ -414,8 +418,8 @@ async function prepareEnhancedOrders(params: EnhancedPrepareParams) {
 
     analyses.push({
       market,
-      side: favoriteSide,
-      price_cents: priceCents,
+      side: underdogSide, // BET ON UNDERDOG
+      price_cents: underdogPriceCents, // UNDERDOG PRICE
       orderbook_depth: depth,
       volume_24h: market.volume_24h || 0,
       open_interest: market.open_interest || 0,

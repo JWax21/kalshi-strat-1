@@ -802,7 +802,8 @@ export default function Dashboard() {
     setSelectedMarkets(new Map());
   };
 
-  // Submit batch order
+  // Submit batch order - UNDERDOG STRATEGY
+  // We bet on underdogs, calculating units based on what we'd buy of favorite
   const submitBatchOrder = async () => {
     if (selectedMarkets.size === 0) return;
 
@@ -810,26 +811,27 @@ export default function Dashboard() {
     const results: { ticker: string; success: boolean; error?: string }[] = [];
 
     for (const [ticker, market] of selectedMarkets) {
-      // Price in cents (1-99), based on favorite odds
-      const priceInCents = Math.round(market.favorite_odds * 100);
-      const side = market.favorite_side.toLowerCase();
+      // UNDERDOG STRATEGY: Bet on the opposite of the favorite
+      const favoritePriceCents = Math.round(market.favorite_odds * 100);
+      const underdogSide = market.favorite_side === "YES" ? "no" : "yes";
+      const underdogPriceCents = 100 - favoritePriceCents;
 
       const payload: Record<string, any> = {
         ticker,
         action: "buy",
-        side,
+        side: underdogSide, // BET ON UNDERDOG
         count: market.count,
-        type: "limit", // Kalshi requires limit orders with price
+        type: "limit",
       };
 
-      // Set price based on which side we're buying
-      if (side === "yes") {
-        payload.yes_price = priceInCents;
+      // Set price based on which side we're buying (underdog)
+      if (underdogSide === "yes") {
+        payload.yes_price = underdogPriceCents;
       } else {
-        payload.no_price = priceInCents;
+        payload.no_price = underdogPriceCents;
       }
 
-      console.log("Order payload:", payload);
+      console.log("UNDERDOG Order payload:", payload);
       try {
         const res = await fetch("/api/orders", {
           method: "POST",
@@ -850,7 +852,7 @@ export default function Dashboard() {
 
     setOrderSubmitting(false);
     const successCount = results.filter((r) => r.success).length;
-    alert(`Orders submitted: ${successCount}/${results.length} successful`);
+    alert(`UNDERDOG orders submitted: ${successCount}/${results.length} successful`);
     if (successCount > 0) {
       clearSelections();
     }
@@ -1375,6 +1377,27 @@ export default function Dashboard() {
       // NO is favorite - that's team2 (the second team, the opponent)
       return teams?.team2 || m.no_sub_title || "NO";
     }
+  };
+
+  // Get the UNDERDOG team name (opposite of favorite)
+  const getUnderdogTeam = (m: Market): string => {
+    const teams = parseTeamsFromTitle(m.title);
+
+    if (m.favorite_side === "YES") {
+      // YES is favorite, so NO is underdog
+      return teams?.team2 || m.no_sub_title || "NO";
+    } else {
+      // NO is favorite, so YES is underdog
+      return m.yes_sub_title || teams?.team1 || "YES";
+    }
+  };
+
+  // Get underdog side and price
+  const getUnderdogInfo = (m: Market): { side: "YES" | "NO"; priceCents: number } => {
+    const underdogSide = m.favorite_side === "YES" ? "NO" : "YES";
+    const favoritePriceCents = Math.round(m.favorite_odds * 100);
+    const underdogPriceCents = 100 - favoritePriceCents;
+    return { side: underdogSide, priceCents: underdogPriceCents };
   };
 
   const loading = marketsLoading;
@@ -2105,10 +2128,13 @@ export default function Dashboard() {
                     )}
                     <div className="mb-4">
                       <span className="text-xs text-slate-500 uppercase">
-                        Favorite
+                        🎯 Betting on UNDERDOG
                       </span>
-                      <div className="font-semibold text-emerald-400">
-                        {getFavoriteTeam(m)} @ {formatPct(m.favorite_odds)}
+                      <div className="font-semibold text-orange-400">
+                        {getUnderdogTeam(m)} @ {(100 - m.favorite_odds * 100).toFixed(0)}%
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        (Favorite: {getFavoriteTeam(m)} @ {formatPct(m.favorite_odds)})
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2 pt-4 border-t border-slate-800 text-center">
