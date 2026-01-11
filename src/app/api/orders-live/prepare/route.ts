@@ -58,6 +58,7 @@ interface MarketWithUnits {
 }
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
+const MAX_BET_CENTS = 2500; // SAFEGUARD: $25 max per bet - UNBREAKABLE
 
 /**
  * UNDERDOG STRATEGY: Distribute capital across markets
@@ -104,25 +105,32 @@ function distributeCapital(
     const underdogSide = market.favorite_side === 'YES' ? 'NO' : 'YES';
     
     // Calculate units based on FAVORITE price (what we'd buy if betting favorites)
-    const maxUnitsFromAllocation = Math.floor(targetAllocationCents / favoritePriceCents);
+    let units = Math.floor(targetAllocationCents / favoritePriceCents);
     
     // Calculate ACTUAL cost = units × underdog_price
-    const actualCostCents = maxUnitsFromAllocation * underdogPriceCents;
+    let actualCostCents = units * underdogPriceCents;
+    
+    // SAFEGUARD: Cap at $25 max per bet - UNBREAKABLE
+    if (actualCostCents > MAX_BET_CENTS) {
+      units = Math.floor(MAX_BET_CENTS / underdogPriceCents);
+      actualCostCents = units * underdogPriceCents;
+      console.log(`  SAFEGUARD: Capped ${market.ticker} to ${units}u @ ${underdogPriceCents}¢ = ${actualCostCents}¢ (max $25)`);
+    }
     
     // Check if we can afford this
-    if (actualCostCents <= remainingCapital && maxUnitsFromAllocation > 0) {
+    if (actualCostCents <= remainingCapital && units > 0) {
       result.push({
         market,
-        units: maxUnitsFromAllocation,
+        units: units,
         cost_cents: actualCostCents,
-        potential_payout_cents: maxUnitsFromAllocation * 100, // Full payout if underdog wins
+        potential_payout_cents: units * 100, // Full payout if underdog wins
         underdog_side: underdogSide,
         underdog_price_cents: underdogPriceCents,
         favorite_price_cents: favoritePriceCents,
       });
       remainingCapital -= actualCostCents;
       
-      console.log(`  ${market.ticker}: ${maxUnitsFromAllocation} units @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢ cost`);
+      console.log(`  ${market.ticker}: ${units} units @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢ cost`);
     }
   }
 

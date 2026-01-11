@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
+const MAX_BET_CENTS = 2500; // SAFEGUARD: $25 max per bet - UNBREAKABLE
 
 // Helper to make authenticated Kalshi API calls
 async function kalshiFetch(endpoint: string, method: string = 'GET'): Promise<any> {
@@ -326,15 +327,22 @@ export async function POST(request: Request) {
       const underdogSide = market.underdog_side;
       
       // Calculate units based on FAVORITE price (what we'd allocate to a favorite bet)
-      const maxUnitsFromAllocation = Math.floor(targetAllocationCents / favoritePriceCents);
+      let units = Math.floor(targetAllocationCents / favoritePriceCents);
       
       // Calculate ACTUAL cost = units × underdog_price
-      const actualCostCents = maxUnitsFromAllocation * underdogPriceCents;
+      let actualCostCents = units * underdogPriceCents;
       
-      if (actualCostCents <= remainingBalance && maxUnitsFromAllocation > 0) {
+      // SAFEGUARD: Cap at $25 max per bet - UNBREAKABLE
+      if (actualCostCents > MAX_BET_CENTS) {
+        units = Math.floor(MAX_BET_CENTS / underdogPriceCents);
+        actualCostCents = units * underdogPriceCents;
+        console.log(`  SAFEGUARD: Capped ${market.ticker} to ${units}u @ ${underdogPriceCents}¢ = ${actualCostCents}¢ (max $25)`);
+      }
+      
+      if (actualCostCents <= remainingBalance && units > 0) {
         allocations.push({
           market,
-          units: maxUnitsFromAllocation,
+          units: units,
           cost: actualCostCents,
           underdog_side: underdogSide,
           underdog_price_cents: underdogPriceCents,

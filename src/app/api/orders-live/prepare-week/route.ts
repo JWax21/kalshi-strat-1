@@ -8,6 +8,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes
 
+const MAX_BET_CENTS = 2500; // SAFEGUARD: $25 max per bet - UNBREAKABLE
+
 // Helper to make authenticated Kalshi API calls
 async function kalshiFetch(endpoint: string): Promise<any> {
   const timestampMs = Date.now().toString();
@@ -304,10 +306,17 @@ async function prepareForDay(
       const targetForThisMarket = Math.min(targetAllocationCents, remainingCapacity);
       
       // Calculate units based on FAVORITE price (what we'd allocate to a favorite bet)
-      const units = Math.floor(targetForThisMarket / em.favorite_price_cents);
+      let units = Math.floor(targetForThisMarket / em.favorite_price_cents);
       
       // Calculate ACTUAL cost = units × underdog_price
-      const actualCostCents = units * em.price_cents; // price_cents is already underdog price
+      let actualCostCents = units * em.price_cents; // price_cents is already underdog price
+      
+      // SAFEGUARD: Cap at $25 max per bet - UNBREAKABLE
+      if (actualCostCents > MAX_BET_CENTS) {
+        units = Math.floor(MAX_BET_CENTS / em.price_cents);
+        actualCostCents = units * em.price_cents;
+        console.log(`  SAFEGUARD: Capped ${em.market.ticker} to ${units}u @ ${em.price_cents}¢ = ${actualCostCents}¢ (max $25)`);
+      }
       
       if (units > 0) {
         allocatedMarkets.push({

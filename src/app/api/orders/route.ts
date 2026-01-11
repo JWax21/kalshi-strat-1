@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market - UNBREAKABLE
+const MAX_BET_CENTS = 2500; // SAFEGUARD: $25 max per bet - UNBREAKABLE
 // UNDERDOG STRATEGY: No minimum price - we WANT low underdog prices!
 
 // GET - Fetch positions and balance
@@ -106,11 +107,22 @@ export async function POST(request: Request) {
     }
     
     // ========================================
-    // GUARDS: NEVER exceed 3% of portfolio (BUY orders only)
+    // GUARDS: NEVER exceed 3% of portfolio, max $25 per bet (BUY orders only)
     // UNDERDOG STRATEGY: No minimum price guard - we WANT low underdog prices!
     // ========================================
     if (action === 'buy') {
       const priceCents = yes_price ? parseInt(yes_price) : no_price ? parseInt(no_price) : 0;
+      const orderCostCents = priceCents * parseInt(count);
+      
+      // SAFEGUARD: $25 max per bet - UNBREAKABLE
+      if (orderCostCents > MAX_BET_CENTS) {
+        const errorMsg = `SAFEGUARD BLOCKED: Bet cost ${orderCostCents}¢ ($${(orderCostCents/100).toFixed(2)}) exceeds max $25 per bet`;
+        console.error(errorMsg);
+        return NextResponse.json(
+          { success: false, error: errorMsg },
+          { status: 400 }
+        );
+      }
       
       // Get portfolio_value directly from Kalshi
       // CRITICAL: Total portfolio = balance (cash) + portfolio_value (positions value)
@@ -132,7 +144,7 @@ export async function POST(request: Request) {
       }
       
       const hardCapCents = Math.floor(totalPortfolioCents * MAX_POSITION_PERCENT);
-      const orderCostCents = priceCents * parseInt(count);
+      // orderCostCents already calculated above for safeguard check
       
       // CRITICAL: Check EXISTING exposure on this ticker
       // Must check TOTAL (existing + new), not just new order

@@ -65,6 +65,7 @@ interface EnhancedPrepareParams {
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
 const MIN_LIQUIDITY_SCORE = 10; // Minimum score to be considered
+const MAX_BET_CENTS = 2500; // SAFEGUARD: $25 max per bet - UNBREAKABLE
 
 /**
  * Analyze orderbook to determine how many contracts we can realistically fill
@@ -201,11 +202,13 @@ function distributeCapitalByLiquidity(
     const maxByPosition = targetPositionCents;
     const maxByOrderbook = analysis.max_fillable_units * analysis.price_cents;
     const maxByRemaining = remainingCapital;
+    const maxBySafeguard = MAX_BET_CENTS; // SAFEGUARD: $25 max per bet
     
     const allocationCents = Math.min(
       maxByPosition,
       maxByOrderbook,
-      maxByRemaining
+      maxByRemaining,
+      maxBySafeguard
     );
     
     // Calculate units
@@ -213,6 +216,12 @@ function distributeCapitalByLiquidity(
     
     if (units > 0) {
       const actualCost = units * analysis.price_cents;
+      
+      // Log if safeguard was triggered
+      if (actualCost < maxByPosition && actualCost >= MAX_BET_CENTS * 0.9) {
+        console.log(`  SAFEGUARD applied: ${analysis.market.ticker} capped at ${actualCost}¢ (max $25)`);
+      }
+      
       results.push({
         ...analysis,
         recommended_units: units,

@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_POSITION_PERCENT = 0.03; // 3% max per market
 const MAX_POSITION_PERCENT_SPLIT = 0.015; // 1.5% max when betting both YES and NO on same event
+const MAX_BET_CENTS = 2500; // SAFEGUARD: $25 max per bet - UNBREAKABLE
 const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
@@ -910,17 +911,24 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
       const remainingBalance = availableBalance - projectedCapitalUsed;
       
       // Calculate units based on FAVORITE price (what we'd allocate to a favorite bet)
-      const maxUnitsFromAllocation = Math.floor(Math.min(targetAllocationCents, remainingCapacity) / favoritePriceCents);
+      let units = Math.floor(Math.min(targetAllocationCents, remainingCapacity) / favoritePriceCents);
       
       // Calculate ACTUAL cost = units × underdog_price
-      const actualCostCents = maxUnitsFromAllocation * underdogPriceCents;
+      let actualCostCents = units * underdogPriceCents;
+      
+      // SAFEGUARD: Cap at $25 max per bet - UNBREAKABLE
+      if (actualCostCents > MAX_BET_CENTS) {
+        units = Math.floor(MAX_BET_CENTS / underdogPriceCents);
+        actualCostCents = units * underdogPriceCents;
+        console.log(`  SAFEGUARD: Capped ${market.ticker} to ${units}u @ ${underdogPriceCents}¢ = ${actualCostCents}¢ (max $25)`);
+      }
       
       if (actualCostCents > remainingBalance) {
         ordersToQueue.push({ market, underdogSide, underdogPriceCents, reason: `Need ${actualCostCents}¢, have ${remainingBalance}¢` });
         continue;
       }
 
-      if (maxUnitsFromAllocation <= 0) {
+      if (units <= 0) {
         ordersToQueue.push({ market, underdogSide, underdogPriceCents, reason: 'Cannot calculate units' });
         continue;
       }
@@ -930,7 +938,7 @@ async function monitorAndOptimize(): Promise<MonitorResult> {
         underdogSide, 
         underdogPriceCents, 
         favoritePriceCents,
-        units: maxUnitsFromAllocation, 
+        units: units, 
         cost: actualCostCents 
       });
       projectedCapitalUsed += actualCostCents;
