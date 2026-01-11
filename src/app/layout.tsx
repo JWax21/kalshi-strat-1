@@ -8,7 +8,7 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Kalshi Favorites Fund",
+  title: "Kalshi Underdogs Fund",
   description: "High-odds sports betting market scanner. Find prediction markets with 85-99% favorite odds.",
   icons: {
     icon: "/jl.png",

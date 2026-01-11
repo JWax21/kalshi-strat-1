@@ -1455,7 +1455,7 @@ export default function Dashboard() {
               className="w-16 h-16 rounded-lg mx-auto mb-4"
             />
             <h1 className="text-2xl font-bold text-white">
-              Kalshi Favorites Fund
+              Kalshi Underdogs Fund
             </h1>
             <p className="text-slate-400 mt-2">Enter credentials to continue</p>
           </div>
@@ -1516,7 +1516,7 @@ export default function Dashboard() {
               <div>
                 <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white">
                   Kalshi{" "}
-                  <span className="text-emerald-400">Favorites Fund</span>
+                  <span className="text-orange-400">Underdogs Fund</span>
                 </h1>
                 <p className="text-slate-400 mt-1">
                   Prediction Markets Scanner

@@ -6,7 +6,7 @@ export function Footer() {
       <Container>
         <div className="py-8 text-center text-slate-500 text-sm">
           <p>
-            Kalshi Favorites Fund • Data from{" "}
+            Kalshi Underdogs Fund • Data from{" "}
             <a
               href="https://kalshi.com"
               target="_blank"
