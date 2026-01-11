@@ -344,12 +344,12 @@ export async function POST(request: Request) {
           market,
           units: units,
           cost: actualCostCents,
-          underdog_side: underdogSide,
+          underdog_side: underdogSide as 'YES' | 'NO',
           underdog_price_cents: underdogPriceCents,
         });
         remainingBalance -= actualCostCents;
         
-        console.log(`  ${market.ticker}: ${maxUnitsFromAllocation} units @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢`);
+        console.log(`  ${market.ticker}: ${units} units @ ${underdogPriceCents}¢ (underdog) = ${actualCostCents}¢`);
       }
     }
 
