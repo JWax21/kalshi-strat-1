@@ -121,6 +121,27 @@ CREATE INDEX IF NOT EXISTS idx_odds_history_drop_alert ON odds_history(drop_aler
 COMMENT ON TABLE odds_history IS 'Tracks position odds every minute for drop detection';
 
 -- =============================================
+-- DAILY_SNAPSHOTS TABLE
+-- =============================================
+CREATE TABLE IF NOT EXISTS daily_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  snapshot_date DATE NOT NULL UNIQUE,
+  balance_cents INTEGER NOT NULL DEFAULT 0,
+  positions_cents INTEGER NOT NULL DEFAULT 0,
+  portfolio_cents INTEGER NOT NULL DEFAULT 0,
+  deployed_cents INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  losses INTEGER NOT NULL DEFAULT 0,
+  pending INTEGER NOT NULL DEFAULT 0,
+  pnl_cents INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date DESC);
+
+COMMENT ON TABLE daily_snapshots IS 'Daily portfolio snapshots captured at 11:55pm ET';
+
+-- =============================================
 -- SIMULATION TABLES (Optional)
 -- =============================================
 CREATE TABLE IF NOT EXISTS simulation_snapshots (
