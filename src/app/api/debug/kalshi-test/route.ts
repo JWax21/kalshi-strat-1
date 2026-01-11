@@ -14,6 +14,8 @@ export async function GET() {
       hasPrivateKey: !!KALSHI_CONFIG.privateKey,
       privateKeyLength: KALSHI_CONFIG.privateKey?.length || 0,
       privateKeyStart: KALSHI_CONFIG.privateKey?.substring(0, 50) || 'MISSING',
+      privateKeyHasNewlines: KALSHI_CONFIG.privateKey?.includes('\n') || false,
+      privateKeyLineCount: KALSHI_CONFIG.privateKey?.split('\n').length || 0,
       baseUrl: KALSHI_CONFIG.baseUrl,
     };
 
