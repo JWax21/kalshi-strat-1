@@ -30,6 +30,8 @@ const supabaseServiceKey = useUnderdogDb
 // Log which database is being used (only on first import)
 if (typeof window === 'undefined') {
   console.log(`[Supabase] Using ${useUnderdogDb ? 'UNDERDOG FUND' : 'FAVORITES (legacy)'} database`);
+  console.log(`[Supabase] URL: ${supabaseUrl}`);
+  console.log(`[Supabase] Key prefix: ${supabaseServiceKey?.substring(0, 30)}...`);
 }
 
 // Use service role for server-side operations
