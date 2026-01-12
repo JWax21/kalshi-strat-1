@@ -596,6 +596,24 @@ export default function Dashboard() {
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [preparingWeek, setPreparingWeek] = useState(false);
 
+  // Hot bets state
+  interface HotBet {
+    id: string;
+    ticker: string;
+    event_ticker: string;
+    title: string;
+    side: string;
+    units: number;
+    avg_price_cents: number;
+    current_odds_cents: number;
+    cost_cents: number;
+    potential_payout_cents: number;
+    potential_profit_cents: number;
+    batch_date: string;
+  }
+  const [hotBets, setHotBets] = useState<HotBet[]>([]);
+  const [hotBetsLoading, setHotBetsLoading] = useState(false);
+
   // Calculate default day based on 4am ET cutoff
   // Before 4am ET = previous day, after 4am ET = current day
   const getDefaultDay = () => {
@@ -1194,18 +1212,37 @@ export default function Dashboard() {
     }
   };
 
+  // Fetch hot bets
+  const fetchHotBets = useCallback(async () => {
+    setHotBetsLoading(true);
+    try {
+      const res = await fetch("/api/hot-bets");
+      const data = await res.json();
+      if (data.success) {
+        setHotBets(data.hot_bets || []);
+      }
+    } catch (err) {
+      console.error("Error fetching hot bets:", err);
+    } finally {
+      setHotBetsLoading(false);
+    }
+  }, []);
+
   // Fetch data when tab changes
   useEffect(() => {
     if (activeTab === "orders" || activeTab === "positions") {
       fetchLiveOrders();
       fetchRecords(); // Also fetch records for Capital Deployment table
+      if (activeTab === "positions") {
+        fetchHotBets(); // Fetch hot bets when viewing positions
+      }
     } else if (activeTab === "records") {
       fetchRecords();
     } else if (activeTab === "losses") {
       fetchLosses();
       fetchCandlestickAnalysis();
     }
-  }, [activeTab]);
+  }, [activeTab, fetchHotBets]);
 
   // Auto-refresh markets every 5 minutes
   useEffect(() => {
@@ -2409,77 +2446,94 @@ export default function Dashboard() {
               }
             })()}
 
-            {/* Flags Section - Show positions with cost > $400 or avg price < 90¢ */}
-            {positionsSubTab === "active" &&
-              (() => {
-                const allOrders = orderBatches.flatMap((b) => b.orders || []);
-                const activeOrders = allOrders.filter(
-                  (o) =>
-                    o.placement_status === "confirmed" &&
-                    o.result_status === "undecided"
-                );
-                const flaggedOrders = activeOrders.filter((o) => {
-                  const cost = o.executed_cost_cents || o.cost_cents || 0;
-                  const avgPrice = o.price_cents || 0;
-                  return cost > 40000 || avgPrice < 90; // Over $400 or below 90¢
-                });
-
-                if (flaggedOrders.length === 0) return null;
-
-                return (
-                  <div className="mb-6 bg-amber-500/10 rounded-xl border border-amber-500/30 p-4">
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className="text-amber-400 text-lg">⚠️</span>
-                      <h3 className="text-lg font-semibold text-amber-400">
-                        Flags ({flaggedOrders.length})
-                      </h3>
-                    </div>
-                    <div className="space-y-2">
-                      {flaggedOrders.map((order) => {
-                        const cost =
-                          order.executed_cost_cents || order.cost_cents || 0;
-                        const avgPrice = order.price_cents || 0;
-                        const flags: string[] = [];
-                        if (cost > 40000)
-                          flags.push(`Cost: $${(cost / 100).toFixed(0)}`);
-                        if (avgPrice < 90) flags.push(`Avg: ${avgPrice}¢`);
-
-                        return (
-                          <div
-                            key={order.id}
-                            className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2"
-                          >
-                            <div className="flex items-center gap-3">
-                              <span
-                                className={`text-xs px-1.5 py-0.5 rounded ${
-                                  order.side === "YES"
-                                    ? "bg-emerald-500/20 text-emerald-400"
-                                    : "bg-red-500/20 text-red-400"
-                                }`}
-                              >
-                                {order.side}
-                              </span>
-                              <span className="text-white text-sm truncate max-w-[300px]">
-                                {order.title || order.ticker}
-                              </span>
+            {/* HOT Bets Section - Positions where current odds > 51% */}
+            {positionsSubTab === "active" && (
+              <div className="mb-6 bg-gradient-to-r from-orange-500/10 to-red-500/10 rounded-xl border border-orange-500/30 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🔥</span>
+                    <h3 className="text-lg font-semibold text-orange-400">
+                      HOT Bets {hotBets.length > 0 && `(${hotBets.length})`}
+                    </h3>
+                    <span className="text-xs text-slate-500">Current odds &gt;51%</span>
+                  </div>
+                  <button
+                    onClick={fetchHotBets}
+                    disabled={hotBetsLoading}
+                    className="text-xs px-3 py-1 rounded bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 disabled:opacity-50"
+                  >
+                    {hotBetsLoading ? "Loading..." : "Refresh"}
+                  </button>
+                </div>
+                
+                {hotBetsLoading && hotBets.length === 0 ? (
+                  <div className="text-slate-400 text-sm py-4 text-center">
+                    Fetching current odds for all positions...
+                  </div>
+                ) : hotBets.length === 0 ? (
+                  <div className="text-slate-500 text-sm py-2">
+                    No positions currently above 51% odds
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {hotBets.map((bet) => {
+                      const profitIfWin = bet.potential_profit_cents;
+                      const oddsChange = bet.current_odds_cents - bet.avg_price_cents;
+                      
+                      return (
+                        <div
+                          key={bet.id}
+                          className="flex items-center justify-between bg-slate-900/50 rounded-lg px-3 py-2 hover:bg-slate-800/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            <span
+                              className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                bet.side === "YES"
+                                  ? "bg-emerald-500/20 text-emerald-400"
+                                  : "bg-red-500/20 text-red-400"
+                              }`}
+                            >
+                              {bet.side}
+                            </span>
+                            <span className="text-white text-sm truncate">
+                              {bet.title || bet.ticker}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            <div className="text-right">
+                              <div className="text-orange-400 font-bold text-lg">
+                                {bet.current_odds_cents}%
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                {oddsChange >= 0 ? "+" : ""}{oddsChange}% from entry
+                              </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                              {flags.map((flag, i) => (
-                                <span
-                                  key={i}
-                                  className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400"
-                                >
-                                  {flag}
-                                </span>
-                              ))}
+                            <div className="text-right min-w-[80px]">
+                              <div className="text-emerald-400 font-semibold">
+                                +${(profitIfWin / 100).toFixed(2)}
+                              </div>
+                              <div className="text-xs text-slate-500">
+                                if win
+                              </div>
                             </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      );
+                    })}
+                    
+                    {/* Summary */}
+                    <div className="mt-3 pt-3 border-t border-slate-700 flex justify-between text-sm">
+                      <span className="text-slate-400">
+                        Total potential profit:
+                      </span>
+                      <span className="text-emerald-400 font-semibold">
+                        +${(hotBets.reduce((sum, b) => sum + b.potential_profit_cents, 0) / 100).toFixed(2)}
+                      </span>
                     </div>
                   </div>
-                );
-              })()}
+                )}
+              </div>
+            )}
 
             {/* Positions Table */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
@@ -5832,3 +5886,4 @@ export default function Dashboard() {
     </main>
   );
 }
+
