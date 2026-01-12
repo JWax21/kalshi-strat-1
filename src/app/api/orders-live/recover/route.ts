@@ -259,7 +259,7 @@ export async function POST(request: Request) {
             result_status: order.result_status,
             result_status_at: order.result_status !== 'undecided' ? new Date().toISOString() : null,
             settlement_status: order.settlement_status,
-            settlement_status_at: order.settlement_status !== 'pending' ? new Date().toISOString() : null,
+            settled_at: order.settlement_status !== 'pending' ? new Date().toISOString() : null,
             actual_payout_cents: order.actual_payout_cents,
             fee_cents: order.fee_cents,
           });

@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         
         if (result_status === 'won' || result_status === 'lost') {
           updateData.settlement_status = 'success';
-          updateData.settlement_status_at = new Date().toISOString();
+          updateData.settled_at = new Date().toISOString();
         }
       }
 

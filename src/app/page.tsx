@@ -202,7 +202,7 @@ interface LiveOrder {
   result_status: "undecided" | "won" | "lost";
   result_status_at: string | null;
   settlement_status: "pending" | "closed" | "success";
-  settlement_status_at: string | null;
+  settled_at: string | null;
   executed_price_cents: number | null;
   executed_cost_cents: number | null;
   actual_payout_cents: number | null;
@@ -3947,10 +3947,10 @@ export default function Dashboard() {
                                       >
                                         {order.settlement_status.toUpperCase()}
                                       </div>
-                                      {order.settlement_status_at && (
+                                      {order.settled_at && (
                                         <div className="text-[10px] text-slate-500 mt-0.5">
                                           {new Date(
-                                            order.settlement_status_at
+                                            order.settled_at
                                           ).toLocaleTimeString("en-US", {
                                             hour: "2-digit",
                                             minute: "2-digit",

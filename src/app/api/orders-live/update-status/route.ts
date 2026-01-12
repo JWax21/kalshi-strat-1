@@ -241,7 +241,7 @@ async function updateOrderStatuses() {
               result_status: resultStatus,
               result_status_at: new Date().toISOString(),
               settlement_status: settlementStatus,
-              settlement_status_at: won ? null : new Date().toISOString(),
+              settled_at: won ? null : new Date().toISOString(),
             })
             .eq('id', order.id);
 
@@ -269,7 +269,7 @@ async function updateOrderStatuses() {
             .from('orders')
             .update({
               settlement_status: 'success',
-              settlement_status_at: settlementResult.settled_time || new Date().toISOString(),
+              settled_at: settlementResult.settled_time || new Date().toISOString(),
               // Store actual revenue and fees
               actual_payout_cents: settlementResult.revenue,
               fee_cents: Math.round(settlementResult.fee_cost),
@@ -291,7 +291,7 @@ async function updateOrderStatuses() {
             .from('orders')
             .update({
               settlement_status: 'closed',
-              settlement_status_at: settlementResult.settled_time || new Date().toISOString(),
+              settled_at: settlementResult.settled_time || new Date().toISOString(),
             })
             .eq('id', order.id);
           

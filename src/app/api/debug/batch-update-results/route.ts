@@ -103,7 +103,7 @@ export async function POST() {
           result_status: resultStatus,
           result_status_at: new Date().toISOString(),
           settlement_status: settlementStatus,
-          settlement_status_at: won ? null : new Date().toISOString(),
+          settled_at: won ? null : new Date().toISOString(),
         })
         .eq("id", order.id)
         .select("id, result_status");
