@@ -155,10 +155,10 @@ export async function GET(request: Request) {
       (o) => o.settlement_status === "pending"
     );
     const closedOrders = decidedOrdersForSettlement.filter(
-      (o) => o.settlement_status === "closed"
+      (o) => o.settlement_status === "settled" && o.result_status === "lost"
     );
     const successOrders = decidedOrdersForSettlement.filter(
-      (o) => o.settlement_status === "success"
+      (o) => o.settlement_status === "settled" && o.result_status === "won"
     );
 
     const decidedOrders = [...wonOrders, ...lostOrders];
@@ -225,7 +225,7 @@ export async function GET(request: Request) {
     const settlementProjectedPayout = wonOrders
       .filter((o) => o.settlement_status === "pending")
       .reduce((sum, o) => sum + (o.potential_payout_cents || 0), 0);
-    // Actual payout = from orders with settlement_status = 'success' (cash received)
+    // Actual payout = from orders with settlement_status = 'settled' and result = 'won' (cash received)
     // For won orders: payout is $1 per contract = 100 cents
     const settlementActualPayout = successOrders.reduce(
       (sum, o) =>
@@ -242,7 +242,7 @@ export async function GET(request: Request) {
       (sum, o) => sum + (o.fee_cents || 0),
       0
     );
-    // Actual lost = from orders with settlement_status = 'closed'
+    // Actual lost = from orders with settlement_status = 'settled' and result = 'lost'
     const settlementActualLost = closedOrders.reduce(
       (sum, o) => sum + (o.executed_cost_cents || o.cost_cents || 0),
       0

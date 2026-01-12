@@ -94,7 +94,7 @@ export async function POST() {
 
       const won = order.side.toLowerCase() === marketResult.result;
       const resultStatus = won ? "won" : "lost";
-      const settlementStatus = won ? "pending" : "closed";
+      const settlementStatus = "settled"; // Both wins and losses settle
 
       // Use .select() to force the update to return data (and confirm it worked)
       const { data: updateData, error: updateError } = await supabase

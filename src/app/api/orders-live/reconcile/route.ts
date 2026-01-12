@@ -363,14 +363,14 @@ async function reconcileOrders() {
       }
       
       // Update settlement status
-      if (won && dbOrder.settlement_status !== 'success') {
-        updates.settlement_status = 'success';
+      if (won && dbOrder.settlement_status !== 'settled') {
+        updates.settlement_status = 'settled';
         updates.settled_at = settlement.settled_time || new Date().toISOString();
         updates.actual_payout_cents = revenueCents;
         needsUpdate = true;
         results.settlements_updated++;
-      } else if (!won && dbOrder.settlement_status !== 'closed') {
-        updates.settlement_status = 'closed';
+      } else if (!won && dbOrder.settlement_status !== 'settled') {
+        updates.settlement_status = 'settled';
         updates.settled_at = settlement.settled_time || new Date().toISOString();
         needsUpdate = true;
         results.settlements_updated++;

@@ -172,7 +172,7 @@ export async function POST(request: Request) {
         market_close_time: marketData?.close_time,
         placement_status: 'confirmed',
         result_status: resultStatus,
-        settlement_status: resultStatus === 'won' ? 'success' : (resultStatus === 'lost' ? 'closed' : 'pending'),
+        settlement_status: (resultStatus === 'won' || resultStatus === 'lost') ? 'settled' : 'pending',
         actual_payout_cents: actualPayout,
         fee_cents: feeCents,
         batch_date: batchDate,

@@ -175,7 +175,7 @@ async function checkSettlementReceived(ticker: string, side: string): Promise<{
 
 async function updateOrderStatuses() {
   // Get all orders that are not in final state
-  // Final states: settlement_status = 'closed' or 'success'
+  // Final states: settlement_status = 'settled'
   const { data: orders, error } = await supabase
     .from('orders')
     .select('*')
@@ -233,7 +233,7 @@ async function updateOrderStatuses() {
           const won = order.side.toLowerCase() === result;
           const resultStatus = won ? 'won' : 'lost';
           // If lost, close immediately. If won, keep pending until funds received.
-          const settlementStatus = won ? 'pending' : 'closed';
+          const settlementStatus = 'settled'; // Both wins and losses settle
 
           const { error: updateError } = await supabase
             .from('orders')
@@ -268,7 +268,7 @@ async function updateOrderStatuses() {
           await supabase
             .from('orders')
             .update({
-              settlement_status: 'success',
+              settlement_status: 'settled',
               settled_at: settlementResult.settled_time || new Date().toISOString(),
               // Store actual revenue and fees
               actual_payout_cents: settlementResult.revenue,
@@ -283,14 +283,14 @@ async function updateOrderStatuses() {
       }
       
       // Also check if LOST orders appear in settlements (to confirm closure)
-      if (order.result_status === 'lost' && order.settlement_status !== 'closed') {
+      if (order.result_status === 'lost' && order.settlement_status !== 'settled') {
         const settlementResult = await checkSettlementReceived(order.ticker, order.side);
         
         if (settlementResult.settled) {
           await supabase
             .from('orders')
             .update({
-              settlement_status: 'closed',
+              settlement_status: 'settled',
               settled_at: settlementResult.settled_time || new Date().toISOString(),
             })
             .eq('id', order.id);

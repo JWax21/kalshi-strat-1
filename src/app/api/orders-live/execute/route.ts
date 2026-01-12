@@ -358,7 +358,7 @@ async function executeOrders() {
         .from('orders')
         .update({
           placement_status: 'pending', // Keep pending but note it was skipped
-          settlement_status: 'closed', // Mark as closed since we're not placing
+          settlement_status: 'settled', // Mark as settled since we're not placing
           settled_at: new Date().toISOString(),
         })
         .eq('id', order.id);

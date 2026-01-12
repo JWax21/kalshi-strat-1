@@ -201,7 +201,7 @@ interface LiveOrder {
   placement_status_at: string | null;
   result_status: "undecided" | "won" | "lost";
   result_status_at: string | null;
-  settlement_status: "pending" | "closed" | "success";
+  settlement_status: "pending" | "settled";
   settled_at: string | null;
   executed_price_cents: number | null;
   executed_cost_cents: number | null;
@@ -3170,10 +3170,10 @@ export default function Dashboard() {
                 (o) => o.settlement_status === "pending"
               );
               const successOrders = settledOrders.filter(
-                (o) => o.settlement_status === "success"
+                (o) => o.settlement_status === "settled" && o.result_status === "won"
               );
               const closedOrders = settledOrders.filter(
-                (o) => o.settlement_status === "closed"
+                (o) => o.settlement_status === "settled" && o.result_status === "lost"
               );
               // Pending profit = projected payout - cost
               const pendingWonOrders = pendingSettlement.filter(
@@ -3937,10 +3937,9 @@ export default function Dashboard() {
                                     <td className="p-3 text-center">
                                       <div
                                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
-                                          order.settlement_status === "success"
+                                          order.settlement_status === "settled" && order.result_status === "won"
                                             ? "bg-emerald-500/20 text-emerald-400"
-                                            : order.settlement_status ===
-                                              "closed"
+                                            : order.settlement_status === "settled" && order.result_status === "lost"
                                             ? "bg-red-500/20 text-red-400"
                                             : "bg-amber-500/20 text-amber-400"
                                         }`}

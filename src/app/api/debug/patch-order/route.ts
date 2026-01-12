@@ -223,7 +223,7 @@ export async function POST(request: Request) {
           : marketDetails?.result === 'no'
             ? (kalshiOrder.side === 'no' ? 'won' : 'lost')
             : 'undecided',
-        settlement_status: marketDetails?.status === 'finalized' ? 'success' : 'pending',
+        settlement_status: marketDetails?.status === 'finalized' ? 'settled' : 'pending',
         executed_price_cents: avgPrice,
         executed_cost_cents: avgPrice * kalshiOrder.filled_count,
         kalshi_order_id: kalshiOrder.order_id,
