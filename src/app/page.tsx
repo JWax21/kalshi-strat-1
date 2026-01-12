@@ -1033,7 +1033,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           unitSizeCents: 100,
           minOdds: 0.9,
-          maxOdds: 0.995,
+          maxOdds: 0.98,
           minOpenInterest: 1000,
           forToday,
         }),
@@ -1072,7 +1072,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           days: 7,
           minOdds: 0.9,
-          maxOdds: 0.995,
+          maxOdds: 0.98,
           minOpenInterest: 100,
         }),
       });
@@ -5856,7 +5856,7 @@ export default function Dashboard() {
               <li>
                 —{" "}
                 <span className="text-red-400 font-bold">
-                  ONLY 90-99.5% odds
+                  ONLY 90-98% odds
                 </span>{" "}
                 (NEVER below 90%)
               </li>

@@ -416,7 +416,7 @@ export async function GET(request: Request) {
   try {
     const result = await prepareOrders({
       minOdds: 0.90,
-      maxOdds: 0.995,
+      maxOdds: 0.98,
       minOpenInterest: 1000,
     });
 
@@ -437,7 +437,7 @@ export async function POST(request: Request) {
 
     const result = await prepareOrders({
       minOdds: body.minOdds || 0.90,
-      maxOdds: body.maxOdds || 0.995,
+      maxOdds: body.maxOdds || 0.98,
       minOpenInterest: body.minOpenInterest || 1000,
       forToday: body.forToday || false,
       capitalReservePercent: body.capitalReservePercent || 0,

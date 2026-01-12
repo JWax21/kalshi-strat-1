@@ -169,7 +169,7 @@ export async function getMarkets(
   return allMarkets;
 }
 
-export function filterHighOddsMarkets(markets: KalshiMarket[], minOdds: number = 0.92, maxOdds: number = 0.995): KalshiMarket[] {
+export function filterHighOddsMarkets(markets: KalshiMarket[], minOdds: number = 0.92, maxOdds: number = 0.98): KalshiMarket[] {
   return markets.filter((market) => {
     // CRITICAL FIX: Use bid/ask midpoint instead of stale last_price_dollars
     // last_price_dollars can be 0 (no trades) or from an old trade

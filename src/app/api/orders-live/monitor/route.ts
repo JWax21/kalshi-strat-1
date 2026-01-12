@@ -14,7 +14,7 @@ const RESTING_IMPROVE_AFTER_MINUTES = 60; // Improve price after 1 hour
 const RESTING_CANCEL_AFTER_MINUTES = 240; // Cancel after 4 hours
 const PRICE_IMPROVEMENT_CENTS = 1; // Improve by 1 cent each time
 const MIN_ODDS = 0.90; // Minimum FAVORITE odds (90%) - we bet on the UNDERDOG
-const MAX_ODDS = 0.995; // Maximum FAVORITE odds (99.5%)
+const MAX_ODDS = 0.98; // Maximum FAVORITE odds (98%)
 const MIN_OPEN_INTEREST = 50; // Minimum open interest
 // UNDERDOG STRATEGY: No minimum price for underdogs - we WANT low prices!
 

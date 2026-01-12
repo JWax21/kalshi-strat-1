@@ -189,8 +189,8 @@ export async function POST(request: Request) {
 
     console.log(`Total markets found: ${allMarkets.length}`);
 
-    // Step 4: Filter by odds (90-99.5%)
-    let filteredMarkets = filterHighOddsMarkets(allMarkets, 0.90, 0.995);
+    // Step 4: Filter by odds (90-98%)
+    let filteredMarkets = filterHighOddsMarkets(allMarkets, 0.90, 0.98);
     console.log(`After odds filter: ${filteredMarkets.length}`);
 
     // Step 5: Filter by open interest (min $1000)

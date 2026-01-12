@@ -614,7 +614,7 @@ export async function GET(request: Request) {
   try {
     const result = await prepareEnhancedOrders({
       minOdds: 0.90,
-      maxOdds: 0.995,
+      maxOdds: 0.98,
       minOpenInterest: 1000,
     });
     return NextResponse.json(result);
@@ -634,7 +634,7 @@ export async function POST(request: Request) {
 
     const result = await prepareEnhancedOrders({
       minOdds: body.minOdds || 0.90,
-      maxOdds: body.maxOdds || 0.995,
+      maxOdds: body.maxOdds || 0.98,
       minOpenInterest: body.minOpenInterest || 1000,
       forToday: body.forToday || false,
       maxPositionPercent: body.maxPositionPercent || MAX_POSITION_PERCENT,

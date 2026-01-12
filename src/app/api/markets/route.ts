@@ -36,7 +36,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const minOdds = parseFloat(searchParams.get('minOdds') || '0.90');
-    const maxOdds = parseFloat(searchParams.get('maxOdds') || '0.995');
+    const maxOdds = parseFloat(searchParams.get('maxOdds') || '0.98');
     const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '720'); // 30 days
     const category = searchParams.get('category') || 'sports';
     
