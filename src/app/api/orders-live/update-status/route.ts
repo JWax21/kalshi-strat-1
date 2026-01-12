@@ -235,7 +235,7 @@ async function updateOrderStatuses() {
           // If lost, close immediately. If won, keep pending until funds received.
           const settlementStatus = won ? 'pending' : 'closed';
 
-          await supabase
+          const { error: updateError } = await supabase
             .from('orders')
             .update({
               result_status: resultStatus,
@@ -245,11 +245,15 @@ async function updateOrderStatuses() {
             })
             .eq('id', order.id);
 
-          updatedCount++;
-          if (won) wonCount++;
-          else lostCount++;
-
-          console.log(`Updated ${order.ticker}: ${resultStatus}, settlement: ${settlementStatus}`);
+          if (updateError) {
+            errors.push(`Update failed for ${order.ticker}: ${updateError.message}`);
+            console.error(`Update failed for ${order.ticker}:`, updateError);
+          } else {
+            updatedCount++;
+            if (won) wonCount++;
+            else lostCount++;
+            console.log(`Updated ${order.ticker}: ${resultStatus}, settlement: ${settlementStatus}`);
+          }
         }
       }
       
