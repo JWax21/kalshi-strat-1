@@ -416,7 +416,7 @@ export async function GET(request: Request) {
   try {
     const result = await prepareOrders({
       minOdds: 0.90,
-      maxOdds: 0.98,
+      maxOdds: 0.985,
       minOpenInterest: 1000,
     });
 

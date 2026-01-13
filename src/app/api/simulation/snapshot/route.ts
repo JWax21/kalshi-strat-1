@@ -170,7 +170,7 @@ export async function GET(request: Request) {
   }
   
   // Use default parameters for cron
-  return handleSnapshot({ units: 10, minOdds: 0.90, maxOdds: 0.98, minOpenInterest: 5000 });
+  return handleSnapshot({ units: 10, minOdds: 0.90, maxOdds: 0.985, minOpenInterest: 5000 });
 }
 
 // POST - Manual snapshot trigger from UI
@@ -180,7 +180,7 @@ export async function POST(request: Request) {
   return handleSnapshot({
     units: body.units || 10,
     minOdds: body.minOdds || 0.90,
-    maxOdds: body.maxOdds || 0.98,
+    maxOdds: body.maxOdds || 0.985,
     minOpenInterest: body.minOpenInterest || 5000,
   });
 }
