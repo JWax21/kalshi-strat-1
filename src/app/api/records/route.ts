@@ -182,12 +182,15 @@ export async function GET(request: Request) {
     // Dec 24, 2025 started with $10,000 cash, $0 positions
     const STARTING_CASH = 1000000; // $10,000 in cents
     const STARTING_POSITIONS = 0;
-    const STARTING_PORTFOLIO = STARTING_CASH + STARTING_POSITIONS;
     
     const records: DailyRecord[] = [];
     
     // Sort dates ascending for proper start/end calculation
     const sortedDates = [...allDates].sort();
+    
+    // Track running totals - these carry forward from day to day
+    let runningCash = STARTING_CASH;
+    let runningPositions = STARTING_POSITIONS;
     
     for (let i = 0; i < sortedDates.length; i++) {
       const date = sortedDates[i];
@@ -210,9 +213,8 @@ export async function GET(request: Request) {
       const lostCost = lostOrders.reduce((sum: number, o: any) => sum + (o.executed_cost_cents || o.cost_cents || 0), 0);
       const dayPnl = payout - fees - wonCost - lostCost;
       
-      // START values: 
-      // - Dec 24, 2025: ALWAYS use $10,000 (this is day 1)
-      // - Other days: use previous day's snapshot END values
+      // START values: use running totals from previous day's END
+      // Dec 24, 2025 is special - it starts with our initial capital
       let startCash: number;
       let startPositions: number;
       
@@ -220,28 +222,15 @@ export async function GET(request: Request) {
         // Dec 24 ALWAYS starts with $10,000 - this is our starting capital
         startCash = STARTING_CASH;
         startPositions = STARTING_POSITIONS;
-        console.log(`[Records] Dec 24 starting with $${STARTING_CASH/100}`);
-      } else if (i === 0) {
-        // If somehow Dec 24 isn't first, use starting values
-        startCash = STARTING_CASH;
-        startPositions = STARTING_POSITIONS;
       } else {
-        // Get previous day's snapshot for start values
-        const prevDate = sortedDates[i - 1];
-        const prevSnapshot = snapshotMap[prevDate];
-        if (prevSnapshot) {
-          startCash = prevSnapshot.balance_cents || 0;
-          startPositions = prevSnapshot.positions_cents || 0;
-        } else {
-          // Fallback to starting values if no snapshot
-          startCash = STARTING_CASH;
-          startPositions = STARTING_POSITIONS;
-        }
+        // Use previous day's END values (carried in running totals)
+        startCash = runningCash;
+        startPositions = runningPositions;
       }
       
       const startPortfolio = startCash + startPositions;
       
-      // END values: use snapshot if available
+      // END values: use snapshot if available, otherwise calculate from start + P&L
       let endCash: number;
       let endPositions: number;
       
@@ -255,6 +244,10 @@ export async function GET(request: Request) {
       }
       
       const endPortfolio = endCash + endPositions;
+      
+      // Update running totals for next day's START values
+      runningCash = endCash;
+      runningPositions = endPositions;
       
       // Calculate ROIC
       const roic = startPortfolio > 0 ? (dayPnl / startPortfolio) * 100 : 0;

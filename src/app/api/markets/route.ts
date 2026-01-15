@@ -1,51 +1,65 @@
-import { NextResponse } from 'next/server';
-import { getMarkets, getMarketOdds, KalshiMarket } from '@/lib/kalshi';
+import { NextResponse } from "next/server";
+import { getMarkets, getMarketOdds, KalshiMarket } from "@/lib/kalshi";
 
 // Force Node.js runtime for crypto module
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow up to 60 seconds for fetching
 
 // Sports series we track
 const SPORTS_SERIES = [
   // Football
-  'KXNFLGAME', 'KXNCAAFBGAME', 'KXNCAAFCSGAME', 'KXNCAAFGAME',
+  "KXNFLGAME",
+  "KXNCAAFBGAME",
+  "KXNCAAFCSGAME",
+  "KXNCAAFGAME",
   // Basketball
-  'KXNBAGAME', 'KXNCAAMBGAME', 'KXNCAAWBGAME', 'KXEUROLEAGUEGAME', 'KXNBLGAME',
+  "KXNBAGAME",
+  "KXNCAAMBGAME",
+  "KXNCAAWBGAME",
+  "KXEUROLEAGUEGAME",
+  "KXNBLGAME",
   // Hockey
-  'KXNHLGAME',
+  "KXNHLGAME",
   // Baseball
-  'KXMLBGAME',
+  "KXMLBGAME",
   // Cricket
-  'KXCRICKETTESTMATCH', 'KXCRICKETT20IMATCH',
+  "KXCRICKETTESTMATCH",
+  "KXCRICKETT20IMATCH",
   // MMA
-  'KXUFCFIGHT',
+  "KXUFCFIGHT",
   // Tennis
-  'KXTENNISMATCH', 'KXATPTOUR', 'KXWTATOUR',
+  "KXTENNISMATCH",
+  "KXATPTOUR",
+  "KXWTATOUR",
   // Golf
-  'KXPGATOUR', 'KXLPGATOUR', 'KXGOLFTOURNAMENT',
+  "KXPGATOUR",
+  "KXLPGATOUR",
+  "KXGOLFTOURNAMENT",
   // Chess
-  'KXCHESSMATCH',
+  "KXCHESSMATCH",
   // Motorsport
-  'KXF1RACE', 'KXNASCARRACE', 'KXINDYCARRACE',
+  "KXF1RACE",
+  "KXNASCARRACE",
+  "KXINDYCARRACE",
   // Esports
-  'KXDOTA2GAME'
+  "KXDOTA2GAME",
 ];
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const minOdds = parseFloat(searchParams.get('minOdds') || '0.90');
-    const maxOdds = parseFloat(searchParams.get('maxOdds') || '0.985');
-    const maxCloseHours = parseInt(searchParams.get('maxCloseHours') || '720'); // 30 days
-    const category = searchParams.get('category') || 'sports';
-    
+    const minOdds = parseFloat(searchParams.get("minOdds") || "0.90");
+    const maxOdds = parseFloat(searchParams.get("maxOdds") || "0.985");
+    const maxCloseHours = parseInt(searchParams.get("maxCloseHours") || "720"); // 30 days
+    const category = searchParams.get("category") || "sports";
+
     // Step 1: Fetch sports markets BY SERIES (more reliable than bulk fetch)
     // Bulk fetch misses some series like NBA
     let sportsMarkets: KalshiMarket[] = [];
     const seriesResults: Record<string, number> = {};
-    
-    if (category?.toLowerCase() === 'sports') {
+
+    if (category?.toLowerCase() === "sports") {
       // Fetch each sports series individually
       for (const series of SPORTS_SERIES) {
         try {
@@ -60,21 +74,21 @@ export async function GET(request: Request) {
       // For non-sports, use bulk fetch
       sportsMarkets = await getMarkets(1000, maxCloseHours, 20);
     }
-    
+
     // Step 3: Enrich ALL sports markets with calculated odds
     const enrichedAll = sportsMarkets.map((market) => {
       const odds = getMarketOdds(market);
       return {
         ...market,
         calculated_odds: odds,
-        favorite_side: odds.yes >= odds.no ? 'YES' : 'NO',
+        favorite_side: odds.yes >= odds.no ? "YES" : "NO",
         favorite_odds: Math.max(odds.yes, odds.no),
       };
     });
-    
+
     // Step 4: Filter to high-odds markets
-    const highOddsMarkets = enrichedAll.filter(m => 
-      m.favorite_odds >= minOdds && m.favorite_odds <= maxOdds
+    const highOddsMarkets = enrichedAll.filter(
+      (m) => m.favorite_odds >= minOdds && m.favorite_odds <= maxOdds
     );
 
     // Sort by open interest (most liquid first)
@@ -82,17 +96,20 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       success: true,
-      total_markets: sportsMarkets.length,  // All sports markets (before odds filter)
+      total_markets: sportsMarkets.length, // All sports markets (before odds filter)
       high_odds_count: highOddsMarkets.length,
       min_odds_filter: minOdds,
       max_odds_filter: maxOdds,
-      series_results: seriesResults,  // Debug: show counts per series
-      markets: enrichedAll,  // Return ALL enriched markets, let frontend filter by odds
+      series_results: seriesResults, // Debug: show counts per series
+      markets: enrichedAll, // Return ALL enriched markets, let frontend filter by odds
     });
   } catch (error) {
-    console.error('Error fetching markets:', error);
+    console.error("Error fetching markets:", error);
     return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
       { status: 500 }
     );
   }
